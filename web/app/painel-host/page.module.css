@@ -1,0 +1,58 @@
+.container {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+  max-width: 360px;
+  background: #fff;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.form input,
+.form select {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5f5;
+  margin-top: 6px;
+}
+
+.form button {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: white;
+  border: none;
+}
+
+.softwarePanel {
+  display: grid;
+  gap: 12px;
+  max-width: 360px;
+  background: #fff;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.softwarePanel input,
+.softwarePanel select {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5f5;
+  margin-top: 6px;
+}
+
+.softwarePanel button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: #1d4ed8;
+  color: white;
+}

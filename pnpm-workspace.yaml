@@ -1,0 +1,6 @@
+packages:
+  - "backend"
+  - "web"
+  - "client"
+  - "host"
+  - "aplicativo"

@@ -1,0 +1,7 @@
+{
+  "name": "@opendesk/aplicativo",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Aplicativo desktop futuro (Tauri/Electron)'"
+  }
+}

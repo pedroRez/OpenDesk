@@ -1,0 +1,13 @@
+{
+  "name": "@opendesk/host",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ts-node src/host-heartbeat-mock.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
