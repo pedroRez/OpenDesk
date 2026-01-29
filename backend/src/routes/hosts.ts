@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { registerHeartbeat } from '../services/hostHeartbeat.js';
+
 import type { FastifyInstance } from 'fastify';
 
 export async function hostRoutes(fastify: FastifyInstance) {
@@ -30,13 +32,14 @@ export async function hostRoutes(fastify: FastifyInstance) {
     const params = paramsSchema.parse(request.params);
 
     const bodySchema = z.object({
-      status: z.enum(['ONLINE', 'OFFLINE', 'BUSY']).default('ONLINE'),
+      status: z.enum(['ONLINE', 'OFFLINE', 'BUSY']).optional(),
     });
     const body = bodySchema.parse(request.body ?? {});
 
-    await fastify.prisma.pC.updateMany({
-      where: { hostId: params.id },
-      data: { status: body.status },
+    await registerHeartbeat({
+      prisma: fastify.prisma,
+      hostId: params.id,
+      status: body.status,
     });
 
     return { ok: true };

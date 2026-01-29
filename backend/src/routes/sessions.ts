@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { endSession, startSession, createSession } from '../services/sessionService.js';
+import { endSession, startSession, createSession, SessionError } from '../services/sessionService.js';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -18,12 +18,16 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       const session = await createSession({
         prisma: fastify.prisma,
         pcId: body.pcId,
-        clientUserId: body.clientUserId,
+        clientId: body.clientUserId,
         minutesPurchased: body.minutesPurchased,
       });
 
-      return reply.send({ session });
+      return reply.status(201).send({ session, code: 'SESSION_CREATED' });
     } catch (error) {
+      if (error instanceof SessionError) {
+        return reply.status(error.status).send({ error: error.message, code: error.code });
+      }
+
       const message = error instanceof Error ? error.message : 'Erro ao criar sessão';
       return reply.status(400).send({ error: message });
     }
@@ -36,6 +40,10 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       const session = await startSession({ prisma: fastify.prisma, sessionId: params.id });
       return reply.send({ session });
     } catch (error) {
+      if (error instanceof SessionError) {
+        return reply.status(error.status).send({ error: error.message, code: error.code });
+      }
+
       const message = error instanceof Error ? error.message : 'Erro ao iniciar sessão';
       return reply.status(400).send({ error: message });
     }
@@ -45,7 +53,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
     const params = z.object({ id: z.string() }).parse(request.params);
     const body = z
       .object({
-        failureReason: z.string().optional(),
+        failureReason: z.enum(['HOST', 'CLIENT', 'PLATFORM', 'NONE']).optional(),
         hostFault: z.boolean().optional(),
       })
       .parse(request.body ?? {});
@@ -59,6 +67,10 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       });
       return reply.send({ session });
     } catch (error) {
+      if (error instanceof SessionError) {
+        return reply.status(error.status).send({ error: error.message, code: error.code });
+      }
+
       const message = error instanceof Error ? error.message : 'Erro ao encerrar sessão';
       return reply.status(400).send({ error: message });
     }

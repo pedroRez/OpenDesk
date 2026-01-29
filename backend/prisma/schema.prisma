@@ -53,10 +53,12 @@ model HostProfile {
   id               String   @id @default(uuid())
   userId           String   @unique
   displayName      String
-  reliabilityScore Float    @default(1.0)
+  reliabilityScore Float    @default(100)
+  lastSeenAt       DateTime @default(now())
   createdAt        DateTime @default(now())
   user             User     @relation(fields: [userId], references: [id])
   pcs              PC[]
+  reliabilityEvents ReliabilityEvent[]
 }
 
 model PC {
@@ -130,4 +132,12 @@ model WalletTx {
   createdAt DateTime     @default(now())
   user      User         @relation(fields: [userId], references: [id])
   session   Session?     @relation(fields: [sessionId], references: [id])
+}
+
+model ReliabilityEvent {
+  id        String   @id @default(uuid())
+  hostId    String
+  type      String
+  createdAt DateTime @default(now())
+  host      HostProfile @relation(fields: [hostId], references: [id])
 }

@@ -8,6 +8,7 @@ import { pcRoutes } from './routes/pcs.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { softwareRoutes } from './routes/software.js';
 import { walletRoutes } from './routes/wallet.js';
+import { handleHostTimeouts } from './services/hostHeartbeat.js';
 import { expireSessions } from './services/sessionService.js';
 
 const app = Fastify({ logger: true });
@@ -33,5 +34,16 @@ setInterval(async () => {
     app.log.error({ error }, 'Failed to expire sessions');
   }
 }, config.sessionExpirationIntervalMs);
+
+setInterval(async () => {
+  try {
+    const hostsDown = await handleHostTimeouts(app.prisma);
+    if (hostsDown > 0) {
+      app.log.warn({ hostsDown }, 'Hosts marked as down');
+    }
+  } catch (error) {
+    app.log.error({ error }, 'Failed to handle host timeouts');
+  }
+}, config.hostHeartbeatCheckIntervalMs);
 
 app.listen({ port: config.port, host: '0.0.0.0' });
