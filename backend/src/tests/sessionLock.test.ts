@@ -62,8 +62,8 @@ describe.skipIf(!hasDatabase)('session lock', () => {
 
   it('allows only one pending session per PC', async () => {
     const results = await Promise.allSettled([
-      createSession({ prisma, pcId, clientUserId, minutesPurchased: 60 }),
-      createSession({ prisma, pcId, clientUserId, minutesPurchased: 60 }),
+      createSession({ prisma, pcId, clientId: clientUserId, minutesPurchased: 60 }),
+      createSession({ prisma, pcId, clientId: clientUserId, minutesPurchased: 60 }),
     ]);
 
     const fulfilled = results.filter((result) => result.status === 'fulfilled');

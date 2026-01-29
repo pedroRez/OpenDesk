@@ -1,35 +1,55 @@
-export type PenaltyResult = {
-  proportionalAmount: number;
-  platformFee: number;
+export type SettlementResult = {
   hostPayout: number;
   clientCredit: number;
+  platformFee: number;
 };
 
-export function calculatePenalty(params: {
-  minutesUsed: number;
+export type FailureReason = 'HOST' | 'CLIENT' | 'PLATFORM' | 'NONE';
+
+export function calculateSettlement(params: {
   minutesPurchased: number;
-  priceTotal: number;
-  penaltyRate: number;
-  platformFeeRate: number;
-}): PenaltyResult {
-  const { minutesUsed, minutesPurchased, priceTotal, penaltyRate, platformFeeRate } =
-    params;
+  minutesUsed: number;
+  pricePerHour: number;
+  platformFeePercent: number;
+  penaltyPercent: number;
+  failureReason: FailureReason;
+}): SettlementResult {
+  const {
+    minutesPurchased,
+    minutesUsed,
+    pricePerHour,
+    platformFeePercent,
+    penaltyPercent,
+    failureReason,
+  } = params;
 
   if (minutesPurchased <= 0) {
     throw new Error('minutesPurchased must be greater than zero');
   }
+  if (pricePerHour < 0) {
+    throw new Error('pricePerHour must be greater than or equal to zero');
+  }
 
+  const totalPurchased = (pricePerHour * minutesPurchased) / 60;
   const usageRatio = Math.min(Math.max(minutesUsed / minutesPurchased, 0), 1);
-  const proportionalAmount = priceTotal * usageRatio;
-  const platformFee = proportionalAmount * platformFeeRate;
+  const proportionalAmount = totalPurchased * usageRatio;
+  const platformFee = proportionalAmount * platformFeePercent;
   const hostBase = proportionalAmount - platformFee;
-  const hostPayout = hostBase * (1 - penaltyRate);
+
+  if (failureReason !== 'HOST') {
+    return {
+      hostPayout: hostBase,
+      clientCredit: 0,
+      platformFee,
+    };
+  }
+
+  const hostPayout = hostBase * (1 - penaltyPercent);
   const clientCredit = hostBase - hostPayout;
 
   return {
-    proportionalAmount,
-    platformFee,
     hostPayout,
     clientCredit,
+    platformFee,
   };
 }
