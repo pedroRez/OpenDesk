@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CLIENT
+  HOST
+  ADMIN
+}
+
+enum PCLevel {
+  A
+  B
+  C
+}
+
+enum PCStatus {
+  ONLINE
+  OFFLINE
+  BUSY
+}
+
+enum SessionStatus {
+  PENDING
+  ACTIVE
+  ENDED
+  FAILED
+}
+
+enum WalletTxType {
+  CREDIT
+  DEBIT
+}
+
+model User {
+  id        String        @id @default(uuid())
+  name      String
+  email     String        @unique
+  role      UserRole
+  createdAt DateTime      @default(now())
+  host      HostProfile?
+  sessions  Session[]     @relation("ClientSessions")
+  wallet    Wallet?
+  walletTxs WalletTx[]
+}
+
+model HostProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  displayName      String
+  reliabilityScore Float    @default(1.0)
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id])
+  pcs              PC[]
+}
+
+model PC {
+  id                  String        @id @default(uuid())
+  hostId              String
+  name                String
+  level               PCLevel
+  cpu                 String
+  ramGb               Int
+  gpu                 String
+  vramGb              Int
+  storageType         String
+  internetUploadMbps  Int
+  pricePerHour        Float
+  status              PCStatus      @default(ONLINE)
+  createdAt           DateTime      @default(now())
+  host                HostProfile   @relation(fields: [hostId], references: [id])
+  softwareLinks       PCSoftware[]
+  sessions            Session[]
+}
+
+model Software {
+  id        String       @id @default(uuid())
+  name      String
+  category  String
+  pcs       PCSoftware[]
+}
+
+model PCSoftware {
+  pcId       String
+  softwareId String
+  pc         PC       @relation(fields: [pcId], references: [id])
+  software   Software @relation(fields: [softwareId], references: [id])
+
+  @@id([pcId, softwareId])
+}
+
+model Session {
+  id              String        @id @default(uuid())
+  pcId            String
+  clientUserId    String
+  status          SessionStatus
+  startAt         DateTime?
+  endAt           DateTime?
+  minutesPurchased Int
+  minutesUsed     Int           @default(0)
+  priceTotal      Float
+  platformFee     Float         @default(0)
+  hostPayout      Float         @default(0)
+  clientCredit    Float         @default(0)
+  failureReason   String?
+  createdAt       DateTime      @default(now())
+  pc              PC            @relation(fields: [pcId], references: [id])
+  client          User          @relation("ClientSessions", fields: [clientUserId], references: [id])
+  walletTxs       WalletTx[]
+}
+
+model Wallet {
+  userId  String  @id
+  balance Float   @default(0)
+  user    User    @relation(fields: [userId], references: [id])
+}
+
+model WalletTx {
+  id        String       @id @default(uuid())
+  userId    String
+  type      WalletTxType
+  amount    Float
+  reason    String
+  sessionId String?
+  createdAt DateTime     @default(now())
+  user      User         @relation(fields: [userId], references: [id])
+  session   Session?     @relation(fields: [sessionId], references: [id])
+}

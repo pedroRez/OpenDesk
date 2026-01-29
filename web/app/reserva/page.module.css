@@ -1,0 +1,36 @@
+.container {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form {
+  display: grid;
+  gap: 16px;
+  max-width: 320px;
+  background: #fff;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.form input {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5f5;
+  margin-top: 6px;
+}
+
+.form button {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #1d4ed8;
+  color: white;
+  font-weight: 600;
+}
+
+.error {
+  color: #dc2626;
+}

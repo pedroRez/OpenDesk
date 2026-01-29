@@ -1,0 +1,7 @@
+{
+  "name": "@opendesk/client",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Cliente futuro (mobile/SDK)'"
+  }
+}

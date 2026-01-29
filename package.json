@@ -1,0 +1,23 @@
+{
+  "name": "opendesk",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "workspaces": [
+    "backend",
+    "web",
+    "client",
+    "host",
+    "aplicativo"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n backend,web -c blue,green \"pnpm --filter backend dev\" \"pnpm --filter web dev\"",
+    "lint": "pnpm --filter backend lint && pnpm --filter web lint",
+    "format": "prettier --write .",
+    "test": "pnpm --filter backend test"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "eslint": "^9.12.0",
+    "prettier": "^3.3.3"
+  }
+}

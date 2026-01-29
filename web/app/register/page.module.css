@@ -1,0 +1,29 @@
+.container {
+  padding: 32px;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+  max-width: 320px;
+  background: #fff;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.form input,
+.form select {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5f5;
+  margin-top: 6px;
+}
+
+.form button {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #16a34a;
+  color: #fff;
+  border: none;
+}
