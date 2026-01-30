@@ -1,36 +1,31 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { apiBaseUrl } from '../../lib/api';
-import { saveUser } from '../../lib/session';
+import { useAuth } from '../../lib/auth';
 
 import styles from './page.module.css';
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('CLIENT');
   const [message, setMessage] = useState('');
+  const { register } = useAuth();
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const response = await fetch(`${apiBaseUrl}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, role }),
-    });
-    const data = await response.json();
-    if (response.ok) {
-      saveUser({
-        id: data.user.id,
-        name: data.user.name,
-        email: data.user.email,
-        role: data.user.role,
-      });
-      setMessage(`Conta criada! Bem-vindo, ${data.user.name}.`);
-    } else {
-      setMessage(data.error ?? 'Erro ao registrar');
+    setMessage('');
+    try {
+      const user = await register({ name, email, role });
+      setMessage(`Conta criada! Bem-vindo, ${user.name}.`);
+      router.push('/');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Erro ao registrar';
+      setMessage(message);
     }
   };
 

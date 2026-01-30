@@ -1,34 +1,31 @@
 'use client';
 
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { apiBaseUrl } from '../../lib/api';
-import { saveUser } from '../../lib/session';
+import { useAuth } from '../../lib/auth';
 
 import styles from './page.module.css';
 
 export default function LoginPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
+  const { login } = useAuth();
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const response = await fetch(`${apiBaseUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    const data = await response.json();
-    if (response.ok) {
-      saveUser({
-        id: data.user.id,
-        name: data.user.name,
-        email: data.user.email,
-        role: data.user.role,
-      });
-      setMessage(`Bem-vindo, ${data.user.name}! (token mock: ${data.token})`);
-    } else {
-      setMessage(data.error ?? 'Erro ao entrar');
+    setMessage('');
+    try {
+      const user = await login({ email });
+      setMessage(`Bem-vindo, ${user.name}!`);
+      const next = searchParams.get('next') ?? '/';
+      router.push(next);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Erro ao entrar';
+      setMessage(message);
     }
   };
 

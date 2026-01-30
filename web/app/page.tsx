@@ -35,11 +35,6 @@ export default async function HomePage() {
           <h1>OpenDesk</h1>
           <p>Marketplace de PCs remotos por hora.</p>
         </div>
-        <nav className={styles.nav}>
-          <Link href="/login">Entrar</Link>
-          <Link href="/register">Criar conta</Link>
-          <Link href="/painel-host">Painel do Host</Link>
-        </nav>
       </header>
 
       <section className={styles.grid}>

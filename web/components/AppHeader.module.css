@@ -1,0 +1,42 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.logo {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.nav {
+  display: flex;
+  gap: 16px;
+  font-weight: 500;
+}
+
+.auth {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 500;
+}
+
+.logout {
+  border: none;
+  background: #1d4ed8;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.loading {
+  color: #64748b;
+}

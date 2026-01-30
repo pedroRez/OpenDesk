@@ -19,6 +19,7 @@ async function start() {
     await app.register(cors, {
       origin: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'x-user-id'],
     });
 
     await app.register(prismaPlugin);

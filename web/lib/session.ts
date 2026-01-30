@@ -3,6 +3,7 @@ export type StoredUser = {
   name: string;
   email: string;
   role: string;
+  hostProfileId?: string | null;
 };
 
 const STORAGE_KEY = 'opendesk_user';
@@ -19,7 +20,13 @@ export function loadUser(): StoredUser | null {
   try {
     const parsed = JSON.parse(raw) as Partial<StoredUser>;
     if (!parsed?.id || !parsed?.email) return null;
-    return parsed as StoredUser;
+    return {
+      id: parsed.id,
+      name: parsed.name ?? parsed.email,
+      email: parsed.email,
+      role: parsed.role ?? 'CLIENT',
+      hostProfileId: parsed.hostProfileId ?? null,
+    };
   } catch {
     return null;
   }
@@ -28,4 +35,8 @@ export function loadUser(): StoredUser | null {
 export function clearUser(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(STORAGE_KEY);
+}
+
+export function getStoredUserId(): string | null {
+  return loadUser()?.id ?? null;
 }

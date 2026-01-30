@@ -20,9 +20,15 @@ export async function authRoutes(fastify: FastifyInstance) {
         wallet: { create: { balance: 0 } },
         host: body.role === 'HOST' ? { create: { displayName: body.name } } : undefined,
       },
+      include: { host: true },
     });
 
-    return reply.send({ user });
+    return reply.send({
+      user,
+      userId: user.id,
+      role: user.role,
+      hostProfileId: user.host?.id ?? null,
+    });
   });
 
   fastify.post('/auth/login', async (request, reply) => {
@@ -33,7 +39,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     const body = schema.parse(request.body);
     const user = await fastify.prisma.user.findUnique({
       where: { email: body.email },
-      include: { wallet: true },
+      include: { wallet: true, host: true },
     });
 
     if (!user) {
@@ -43,6 +49,9 @@ export async function authRoutes(fastify: FastifyInstance) {
     return reply.send({
       token: 'mock-token',
       user,
+      userId: user.id,
+      role: user.role,
+      hostProfileId: user.host?.id ?? null,
     });
   });
 }

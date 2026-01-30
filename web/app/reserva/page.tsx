@@ -1,10 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { apiBaseUrl } from '../../lib/api';
-import { loadUser, type StoredUser } from '../../lib/session';
+import { fetchJson } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 
 import styles from './page.module.css';
 
@@ -13,23 +14,14 @@ export default function ReservaPage() {
   const router = useRouter();
   const pcId = searchParams.get('pcId');
   const [hours, setHours] = useState(1);
-  const [userId, setUserId] = useState('');
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const { user, isAuthenticated } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const stored = loadUser();
-    if (stored) {
-      setUser(stored);
-      setUserId(stored.id);
-    }
-  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!pcId) return;
-    if (!userId) {
+    if (!isAuthenticated || !user) {
       setError('Faca login para reservar.');
       return;
     }
@@ -37,19 +29,14 @@ export default function ReservaPage() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${apiBaseUrl}/sessions`, {
+      const data = await fetchJson<{ session: { id: string } }>('/sessions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pcId,
-          clientUserId: userId,
+          clientUserId: user.id,
           minutesPurchased: hours * 60,
         }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error ?? 'Erro ao reservar');
-      }
       router.push(`/sessao/${data.session.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro');
@@ -70,15 +57,10 @@ export default function ReservaPage() {
         {user ? (
           <p>Reservando como {user.name} ({user.email}).</p>
         ) : (
-          <label>
-            ID do usuário (mock)
-            <input
-              value={userId}
-              onChange={(event) => setUserId(event.target.value)}
-              placeholder="Informe o userId"
-              required
-            />
-          </label>
+          <p>
+            Faca login para reservar.{' '}
+            <Link href={`/login?next=/reserva?pcId=${pcId}`}>Entrar</Link>
+          </p>
         )}
         <label>
           Horas

@@ -1,6 +1,9 @@
 import { z } from 'zod';
+import { PCStatus } from '@prisma/client';
 
 import type { FastifyInstance } from 'fastify';
+
+import { requireUser } from '../utils/auth.js';
 
 export async function pcRoutes(fastify: FastifyInstance) {
   fastify.get('/pcs', async () => {
@@ -23,9 +26,9 @@ export async function pcRoutes(fastify: FastifyInstance) {
     return pc;
   });
 
-  fastify.post('/pcs', async (request) => {
+  fastify.post('/pcs', async (request, reply) => {
     const schema = z.object({
-      hostId: z.string(),
+      hostId: z.string().optional(),
       name: z.string(),
       level: z.enum(['A', 'B', 'C']),
       cpu: z.string(),
@@ -38,13 +41,25 @@ export async function pcRoutes(fastify: FastifyInstance) {
     });
 
     const body = schema.parse(request.body);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host) {
+      return reply.status(403).send({ error: 'Usuario nao e host' });
+    }
+
+    if (body.hostId && body.hostId !== user.host.id) {
+      return reply.status(403).send({ error: 'Host invalido' });
+    }
 
     return fastify.prisma.pC.create({
-      data: body,
+      data: {
+        ...body,
+        hostId: user.host.id,
+      },
     });
   });
 
-  fastify.put('/pcs/:id', async (request) => {
+  fastify.put('/pcs/:id', async (request, reply) => {
     const params = z.object({ id: z.string() }).parse(request.params);
     const schema = z.object({
       name: z.string().optional(),
@@ -60,6 +75,19 @@ export async function pcRoutes(fastify: FastifyInstance) {
     });
 
     const body = schema.parse(request.body);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host) {
+      return reply.status(403).send({ error: 'Usuario nao e host' });
+    }
+
+    const pc = await fastify.prisma.pC.findUnique({ where: { id: params.id } });
+    if (!pc) {
+      return reply.status(404).send({ error: 'PC nao encontrado' });
+    }
+    if (pc.hostId !== user.host.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
 
     return fastify.prisma.pC.update({
       where: { id: params.id },
@@ -67,9 +95,55 @@ export async function pcRoutes(fastify: FastifyInstance) {
     });
   });
 
-  fastify.delete('/pcs/:id', async (request) => {
+  fastify.delete('/pcs/:id', async (request, reply) => {
     const params = z.object({ id: z.string() }).parse(request.params);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host) {
+      return reply.status(403).send({ error: 'Usuario nao e host' });
+    }
+
+    const pc = await fastify.prisma.pC.findUnique({ where: { id: params.id } });
+    if (!pc) {
+      return reply.status(404).send({ error: 'PC nao encontrado' });
+    }
+    if (pc.hostId !== user.host.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
+
     await fastify.prisma.pC.delete({ where: { id: params.id } });
     return { ok: true };
+  });
+
+  fastify.patch('/pcs/:id/status', async (request, reply) => {
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const schema = z.object({
+      status: z.enum(['ONLINE', 'OFFLINE']),
+    });
+    const body = schema.parse(request.body);
+
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host) {
+      return reply.status(403).send({ error: 'Usuario nao e host' });
+    }
+
+    const pc = await fastify.prisma.pC.findUnique({ where: { id: params.id } });
+    if (!pc) {
+      return reply.status(404).send({ error: 'PC nao encontrado' });
+    }
+    if (pc.hostId !== user.host.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
+    if (pc.status === PCStatus.BUSY && body.status === 'OFFLINE') {
+      return reply.status(409).send({ error: 'PC ocupado' });
+    }
+
+    const updated = await fastify.prisma.pC.update({
+      where: { id: params.id },
+      data: { status: body.status },
+    });
+
+    return reply.send({ pc: updated });
   });
 }
