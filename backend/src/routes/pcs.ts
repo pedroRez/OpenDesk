@@ -144,6 +144,11 @@ export async function pcRoutes(fastify: FastifyInstance) {
       data: { status: body.status },
     });
 
+    await fastify.prisma.hostProfile.update({
+      where: { id: pc.hostId },
+      data: { lastSeenAt: new Date() },
+    });
+
     return reply.send({ pc: updated });
   });
 }

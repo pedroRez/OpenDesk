@@ -63,6 +63,18 @@ export default function HostDashboardPage() {
 
   useEffect(() => {
     if (!hostProfileId) return;
+    const ping = () =>
+      fetchJson(`/hosts/${hostProfileId}/heartbeat`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }).catch(() => undefined);
+    ping();
+    const intervalId = setInterval(ping, 25000);
+    return () => clearInterval(intervalId);
+  }, [hostProfileId]);
+
+  useEffect(() => {
+    if (!hostProfileId) return;
     setIsLoadingPcs(true);
     fetchJson<PC[]>('/pcs')
       .then((data) => {

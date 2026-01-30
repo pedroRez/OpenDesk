@@ -18,7 +18,7 @@ async function start() {
   try {
     await app.register(cors, {
       origin: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'x-user-id'],
     });
 

@@ -40,7 +40,7 @@ export async function hostRoutes(fastify: FastifyInstance) {
     });
   });
 
-  fastify.post('/hosts/:id/heartbeat', async (request) => {
+  fastify.post('/hosts/:id/heartbeat', async (request, reply) => {
     const paramsSchema = z.object({ id: z.string() });
     const params = paramsSchema.parse(request.params);
 
@@ -48,6 +48,11 @@ export async function hostRoutes(fastify: FastifyInstance) {
       status: z.enum(['ONLINE', 'OFFLINE', 'BUSY']).optional(),
     });
     const body = bodySchema.parse(request.body ?? {});
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host || user.host.id !== params.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
 
     await registerHeartbeat({
       prisma: fastify.prisma,

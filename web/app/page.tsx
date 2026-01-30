@@ -1,6 +1,9 @@
-import Link from 'next/link';
+'use client';
 
-import { apiBaseUrl } from '../lib/api';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+
+import { fetchJson } from '../lib/api';
 
 import styles from './page.module.css';
 
@@ -13,20 +16,28 @@ type PC = {
   host: { displayName: string };
 };
 
-async function getPCs(): Promise<PC[]> {
-  try {
-    const response = await fetch(`${apiBaseUrl}/pcs`, { cache: 'no-store' });
-    if (!response.ok) {
-      return [];
-    }
-    return response.json();
-  } catch {
-    return [];
-  }
-}
+export default function HomePage() {
+  const [pcs, setPcs] = useState<PC[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
-export default async function HomePage() {
-  const pcs = await getPCs();
+  const loadPcs = async () => {
+    try {
+      const data = await fetchJson<PC[]>('/pcs');
+      setPcs(data);
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar PCs');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPcs();
+    const intervalId = setInterval(loadPcs, 10000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   return (
     <main className={styles.container}>
@@ -37,12 +48,15 @@ export default async function HomePage() {
         </div>
       </header>
 
+      {isLoading && <p>Carregando PCs...</p>}
+      {error && <p>{error}</p>}
+
       <section className={styles.grid}>
         {pcs.map((pc) => (
           <article key={pc.id} className={styles.card}>
             <div>
               <h3>{pc.name}</h3>
-              <p>Nível {pc.level}</p>
+              <p>Nivel {pc.level}</p>
               <p>Host: {pc.host?.displayName ?? 'N/A'}</p>
             </div>
             <div className={styles.cardFooter}>
