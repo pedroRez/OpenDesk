@@ -30,11 +30,14 @@ Marketplace de aluguel de PCs remotos por hora. Este monorepo contém o MVP com 
    cp host/.env.example host/.env
    ```
 4. Rode migrations e seed do backend:
+   **Na raiz do repo**:
    ```bash
    pnpm --filter backend prisma:migrate
    pnpm --filter backend prisma:seed
    ```
+   (Alternativa: dentro de `backend/`, você pode usar `pnpm prisma:migrate` e `pnpm prisma:seed`.)
 5. Execute o modo dev (backend + web):
+   **Na raiz do repo**:
    ```bash
    pnpm dev
    ```
