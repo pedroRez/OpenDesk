@@ -1,9 +1,10 @@
 'use client';
 
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { apiBaseUrl } from '../../lib/api';
+import { loadUser, type StoredUser } from '../../lib/session';
 
 import styles from './page.module.css';
 
@@ -13,12 +14,25 @@ export default function ReservaPage() {
   const pcId = searchParams.get('pcId');
   const [hours, setHours] = useState(1);
   const [userId, setUserId] = useState('');
+  const [user, setUser] = useState<StoredUser | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const stored = loadUser();
+    if (stored) {
+      setUser(stored);
+      setUserId(stored.id);
+    }
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!pcId) return;
+    if (!userId) {
+      setError('Faca login para reservar.');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -53,15 +67,19 @@ export default function ReservaPage() {
       <h1>Reserva rápida</h1>
       <p>Escolha a quantidade de horas (1 a 4) para a sessão.</p>
       <form onSubmit={handleSubmit} className={styles.form}>
-        <label>
-          ID do usuário (mock)
-          <input
-            value={userId}
-            onChange={(event) => setUserId(event.target.value)}
-            placeholder="Informe o userId"
-            required
-          />
-        </label>
+        {user ? (
+          <p>Reservando como {user.name} ({user.email}).</p>
+        ) : (
+          <label>
+            ID do usuário (mock)
+            <input
+              value={userId}
+              onChange={(event) => setUserId(event.target.value)}
+              placeholder="Informe o userId"
+              required
+            />
+          </label>
+        )}
         <label>
           Horas
           <input

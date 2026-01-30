@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { apiBaseUrl } from '../../lib/api';
+import { saveUser } from '../../lib/session';
 
 import styles from './page.module.css';
 
@@ -19,6 +20,12 @@ export default function LoginPage() {
     });
     const data = await response.json();
     if (response.ok) {
+      saveUser({
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role,
+      });
       setMessage(`Bem-vindo, ${data.user.name}! (token mock: ${data.token})`);
     } else {
       setMessage(data.error ?? 'Erro ao entrar');

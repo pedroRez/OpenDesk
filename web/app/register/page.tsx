@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { apiBaseUrl } from '../../lib/api';
+import { saveUser } from '../../lib/session';
 
 import styles from './page.module.css';
 
@@ -21,7 +22,13 @@ export default function RegisterPage() {
     });
     const data = await response.json();
     if (response.ok) {
-      setMessage(`Conta criada! ID: ${data.user.id}`);
+      saveUser({
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role,
+      });
+      setMessage(`Conta criada! Bem-vindo, ${data.user.name}.`);
     } else {
       setMessage(data.error ?? 'Erro ao registrar');
     }

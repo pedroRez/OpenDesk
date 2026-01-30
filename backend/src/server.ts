@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 
 import { config } from './config.js';
 import { prismaPlugin } from './plugins/prisma.js';
@@ -13,37 +14,51 @@ import { expireSessions } from './services/sessionService.js';
 
 const app = Fastify({ logger: true });
 
-await app.register(prismaPlugin);
-
-app.get('/health', async () => ({ status: 'ok' }));
-
-await app.register(authRoutes);
-await app.register(hostRoutes);
-await app.register(pcRoutes);
-await app.register(softwareRoutes);
-await app.register(sessionRoutes);
-await app.register(walletRoutes);
-
-setInterval(async () => {
+async function start() {
   try {
-    const expired = await expireSessions(app.prisma);
-    if (expired > 0) {
-      app.log.info({ expired }, 'Sessions expired');
-    }
-  } catch (error) {
-    app.log.error({ error }, 'Failed to expire sessions');
-  }
-}, config.sessionExpirationIntervalMs);
+    await app.register(cors, {
+      origin: ['http://localhost:3000'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    });
 
-setInterval(async () => {
-  try {
-    const hostsDown = await handleHostTimeouts(app.prisma);
-    if (hostsDown > 0) {
-      app.log.warn({ hostsDown }, 'Hosts marked as down');
-    }
-  } catch (error) {
-    app.log.error({ error }, 'Failed to handle host timeouts');
-  }
-}, config.hostHeartbeatCheckIntervalMs);
+    await app.register(prismaPlugin);
 
-app.listen({ port: config.port, host: '0.0.0.0' });
+    app.get('/health', async () => ({ status: 'ok' }));
+
+    await app.register(authRoutes);
+    await app.register(hostRoutes);
+    await app.register(pcRoutes);
+    await app.register(softwareRoutes);
+    await app.register(sessionRoutes);
+    await app.register(walletRoutes);
+
+    setInterval(async () => {
+      try {
+        const expired = await expireSessions(app.prisma);
+        if (expired > 0) {
+          app.log.info({ expired }, 'Sessions expired');
+        }
+      } catch (error) {
+        app.log.error({ error }, 'Failed to expire sessions');
+      }
+    }, config.sessionExpirationIntervalMs);
+
+    setInterval(async () => {
+      try {
+        const hostsDown = await handleHostTimeouts(app.prisma);
+        if (hostsDown > 0) {
+          app.log.warn({ hostsDown }, 'Hosts marked as down');
+        }
+      } catch (error) {
+        app.log.error({ error }, 'Failed to handle host timeouts');
+      }
+    }, config.hostHeartbeatCheckIntervalMs);
+
+    await app.listen({ port: config.port, host: '0.0.0.0' });
+  } catch (error) {
+    app.log.error({ error }, 'Failed to start server');
+    process.exit(1);
+  }
+}
+
+start();
