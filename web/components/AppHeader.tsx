@@ -25,6 +25,7 @@ export default function AppHeader() {
       <nav className={styles.nav}>
         <Link href="/">Marketplace</Link>
         <Link href="/host/dashboard">Painel do Host</Link>
+        <Link href="/docs">Ajuda</Link>
       </nav>
 
       <div className={styles.auth}>

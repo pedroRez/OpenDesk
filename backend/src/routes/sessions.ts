@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { SessionStatus } from '@prisma/client';
 
 import { endSession, startSession, createSession, SessionError } from '../services/sessionService.js';
+import { requireUser } from '../utils/auth.js';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -28,7 +30,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
         return reply.status(error.status).send({ error: error.message, code: error.code });
       }
 
-      const message = error instanceof Error ? error.message : 'Erro ao criar sessão';
+      const message = error instanceof Error ? error.message : 'Erro ao criar sessao';
       return reply.status(400).send({ error: message });
     }
   });
@@ -44,7 +46,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
         return reply.status(error.status).send({ error: error.message, code: error.code });
       }
 
-      const message = error instanceof Error ? error.message : 'Erro ao iniciar sessão';
+      const message = error instanceof Error ? error.message : 'Erro ao iniciar sessao';
       return reply.status(400).send({ error: message });
     }
   });
@@ -71,13 +73,15 @@ export async function sessionRoutes(fastify: FastifyInstance) {
         return reply.status(error.status).send({ error: error.message, code: error.code });
       }
 
-      const message = error instanceof Error ? error.message : 'Erro ao encerrar sessão';
+      const message = error instanceof Error ? error.message : 'Erro ao encerrar sessao';
       return reply.status(400).send({ error: message });
     }
   });
 
   fastify.get('/sessions/:id', async (request, reply) => {
     const params = z.object({ id: z.string() }).parse(request.params);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
 
     const session = await fastify.prisma.session.findUnique({
       where: { id: params.id },
@@ -85,9 +89,26 @@ export async function sessionRoutes(fastify: FastifyInstance) {
     });
 
     if (!session) {
-      return reply.status(404).send({ error: 'Sessão não encontrada' });
+      return reply.status(404).send({ error: 'Sessao nao encontrada' });
     }
 
-    return reply.send({ session });
+    if (session.clientUserId !== user.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
+
+    const minutesUsed =
+      session.status === SessionStatus.ACTIVE && session.startAt
+        ? Math.min(
+            session.minutesPurchased,
+            Math.max(0, Math.ceil((Date.now() - session.startAt.getTime()) / 60000)),
+          )
+        : session.minutesUsed;
+
+    return reply.send({
+      session: {
+        ...session,
+        minutesUsed,
+      },
+    });
   });
 }

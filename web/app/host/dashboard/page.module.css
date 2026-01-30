@@ -8,10 +8,16 @@
 .form {
   display: grid;
   gap: 12px;
-  max-width: 360px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 760px;
   background: #fff;
   padding: 16px;
   border-radius: 12px;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
 }
 
 .form input,
@@ -24,6 +30,7 @@
 }
 
 .form button {
+  grid-column: 1 / -1;
   padding: 10px 12px;
   border-radius: 8px;
   background: #0f172a;
@@ -72,6 +79,11 @@
   align-items: center;
 }
 
+.pcInfo {
+  display: grid;
+  gap: 6px;
+}
+
 .pcStatus {
   font-size: 12px;
   background: #e2e8f0;
@@ -83,6 +95,37 @@
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.editPanel {
+  margin-top: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.editPanel input {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5f5;
+  margin-top: 6px;
+}
+
+.editActions {
+  display: flex;
+  gap: 8px;
+}
+
+.editActions button {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: #0f172a;
+  color: #fff;
 }
 
 .toggle {
@@ -105,4 +148,30 @@
   max-width: 420px;
   display: grid;
   gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  border: 1px solid #cbd5f5;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.tabActive {
+  background: #0f172a;
+  color: #fff;
+  border-color: #0f172a;
 }

@@ -72,6 +72,9 @@ model PC {
   vramGb              Int
   storageType         String
   internetUploadMbps  Int
+  connectionHost      String?
+  connectionPort      Int?          @default(47990)
+  connectionNotes     String?
   pricePerHour        Float
   status              PCStatus      @default(ONLINE)
   createdAt           DateTime      @default(now())

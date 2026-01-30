@@ -1,0 +1,59 @@
+.container {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  padding: 32px;
+}
+
+.sidebar {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  height: fit-content;
+  display: grid;
+  gap: 12px;
+}
+
+.nav {
+  display: grid;
+  gap: 8px;
+}
+
+.content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.section {
+  display: grid;
+  gap: 8px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  font-size: 12px;
+}
+
+.checklist {
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.steps {
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 900px) {
+  .container {
+    grid-template-columns: 1fr;
+  }
+}

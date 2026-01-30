@@ -12,7 +12,7 @@
 
 > A web usa um auth mock: guarda o `userId` no `localStorage` e envia o header `x-user-id` nas requests.
 
-## Teste de autenticação e permissões
+## Teste de autenticacao e permissoes
 1. Abra `/register`, crie uma conta.
    - Deve redirecionar para `/`.
    - O header mostra `Ola, <nome/email>` e o botao `Sair`.
@@ -29,3 +29,14 @@
 6. Reserve um PC:
    - Acesse um PC no marketplace e clique `Reservar`.
    - O userId e usado automaticamente (sem digitar ID).
+
+## Teste de streaming (MVP com Sunshine/Moonlight)
+1. Host instala Sunshine no PC (manual).
+2. Cliente instala Moonlight no dispositivo (manual).
+3. Host cadastra o PC com:
+   - `connectionHost` (IP/DNS)
+   - `connectionPort` (ex: 47990)
+   - `connectionNotes` (opcional)
+4. Cliente reserva a sessao e abre a pagina `/sessao/<id>`.
+5. Cliente usa os dados na tela para conectar via Moonlight.
+6. Se falhar, veja `/docs/rede` e `/docs/falhas`.

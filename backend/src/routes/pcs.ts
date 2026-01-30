@@ -37,6 +37,9 @@ export async function pcRoutes(fastify: FastifyInstance) {
       vramGb: z.number(),
       storageType: z.string(),
       internetUploadMbps: z.number(),
+      connectionHost: z.string().min(1).optional(),
+      connectionPort: z.number().int().min(1).max(65535).optional(),
+      connectionNotes: z.string().max(200).optional(),
       pricePerHour: z.number(),
     });
 
@@ -51,10 +54,12 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Host invalido' });
     }
 
+    const { hostId: _hostId, ...payload } = body;
     return fastify.prisma.pC.create({
       data: {
-        ...body,
+        ...payload,
         hostId: user.host.id,
+        connectionPort: body.connectionPort ?? 47990,
       },
     });
   });
@@ -70,6 +75,9 @@ export async function pcRoutes(fastify: FastifyInstance) {
       vramGb: z.number().optional(),
       storageType: z.string().optional(),
       internetUploadMbps: z.number().optional(),
+      connectionHost: z.string().min(1).optional(),
+      connectionPort: z.number().int().min(1).max(65535).optional(),
+      connectionNotes: z.string().max(200).optional(),
       pricePerHour: z.number().optional(),
       status: z.enum(['ONLINE', 'OFFLINE', 'BUSY']).optional(),
     });
@@ -89,9 +97,14 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Sem permissao' });
     }
 
+    const data = { ...body };
+    if (body.connectionPort === undefined) {
+      delete data.connectionPort;
+    }
+
     return fastify.prisma.pC.update({
       where: { id: params.id },
-      data: body,
+      data,
     });
   });
 

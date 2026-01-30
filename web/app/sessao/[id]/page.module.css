@@ -9,6 +9,8 @@
   background: #fff;
   padding: 16px;
   border-radius: 12px;
+  display: grid;
+  gap: 8px;
 }
 
 .token {
@@ -18,4 +20,32 @@
   color: #fff;
   border-radius: 8px;
   margin: 12px 0;
+}
+
+.meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.status {
+  background: #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.steps {
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.linkButton {
+  display: inline-block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #1d4ed8;
+  color: #fff;
+  width: fit-content;
 }

@@ -16,6 +16,9 @@ type PCDetail = {
   internetUploadMbps: number;
   pricePerHour: number;
   status: string;
+  connectionHost?: string | null;
+  connectionPort?: number | null;
+  connectionNotes?: string | null;
   softwareLinks: { software: { name: string } }[];
 };
 
@@ -67,6 +70,12 @@ export default async function PCPage({ params }: { params: { id: string } }) {
             <li key={item.software.name}>{item.software.name}</li>
           ))}
         </ul>
+      </section>
+      <section>
+        <h3>Dados de conexao</h3>
+        <p>Host: {pc.connectionHost ?? 'Nao informado'}</p>
+        <p>Porta: {pc.connectionPort ?? 47990}</p>
+        {pc.connectionNotes && <p>Notas: {pc.connectionNotes}</p>}
       </section>
       <Link className={styles.button} href={`/reserva?pcId=${pc.id}`}>
         Reservar por R$ {pc.pricePerHour}/hora
