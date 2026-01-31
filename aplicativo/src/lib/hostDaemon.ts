@@ -1,9 +1,11 @@
-import { Command, type Child } from '@tauri-apps/api/shell';
+import { Command } from '@tauri-apps/plugin-shell';
 import { resolveResource } from '@tauri-apps/api/path';
 
 const DAEMON_RESOURCE = 'host-daemon/dist/index.js';
 
-let daemonProcess: Child | null = null;
+type DaemonProcess = { kill: () => Promise<void> };
+
+let daemonProcess: DaemonProcess | null = null;
 
 export type HostDaemonConfig = {
   apiUrl: string;
@@ -53,7 +55,7 @@ export async function startHostDaemon(config: HostDaemonConfig): Promise<void> {
     args.push('--interval-ms', String(config.intervalMs));
   }
 
-  const command = new Command('node', args);
+  const command = Command.create('node', args);
   daemonProcess = await command.spawn();
 }
 
