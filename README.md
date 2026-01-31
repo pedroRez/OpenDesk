@@ -13,6 +13,8 @@ Marketplace de aluguel de PCs remotos por hora. Este monorepo contém o MVP com 
 - Node.js 20+
 - pnpm
 - Docker (opcional, para Postgres/Redis)
+- Rust (via rustup) e toolchain de build para o app desktop (Tauri)
+  - Windows: Visual Studio Build Tools com "Desktop development with C++" + Windows SDK
 
 ## Configuração rápida
 1. Instale dependências:
@@ -40,6 +42,15 @@ Marketplace de aluguel de PCs remotos por hora. Este monorepo contém o MVP com 
    **Na raiz do repo**:
    ```bash
    pnpm dev
+   ```
+
+## App desktop (Tauri)
+Para rodar o aplicativo desktop:
+1. Garanta que Rust e o toolchain de build estão instalados.
+   - Windows: instale o Visual Studio Build Tools com o workload de C++.
+2. Rode:
+   ```bash
+   pnpm --filter aplicativo dev
    ```
 
 A API ficará em `http://localhost:3333` e o frontend em `http://localhost:3000`.
