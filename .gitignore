@@ -6,3 +6,4 @@ dist
 .next
 coverage
 postgres_data
+**/src-tauri/target/
