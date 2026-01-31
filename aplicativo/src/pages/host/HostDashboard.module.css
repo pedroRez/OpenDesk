@@ -1,0 +1,140 @@
+.container {
+  display: grid;
+  gap: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+}
+
+.cta {
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.9);
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+}
+
+.cta button {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.form {
+  padding: 22px;
+  border-radius: 20px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.92);
+  display: grid;
+  gap: 16px;
+  box-shadow: var(--shadow);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+
+input,
+select {
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: #fff;
+}
+
+.form button {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.list {
+  display: grid;
+  gap: 12px;
+}
+
+.pcCard {
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.9);
+  display: grid;
+  gap: 12px;
+}
+
+.pcInfo {
+  display: grid;
+  gap: 4px;
+}
+
+.pcStatus {
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.pcActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pcActions button {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.editPanel {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px dashed var(--stroke);
+  display: grid;
+  gap: 10px;
+}
+
+.editActions {
+  display: flex;
+  gap: 8px;
+}
+
+.ghost {
+  background: transparent !important;
+  color: var(--ink) !important;
+  border: 1px solid var(--stroke) !important;
+}
+
+.message {
+  font-weight: 600;
+  color: var(--accent-strong);
+}

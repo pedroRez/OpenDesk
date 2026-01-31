@@ -1,0 +1,26 @@
+.container {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--stroke);
+  box-shadow: var(--shadow);
+}
+
+.specs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.button {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  text-align: center;
+  width: fit-content;
+}

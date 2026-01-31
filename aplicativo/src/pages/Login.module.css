@@ -1,0 +1,36 @@
+.container {
+  max-width: 420px;
+  padding: 28px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--stroke);
+  box-shadow: var(--shadow);
+}
+
+.form {
+  display: grid;
+  gap: 16px;
+}
+
+label {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+}
+
+input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: #fff;
+}
+
+button {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+}

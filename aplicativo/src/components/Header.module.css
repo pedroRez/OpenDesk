@@ -1,0 +1,148 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px;
+  background: rgba(255, 247, 239, 0.85);
+  border-bottom: 1px solid var(--stroke);
+  backdrop-filter: blur(16px);
+  gap: 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ff7a2f, #ffb36d);
+  color: #fff7ef;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 12px 24px rgba(244, 93, 18, 0.35);
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.modeBadge {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #1f1f2c;
+  color: #fff7ef;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nav {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.link {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.link:hover {
+  border-color: var(--stroke);
+  transform: translateY(-1px);
+}
+
+.linkActive {
+  background: var(--accent);
+  color: #fff7ef;
+  border-color: transparent;
+  box-shadow: 0 12px 24px rgba(244, 93, 18, 0.25);
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.userMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+}
+
+.userName {
+  font-weight: 600;
+}
+
+.userEmail {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.primaryButton,
+.ghostButton {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.primaryButton {
+  background: var(--accent);
+  color: #fff7ef;
+  box-shadow: 0 12px 24px rgba(244, 93, 18, 0.25);
+}
+
+.primaryButton:hover {
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+}
+
+.ghostButton {
+  background: transparent;
+  border: 1px solid var(--stroke);
+}
+
+.ghostButton:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 960px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .nav {
+    flex-wrap: wrap;
+  }
+
+  .user {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

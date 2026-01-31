@@ -1,0 +1,50 @@
+.container {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--stroke);
+  box-shadow: var(--shadow);
+}
+
+.panel {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--stroke);
+  display: grid;
+  gap: 12px;
+}
+
+.warning {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(255, 122, 47, 0.15);
+  font-weight: 600;
+}
+
+button {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ghost {
+  background: transparent;
+  border: 1px dashed var(--stroke);
+  color: var(--ink);
+}
+
+.details {
+  display: grid;
+  gap: 6px;
+}
+
+.muted {
+  color: var(--muted);
+}

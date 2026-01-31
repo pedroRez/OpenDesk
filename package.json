@@ -10,7 +10,7 @@
     "aplicativo"
   ],
   "scripts": {
-    "dev": "concurrently -k -n backend,web -c blue,green \"pnpm --filter backend dev\" \"pnpm --filter web dev\"",
+    "dev": "concurrently -k -n backend,web,desktop -c blue,green,magenta \"pnpm --filter backend dev\" \"pnpm --filter web dev\" \"pnpm --filter aplicativo dev\"",
     "lint": "pnpm --filter backend lint && pnpm --filter web lint",
     "format": "prettier --write .",
     "test": "pnpm --filter backend test"

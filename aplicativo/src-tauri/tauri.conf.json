@@ -1,0 +1,33 @@
+{
+  "build": {
+    "beforeDevCommand": "pnpm host-daemon:build && pnpm dev:web",
+    "beforeBuildCommand": "pnpm host-daemon:build && pnpm build:web",
+    "devPath": "http://localhost:5173",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "OpenDesk Desktop",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "path": { "all": true },
+      "shell": { "all": true },
+      "window": { "all": true }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.opendesk.desktop",
+      "resources": ["../host-daemon/dist/index.js"]
+    },
+    "windows": [
+      {
+        "title": "OpenDesk Desktop",
+        "width": 1200,
+        "height": 800,
+        "resizable": true
+      }
+    ]
+  }
+}

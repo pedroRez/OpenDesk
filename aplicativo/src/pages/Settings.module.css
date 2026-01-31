@@ -1,0 +1,39 @@
+.container {
+  display: grid;
+  gap: 20px;
+}
+
+.card {
+  padding: 22px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--stroke);
+  box-shadow: var(--shadow);
+}
+
+.modeButtons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.modeButtons button {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.modeButtons .active {
+  background: var(--accent);
+  color: #fff7ef;
+  border-color: transparent;
+  box-shadow: 0 12px 24px rgba(244, 93, 18, 0.25);
+}
+
+.message {
+  font-weight: 600;
+  color: var(--accent-strong);
+}

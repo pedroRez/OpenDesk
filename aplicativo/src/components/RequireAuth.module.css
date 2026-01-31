@@ -1,0 +1,25 @@
+.loading {
+  padding: 32px;
+  font-weight: 500;
+}
+
+.panel {
+  padding: 32px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--stroke);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.panel button {
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+}
