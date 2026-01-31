@@ -7,3 +7,8 @@ dist
 coverage
 postgres_data
 **/src-tauri/target/
+**/src-tauri/gen/
+*.log
+*.tmp
+Thumbs.db
+.DS_Store
