@@ -52,6 +52,19 @@ Este pacote contem o aplicativo desktop unico do OpenDesk, com escolha de modo C
 4) Aguarde alguns segundos
 5) Verifique no backend o `lastSeenAt` do host (ex: via `GET /hosts`)
 
+## Auth (login/register)
+### Como testar login/register na Home
+1) Abra o app e selecione o modo Cliente ou Host.
+2) Na Home/Marketplace, use **Entrar** ou **Criar conta** no header.
+3) Preencha o formulario e confirme.
+4) O app deve redirecionar para `/` e mostrar o estado logado no header.
+
+### Como checar persistencia e rotas protegidas
+1) Depois de logar, feche e reabra o app: o usuario deve continuar logado.
+2) Deslogue e tente abrir uma rota protegida (ex: `/host/dashboard`):
+   - o app deve redirecionar para `/login?next=/host/dashboard`.
+3) Ao logar, o app deve voltar para a rota solicitada via `next`.
+
 ## Observacoes
 - Streaming real ainda nao esta embutido. O app usa um provider placeholder.
 - Para empacotamento futuro, o `host-daemon` esta em `aplicativo/host-daemon`.

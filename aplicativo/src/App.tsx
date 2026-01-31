@@ -30,14 +30,6 @@ function HomeRedirect() {
   return <ModeSelect />;
 }
 
-function ModeGate({ children }: { children: ReactNode }) {
-  const { mode } = useMode();
-  if (!mode) {
-    return <ModeSelect />;
-  }
-  return <>{children}</>;
-}
-
 function RequireMode({ mode, children }: { mode: 'CLIENT' | 'HOST'; children: ReactNode }) {
   const { mode: currentMode } = useMode();
   if (!currentMode) {
@@ -104,7 +96,7 @@ function AppRoutes() {
         path="/host/dashboard"
         element={
           <RequireMode mode="HOST">
-            <RequireAuth label="Faca login para acessar o painel do host.">
+            <RequireAuth label="Faca login para acessar o painel do host." redirectToLogin>
               <HostDashboard />
             </RequireAuth>
           </RequireMode>
@@ -124,9 +116,7 @@ export default function App() {
           <div className={styles.app}>
             <Header />
             <main className={styles.main}>
-              <ModeGate>
-                <AppRoutes />
-              </ModeGate>
+              <AppRoutes />
             </main>
           </div>
         </HashRouter>

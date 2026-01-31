@@ -19,7 +19,11 @@ export default function Marketplace() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const loadPcs = async () => {
+  const loadPcs = async (showLoading = false) => {
+    if (showLoading) {
+      setIsLoading(true);
+      setError('');
+    }
     try {
       const data = await fetchJson<PC[]>('/pcs');
       setPcs(data.filter((pc) => pc.status === 'ONLINE'));
@@ -27,13 +31,15 @@ export default function Marketplace() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar PCs');
     } finally {
-      setIsLoading(false);
+      if (showLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadPcs();
-    const intervalId = setInterval(loadPcs, 10000);
+    loadPcs(true);
+    const intervalId = setInterval(() => loadPcs(false), 10000);
     return () => clearInterval(intervalId);
   }, []);
 
@@ -48,7 +54,20 @@ export default function Marketplace() {
       </header>
 
       {isLoading && <p>Carregando PCs...</p>}
-      {error && <p>{error}</p>}
+      {error && (
+        <div className={styles.error}>
+          <div>
+            <strong>Falha ao carregar PCs</strong>
+            <p>{error}</p>
+          </div>
+          <button type="button" onClick={() => loadPcs(true)} className={styles.retryButton}>
+            Tentar novamente
+          </button>
+        </div>
+      )}
+      {!isLoading && !error && pcs.length === 0 && (
+        <div className={styles.empty}>Nenhum PC online no momento. Tente novamente em alguns instantes.</div>
+      )}
 
       <div className={styles.grid}>
         {pcs.map((pc) => (

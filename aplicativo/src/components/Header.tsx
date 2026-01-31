@@ -22,6 +22,11 @@ export default function Header() {
             Modo {mode === 'CLIENT' ? 'Cliente' : 'Host'}
           </span>
         )}
+        {mode && (
+          <NavLink to="/settings" className={styles.modeLink}>
+            Trocar modo
+          </NavLink>
+        )}
       </div>
 
       <nav className={styles.nav}>
@@ -59,7 +64,7 @@ export default function Header() {
         {user ? (
           <>
             <div className={styles.userMeta}>
-              <span className={styles.userName}>{user.name}</span>
+              <span className={styles.userName}>Ola, {user.name}</span>
               <span className={styles.userEmail}>{user.email}</span>
             </div>
             <button type="button" onClick={logout} className={styles.ghostButton}>
