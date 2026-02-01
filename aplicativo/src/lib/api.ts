@@ -1,6 +1,9 @@
 import { getStoredUserId } from './session';
 
 export const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3333';
+export const devBypassCredits =
+  import.meta.env.VITE_DEV_BYPASS_CREDITS === 'true' ||
+  import.meta.env.VITE_DEV_BYPASS_CREDITS === '1';
 
 type ApiErrorPayload = {
   error?: string;
@@ -13,6 +16,9 @@ function buildHeaders(init?: RequestInit): Headers {
   const userId = getStoredUserId();
   if (userId && !headers.has('x-user-id')) {
     headers.set('x-user-id', userId);
+  }
+  if (devBypassCredits && !headers.has('x-dev-bypass-credits')) {
+    headers.set('x-dev-bypass-credits', 'true');
   }
   const hasBody = Boolean(init?.body);
   if (hasBody && !headers.has('Content-Type') && !(init?.body instanceof FormData)) {

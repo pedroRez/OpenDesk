@@ -15,6 +15,9 @@ export async function sessionRoutes(fastify: FastifyInstance) {
     });
 
     const body = schema.parse(request.body);
+    const header = request.headers['x-dev-bypass-credits'];
+    const headerValue = Array.isArray(header) ? header[0] : header;
+    const allowDevBypass = process.env.NODE_ENV !== 'production' && headerValue === 'true';
 
     try {
       const session = await createSession({
@@ -22,6 +25,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
         pcId: body.pcId,
         clientId: body.clientUserId,
         minutesPurchased: body.minutesPurchased,
+        bypassCredits: allowDevBypass,
       });
 
       return reply.status(201).send({ session, code: 'SESSION_CREATED' });

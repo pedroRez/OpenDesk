@@ -39,6 +39,8 @@ a {
 
 button {
   font-family: inherit;
+  color: var(--ink);
+  background-color: transparent;
 }
 
 input,

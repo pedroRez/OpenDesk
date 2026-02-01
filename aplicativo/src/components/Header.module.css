@@ -58,7 +58,7 @@
 
 .modeSwitch {
   border: none;
-  background: transparent;
+  background-color: transparent;
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--accent-strong);
@@ -79,7 +79,8 @@
   padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.7);
+  background-color: rgba(255, 255, 255, 0.7);
+  color: var(--ink);
   font-weight: 500;
   transition: all 0.2s ease;
 }
@@ -140,7 +141,8 @@
 }
 
 .ghostButton {
-  background: transparent;
+  background-color: transparent;
+  color: var(--ink);
   border: 1px solid var(--stroke);
 }
 

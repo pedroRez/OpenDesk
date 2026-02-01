@@ -21,7 +21,8 @@
   padding: 10px 16px;
   border-radius: 999px;
   border: 1px solid var(--stroke);
-  background: transparent;
+  background-color: transparent;
+  color: var(--ink);
   cursor: pointer;
   font-weight: 600;
 }

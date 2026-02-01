@@ -4,6 +4,7 @@
 - Backend rodando (`pnpm --filter backend dev`)
 - Desktop rodando (`pnpm --filter aplicativo dev`)
 - `.env` configurado com `VITE_API_URL`
+- (DEV) Para ignorar creditos no fluxo: `VITE_DEV_BYPASS_CREDITS=true`
 
 ## Fluxo Cliente
 - [ ] Abrir o app e escolher modo **Cliente**.
@@ -14,6 +15,8 @@
 - [ ] Entrar na sessao e ver status/tempo restante.
 - [ ] Clicar em **Conectar** e ver instrucoes internas.
 - [ ] Encerrar a sessao e voltar ao marketplace com feedback.
+ - [ ] Com `VITE_DEV_BYPASS_CREDITS=true`, a reserva deve funcionar mesmo com saldo 0.
+ - [ ] Com a flag desativada, bloquear e mostrar "Saldo insuficiente" + CTA.
 
 ## Fluxo Host
 - [ ] Abrir o app e escolher modo **Host**.

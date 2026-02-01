@@ -38,8 +38,9 @@ export async function createSession(params: {
   pcId: string;
   clientId: string;
   minutesPurchased: number;
+  bypassCredits?: boolean;
 }): Promise<Session> {
-  const { prisma, pcId, clientId, minutesPurchased } = params;
+  const { prisma, pcId, clientId, minutesPurchased, bypassCredits = false } = params;
 
   return prisma.$transaction(async (tx) => {
     const pcRows = await tx.$queryRaw<{
@@ -75,8 +76,17 @@ export async function createSession(params: {
     const priceTotal = (pc.pricePerHour * minutesPurchased) / 60;
 
     const wallet = await tx.wallet.findUnique({ where: { userId: clientId } });
-    if (!wallet || wallet.balance < priceTotal) {
-      throw new SessionError('Saldo insuficiente', 'SALDO_INSUFICIENTE', 400);
+    if (!wallet) {
+      if (bypassCredits) {
+        await tx.wallet.create({ data: { userId: clientId, balance: 0 } });
+      } else {
+        throw new SessionError('Saldo insuficiente', 'SALDO_INSUFICIENTE', 400);
+      }
+    }
+    if (!bypassCredits) {
+      if (!wallet || wallet.balance < priceTotal) {
+        throw new SessionError('Saldo insuficiente', 'SALDO_INSUFICIENTE', 400);
+      }
     }
 
     const session = await tx.session.create({
@@ -89,21 +99,22 @@ export async function createSession(params: {
       },
     });
 
-    await tx.wallet.update({
-      where: { userId: clientId },
-      data: { balance: { decrement: priceTotal } },
-    });
+    if (!bypassCredits) {
+      await tx.wallet.update({
+        where: { userId: clientId },
+        data: { balance: { decrement: priceTotal } },
+      });
 
-    await tx.walletTx.create({
-      data: {
-        userId: clientId,
-        type: WalletTxType.DEBIT,
-        amount: priceTotal,
-        reason: 'Reserva de sessão',
-        sessionId: session.id,
-      },
-    });
-
+      await tx.walletTx.create({
+        data: {
+          userId: clientId,
+          type: WalletTxType.DEBIT,
+          amount: priceTotal,
+          reason: 'Reserva de sessao',
+          sessionId: session.id,
+        },
+      });
+    }
     return session;
   });
 }

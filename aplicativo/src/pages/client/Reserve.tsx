@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { useToast } from '../../components/Toast';
-import { request } from '../../lib/api';
+import { devBypassCredits, request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 
 import styles from './Reserve.module.css';
@@ -16,6 +16,7 @@ export default function Reserve() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const toast = useToast();
+  const isDevBypass = devBypassCredits;
   const presets = [
     { label: '30m', minutes: 30 },
     { label: '1h', minutes: 60 },
@@ -59,6 +60,8 @@ export default function Reserve() {
     }
   };
 
+  const isCreditBlocked = error.toLowerCase().includes('saldo insuficiente');
+
   if (!pcId) {
     return <div className={styles.container}>Selecione um PC primeiro.</div>;
   }
@@ -67,6 +70,7 @@ export default function Reserve() {
     <div className={styles.container}>
       <h1>Reserva rapida</h1>
       <p>Escolha a duracao para iniciar a sessao imediatamente.</p>
+      {isDevBypass && <div className={styles.devNotice}>Modo teste: creditos ignorados.</div>}
       <form onSubmit={handleSubmit} className={styles.form}>
         {user ? (
           <p>
@@ -110,6 +114,18 @@ export default function Reserve() {
         </label>
         <p className={styles.summary}>Total: {minutesPurchased} minutos</p>
         {error && <span className={styles.error}>{error}</span>}
+        {isCreditBlocked && (
+          <div className={styles.creditCta}>
+            <button type="button" className={styles.secondaryButton} disabled>
+              {isDevBypass ? 'Modo teste ativado (DEV)' : 'Adicionar creditos (em breve)'}
+            </button>
+            <p className={styles.creditHint}>
+              {isDevBypass
+                ? 'O modo teste permite seguir o fluxo sem saldo.'
+                : 'Sem creditos suficientes para reservar agora.'}
+            </p>
+          </div>
+        )}
         <button type="submit" disabled={loading}>
           {loading ? 'Reservando...' : 'Reservar e iniciar'}
         </button>

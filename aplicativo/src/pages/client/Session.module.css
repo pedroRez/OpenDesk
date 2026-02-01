@@ -106,7 +106,8 @@
   padding: 8px 12px;
   border-radius: 999px;
   border: 1px solid var(--stroke);
-  background: transparent;
+  background-color: transparent;
+  color: var(--ink);
   cursor: pointer;
   font-weight: 600;
   width: fit-content;
@@ -121,7 +122,8 @@
   padding: 8px 12px;
   border-radius: 999px;
   border: 1px solid var(--stroke);
-  background: transparent;
+  background-color: transparent;
+  color: var(--ink);
   font-weight: 600;
   cursor: pointer;
   width: fit-content;
