@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { fetchJson } from './api';
+import { useMode } from './mode';
 import { clearUser, loadUser, saveUser, type StoredUser } from './session';
 
 type AuthContextValue = {
@@ -33,6 +34,7 @@ function normalizeUser(data: any): StoredUser {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { clearMode } = useMode();
   const [user, setUser] = useState<StoredUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -81,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     clearUser();
     setUser(null);
+    clearMode();
   };
 
   const updateUser = (patch: Partial<StoredUser>) => {

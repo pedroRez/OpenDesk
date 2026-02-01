@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../lib/auth';
 import { useMode } from '../lib/mode';
@@ -7,7 +7,18 @@ import styles from './Header.module.css';
 
 export default function Header() {
   const { user, logout } = useAuth();
-  const { mode } = useMode();
+  const { mode, clearMode } = useMode();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
+
+  const handleModeReset = () => {
+    clearMode();
+    navigate('/');
+  };
 
   return (
     <header className={styles.header}>
@@ -18,14 +29,14 @@ export default function Header() {
           <div className={styles.subtitle}>Marketplace & Host Console</div>
         </div>
         {mode && (
-          <span className={styles.modeBadge}>
-            Modo {mode === 'CLIENT' ? 'Cliente' : 'Host'}
-          </span>
-        )}
-        {mode && (
-          <NavLink to="/settings" className={styles.modeLink}>
-            Trocar modo
-          </NavLink>
+          <div className={styles.modeGroup}>
+            <span className={styles.modeBadge}>
+              Modo: {mode === 'CLIENT' ? 'Cliente' : 'Host'}
+            </span>
+            <button type="button" onClick={handleModeReset} className={styles.modeSwitch}>
+              Trocar modo
+            </button>
+          </div>
         )}
       </div>
 
@@ -67,7 +78,7 @@ export default function Header() {
               <span className={styles.userName}>Ola, {user.name}</span>
               <span className={styles.userEmail}>{user.email}</span>
             </div>
-            <button type="button" onClick={logout} className={styles.ghostButton}>
+            <button type="button" onClick={handleLogout} className={styles.ghostButton}>
               Sair
             </button>
           </>

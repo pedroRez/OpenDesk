@@ -15,6 +15,14 @@
   margin-top: 0;
 }
 
+.notice {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 236, 223, 0.95);
+  border: 1px solid rgba(244, 93, 18, 0.4);
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

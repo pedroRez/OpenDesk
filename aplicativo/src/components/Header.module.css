@@ -41,7 +41,6 @@
 }
 
 .modeBadge {
-  margin-left: 8px;
   padding: 4px 10px;
   border-radius: 999px;
   background: #1f1f2c;
@@ -51,15 +50,22 @@
   text-transform: uppercase;
 }
 
-.modeLink {
-  margin-left: 6px;
+.modeGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modeSwitch {
+  border: none;
+  background: transparent;
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--accent-strong);
-  text-decoration: none;
+  cursor: pointer;
 }
 
-.modeLink:hover {
+.modeSwitch:hover {
   text-decoration: underline;
 }
 

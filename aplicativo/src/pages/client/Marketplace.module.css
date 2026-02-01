@@ -82,9 +82,24 @@
   justify-content: space-between;
 }
 
+.specs {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .status {
   font-weight: 700;
   color: var(--accent-strong);
+}
+
+.cardActions {
+  display: grid;
+  gap: 8px;
 }
 
 .button {
@@ -94,4 +109,15 @@
   color: #fff7ef;
   text-align: center;
   font-weight: 600;
+}
+
+.secondaryLink {
+  text-align: center;
+  font-weight: 600;
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.secondaryLink:hover {
+  text-decoration: underline;
 }

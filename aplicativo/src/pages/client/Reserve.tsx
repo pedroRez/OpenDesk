@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { fetchJson } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -8,9 +8,8 @@ import { useAuth } from '../../lib/auth';
 import styles from './Reserve.module.css';
 
 export default function Reserve() {
-  const [searchParams] = useSearchParams();
+  const { pcId } = useParams();
   const navigate = useNavigate();
-  const pcId = searchParams.get('pcId');
   const [quantity, setQuantity] = useState(1);
   const [unit, setUnit] = useState<'HOURS' | 'MINUTES'>('HOURS');
   const { user, isAuthenticated } = useAuth();
@@ -70,7 +69,8 @@ export default function Reserve() {
           </p>
         ) : (
           <p>
-            Faca login para reservar. <Link to={`/login?next=/client/reserve?pcId=${pcId}`}>Entrar</Link>
+            Faca login para reservar.{' '}
+            <Link to={`/login?next=${encodeURIComponent(`/client/reserve/${pcId}`)}`}>Entrar</Link>
           </p>
         )}
         <div className={styles.row}>

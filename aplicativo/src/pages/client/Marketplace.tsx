@@ -12,6 +12,12 @@ type PC = {
   pricePerHour: number;
   status: 'ONLINE' | 'OFFLINE' | 'BUSY';
   host?: { displayName: string } | null;
+  cpu?: string;
+  ramGb?: number;
+  gpu?: string;
+  vramGb?: number;
+  storageType?: string;
+  internetUploadMbps?: number;
 };
 
 export default function Marketplace() {
@@ -76,14 +82,40 @@ export default function Marketplace() {
               <h3>{pc.name}</h3>
               <p>Nivel {pc.level}</p>
               <p>Host: {pc.host?.displayName ?? 'N/A'}</p>
+              <ul className={styles.specs}>
+                <li>
+                  <strong>CPU:</strong> {pc.cpu ?? 'Nao informado'}
+                </li>
+                <li>
+                  <strong>RAM:</strong> {pc.ramGb ? `${pc.ramGb} GB` : 'Nao informado'}
+                </li>
+                <li>
+                  <strong>GPU:</strong>{' '}
+                  {pc.gpu
+                    ? `${pc.gpu}${pc.vramGb ? ` (${pc.vramGb} GB VRAM)` : ''}`
+                    : 'Nao informado'}
+                </li>
+                <li>
+                  <strong>Storage:</strong> {pc.storageType ?? 'Nao informado'}
+                </li>
+                <li>
+                  <strong>Upload:</strong>{' '}
+                  {pc.internetUploadMbps ? `${pc.internetUploadMbps} Mbps` : 'Nao informado'}
+                </li>
+              </ul>
             </div>
             <div className={styles.cardFooter}>
               <span>R$ {pc.pricePerHour}/hora</span>
               <span className={styles.status}>{pc.status}</span>
             </div>
-            <Link className={styles.button} to={`/client/pcs/${pc.id}`}>
-              Ver detalhes
-            </Link>
+            <div className={styles.cardActions}>
+              <Link className={styles.button} to={`/client/reserve/${pc.id}`}>
+                Reservar
+              </Link>
+              <Link className={styles.secondaryLink} to={`/client/pcs/${pc.id}`}>
+                Ver detalhes
+              </Link>
+            </div>
           </article>
         ))}
       </div>

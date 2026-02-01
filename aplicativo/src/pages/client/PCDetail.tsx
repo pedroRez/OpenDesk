@@ -86,7 +86,7 @@ export default function PCDetail() {
         <p>Porta: {pc.connectionPort ?? 47990}</p>
         {pc.connectionNotes && <p>Notas: {pc.connectionNotes}</p>}
       </section>
-      <Link className={styles.button} to={`/client/reserve?pcId=${pc.id}`}>
+      <Link className={styles.button} to={`/client/reserve/${pc.id}`}>
         Reservar por R$ {pc.pricePerHour}/hora
       </Link>
     </div>

@@ -11,6 +11,7 @@ import { ModeProvider, useMode } from './lib/mode';
 import ModeSelect from './pages/ModeSelect';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Docs from './pages/Docs';
 import Settings from './pages/Settings';
 import Marketplace from './pages/client/Marketplace';
 import PCDetail from './pages/client/PCDetail';
@@ -33,7 +34,7 @@ function HomeRedirect() {
 function RequireMode({ mode, children }: { mode: 'CLIENT' | 'HOST'; children: ReactNode }) {
   const { mode: currentMode } = useMode();
   if (!currentMode) {
-    return <ModeSelect />;
+    return <Navigate to="/" replace state={{ requireMode: mode }} />;
   }
   if (currentMode !== mode) {
     return <Navigate to={currentMode === 'HOST' ? '/host/dashboard' : '/client/marketplace'} replace />;
@@ -48,6 +49,7 @@ function AppRoutes() {
       <Route path="/settings" element={<Settings />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/docs" element={<Docs />} />
       <Route
         path="/client/marketplace"
         element={
@@ -65,10 +67,10 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/client/reserve"
+        path="/client/reserve/:pcId"
         element={
           <RequireMode mode="CLIENT">
-            <RequireAuth label="Faca login para reservar um PC.">
+            <RequireAuth>
               <Reserve />
             </RequireAuth>
           </RequireMode>
@@ -78,7 +80,9 @@ function AppRoutes() {
         path="/client/session/:id"
         element={
           <RequireMode mode="CLIENT">
-            <Session />
+            <RequireAuth>
+              <Session />
+            </RequireAuth>
           </RequireMode>
         }
       />
@@ -86,7 +90,7 @@ function AppRoutes() {
         path="/client/connection/:id"
         element={
           <RequireMode mode="CLIENT">
-            <RequireAuth label="Faca login para conectar.">
+            <RequireAuth>
               <Connection />
             </RequireAuth>
           </RequireMode>
@@ -96,7 +100,7 @@ function AppRoutes() {
         path="/host/dashboard"
         element={
           <RequireMode mode="HOST">
-            <RequireAuth label="Faca login para acessar o painel do host." redirectToLogin>
+            <RequireAuth>
               <HostDashboard />
             </RequireAuth>
           </RequireMode>
@@ -109,8 +113,8 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ModeProvider>
+    <ModeProvider>
+      <AuthProvider>
         <HostDaemonManager />
         <HashRouter>
           <div className={styles.app}>
@@ -120,7 +124,7 @@ export default function App() {
             </main>
           </div>
         </HashRouter>
-      </ModeProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </ModeProvider>
   );
 }

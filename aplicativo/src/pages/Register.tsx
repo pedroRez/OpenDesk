@@ -1,12 +1,13 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../lib/auth';
 
 import styles from './Register.module.css';
 
 export default function Register() {
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { register } = useAuth();
   const [name, setName] = useState('');
@@ -22,7 +23,8 @@ export default function Register() {
     try {
       const user = await register({ name, email, role });
       setMessage(`Conta criada! Bem-vindo, ${user.name}.`);
-      navigate('/');
+      const next = searchParams.get('next') ?? '/';
+      navigate(next);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Erro ao registrar');
     } finally {

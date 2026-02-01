@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useMode, type AppMode } from '../lib/mode';
 
@@ -7,6 +7,8 @@ import styles from './ModeSelect.module.css';
 export default function ModeSelect() {
   const { setMode } = useMode();
   const navigate = useNavigate();
+  const location = useLocation();
+  const requiredMode = (location.state as { requireMode?: AppMode } | null)?.requireMode;
 
   const handleSelect = (mode: AppMode) => {
     setMode(mode);
@@ -18,6 +20,11 @@ export default function ModeSelect() {
       <div className={styles.hero}>
         <h1>Bem-vindo ao OpenDesk Desktop</h1>
         <p>Escolha como voce quer usar o app agora. Voce pode trocar depois em Configuracoes.</p>
+        {requiredMode && (
+          <p className={styles.notice}>
+            Para continuar, selecione o modo {requiredMode === 'CLIENT' ? 'Cliente' : 'Host'}.
+          </p>
+        )}
       </div>
       <div className={styles.cards}>
         <button type="button" className={styles.card} onClick={() => handleSelect('CLIENT')}>
