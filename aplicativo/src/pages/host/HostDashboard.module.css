@@ -72,7 +72,42 @@ select {
 
 .list {
   display: grid;
+  gap: 16px;
+}
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
+}
+
+.listHint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.toggleButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toggleButton:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.toggleIcon {
+  font-weight: 700;
 }
 
 .pcCard {
@@ -89,9 +124,37 @@ select {
   gap: 4px;
 }
 
-.pcStatus {
+.pcHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.statusBadge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
   font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.statusOnline {
+  background: rgba(26, 127, 90, 0.15);
+  color: #1a7f5a;
+  border: 1px solid rgba(26, 127, 90, 0.3);
+}
+
+.statusOffline {
+  background: rgba(92, 92, 102, 0.15);
+  color: #5c5c66;
+  border: 1px solid rgba(92, 92, 102, 0.3);
+}
+
+.statusBusy {
+  background: rgba(244, 93, 18, 0.15);
   color: var(--accent-strong);
+  border: 1px solid rgba(244, 93, 18, 0.3);
 }
 
 .pcActions {
@@ -123,6 +186,16 @@ select {
   gap: 10px;
 }
 
+.formPanel {
+  animation: floatIn 0.2s ease;
+}
+
+.formActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .editActions {
   display: flex;
   gap: 8px;
@@ -132,9 +205,4 @@ select {
   background: transparent !important;
   color: var(--ink) !important;
   border: 1px solid var(--stroke) !important;
-}
-
-.message {
-  font-weight: 600;
-  color: var(--accent-strong);
 }

@@ -5,6 +5,7 @@ import styles from './App.module.css';
 import Header from './components/Header';
 import HostDaemonManager from './components/HostDaemonManager';
 import RequireAuth from './components/RequireAuth';
+import { ToastProvider } from './components/Toast';
 import { AuthProvider } from './lib/auth';
 import { ModeProvider, useMode } from './lib/mode';
 
@@ -115,15 +116,17 @@ export default function App() {
   return (
     <ModeProvider>
       <AuthProvider>
-        <HostDaemonManager />
-        <HashRouter>
-          <div className={styles.app}>
-            <Header />
-            <main className={styles.main}>
-              <AppRoutes />
-            </main>
-          </div>
-        </HashRouter>
+        <ToastProvider>
+          <HostDaemonManager />
+          <HashRouter>
+            <div className={styles.app}>
+              <Header />
+              <main className={styles.main}>
+                <AppRoutes />
+              </main>
+            </div>
+          </HashRouter>
+        </ToastProvider>
       </AuthProvider>
     </ModeProvider>
   );

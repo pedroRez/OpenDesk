@@ -14,10 +14,33 @@
   gap: 16px;
 }
 
-.row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.presetButton {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: #fff;
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.presetButton:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.presetActive {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff7ef;
+  box-shadow: 0 12px 24px rgba(244, 93, 18, 0.2);
 }
 
 label {

@@ -14,9 +14,36 @@
   flex-wrap: wrap;
 }
 
-.status {
+.statusBadge {
   font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+}
+
+.statusActive {
+  background: rgba(26, 127, 90, 0.15);
+  color: #1a7f5a;
+  border: 1px solid rgba(26, 127, 90, 0.3);
+}
+
+.statusPending {
+  background: rgba(244, 93, 18, 0.15);
   color: var(--accent-strong);
+  border: 1px solid rgba(244, 93, 18, 0.3);
+}
+
+.statusFailed {
+  background: rgba(184, 29, 29, 0.15);
+  color: #b81d1d;
+  border: 1px solid rgba(184, 29, 29, 0.3);
+}
+
+.statusEnded {
+  background: rgba(92, 92, 102, 0.15);
+  color: #5c5c66;
+  border: 1px solid rgba(92, 92, 102, 0.3);
 }
 
 .actions {
@@ -45,4 +72,62 @@
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid var(--stroke);
+  display: grid;
+  gap: 10px;
+}
+
+.instructions {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.details {
+  display: grid;
+  gap: 10px;
+}
+
+.detailsCard {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--stroke);
+  background: rgba(255, 255, 255, 0.7);
+  display: grid;
+  gap: 6px;
+}
+
+.ghostButton {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  cursor: pointer;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.ghostButton:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.secondaryButton {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.secondaryButton:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
 }

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { fetchJson } from './api';
+import { request } from './api';
 import { useMode } from './mode';
 import { clearUser, loadUser, saveUser, type StoredUser } from './session';
 
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async ({ email }: { email: string }) => {
     setIsLoading(true);
     try {
-      const data = await fetchJson<any>('/auth/login', {
+      const data = await request<any>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email }),
       });
@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async ({ name, email, role }: { name: string; email: string; role?: string }) => {
     setIsLoading(true);
     try {
-      const data = await fetchJson<any>('/auth/register', {
+      const data = await request<any>('/auth/register', {
         method: 'POST',
         body: JSON.stringify({ name, email, role }),
       });

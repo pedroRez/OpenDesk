@@ -1,7 +1,8 @@
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { fetchJson } from '../../lib/api';
+import { useToast } from '../../components/Toast';
+import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { setPrimaryPcId } from '../../lib/hostState';
 
@@ -40,32 +41,35 @@ type PCInput = {
   connectionNotes: string;
 };
 
+const createDefaultForm = (): PCInput => ({
+  name: '',
+  level: 'B',
+  cpu: '',
+  ramGb: 16,
+  gpu: '',
+  vramGb: 8,
+  storageType: 'SSD',
+  internetUploadMbps: 200,
+  pricePerHour: 10,
+  connectionHost: '',
+  connectionPort: 47990,
+  connectionNotes: '',
+});
+
 export default function HostDashboard() {
   const { user, updateUser } = useAuth();
+  const toast = useToast();
   const [pcs, setPcs] = useState<PC[]>([]);
-  const [message, setMessage] = useState('');
   const [isLoadingPcs, setIsLoadingPcs] = useState(false);
   const [isCreatingHost, setIsCreatingHost] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingPcId, setEditingPcId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     connectionHost: '',
     connectionPort: 47990,
     connectionNotes: '',
   });
-  const [form, setForm] = useState<PCInput>({
-    name: '',
-    level: 'B',
-    cpu: '',
-    ramGb: 16,
-    gpu: '',
-    vramGb: 8,
-    storageType: 'SSD',
-    internetUploadMbps: 200,
-    pricePerHour: 10,
-    connectionHost: '',
-    connectionPort: 47990,
-    connectionNotes: '',
-  });
+  const [form, setForm] = useState<PCInput>(createDefaultForm);
 
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
@@ -73,32 +77,34 @@ export default function HostDashboard() {
   useEffect(() => {
     if (!hostProfileId) return;
     setIsLoadingPcs(true);
-    fetchJson<PC[]>('/pcs')
+    request<PC[]>('/host/pcs')
       .then((data) => {
-        const hostPcs = data.filter((pc) => pc.hostId === hostProfileId);
-        setPcs(hostPcs);
-        if (hostPcs.length > 0) {
-          setPrimaryPcId(hostPcs[0].id);
+        setPcs(data);
+        if (data.length > 0) {
+          setPrimaryPcId(data[0].id);
         }
       })
-      .catch(() => setPcs([]))
+      .catch((error) => {
+        setPcs([]);
+        const message = error instanceof Error ? error.message : 'Erro ao carregar PCs';
+        toast.show(message, 'error');
+      })
       .finally(() => setIsLoadingPcs(false));
-  }, [hostProfileId]);
+  }, [hostProfileId, toast]);
 
   const handleCreateHostProfile = async () => {
     if (!user) return;
     setIsCreatingHost(true);
-    setMessage('');
     try {
-      const data = await fetchJson<{ hostProfileId?: string; hostProfile?: { id: string } }>('/hosts', {
+      const data = await request<{ hostProfileId?: string; hostProfile?: { id: string } }>('/host/profile', {
         method: 'POST',
         body: JSON.stringify({ displayName: user.name ?? 'Novo Host' }),
       });
       const hostId = data.hostProfileId ?? data.hostProfile?.id ?? null;
       updateUser({ role: 'HOST', hostProfileId: hostId });
-      setMessage('Perfil de host criado com sucesso!');
+      toast.show('Perfil de host criado com sucesso!', 'success');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Erro ao criar perfil.');
+      toast.show(error instanceof Error ? error.message : 'Erro ao criar perfil.', 'error');
     } finally {
       setIsCreatingHost(false);
     }
@@ -106,7 +112,6 @@ export default function HostDashboard() {
 
   const handleCreatePC = async (event: FormEvent) => {
     event.preventDefault();
-    setMessage('');
 
     try {
       const payload = {
@@ -119,32 +124,37 @@ export default function HostDashboard() {
         internetUploadMbps: Number(form.internetUploadMbps),
         pricePerHour: Number(form.pricePerHour),
       };
-      const created = await fetchJson<PC>('/pcs', {
+      const created = await request<PC>('/pcs', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
       setPcs((prev) => [created, ...prev]);
       setPrimaryPcId(created.id);
-      setMessage('PC cadastrado com sucesso!');
+      toast.show('PC cadastrado com sucesso!', 'success');
+      setForm(createDefaultForm());
+      setIsFormOpen(false);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Erro ao cadastrar PC');
+      toast.show(error instanceof Error ? error.message : 'Erro ao cadastrar PC', 'error');
     }
   };
 
   const handleToggleStatus = async (pc: PC) => {
     if (pc.status === 'BUSY') {
-      setMessage('PC ocupado. Nao e possivel ficar offline agora.');
+      toast.show('PC ocupado. Nao e possivel ficar offline agora.', 'info');
       return;
     }
     const nextStatus = pc.status === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
+    setPcs((prev) => prev.map((item) => (item.id === pc.id ? { ...item, status: nextStatus } : item)));
     try {
-      const data = await fetchJson<{ pc: PC }>(`/pcs/${pc.id}/status`, {
+      const data = await request<{ pc: PC }>(`/pcs/${pc.id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status: nextStatus }),
       });
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? data.pc : item)));
+      toast.show(nextStatus === 'ONLINE' ? 'PC ficou online' : 'PC ficou offline', 'success');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Erro ao atualizar status.');
+      setPcs((prev) => prev.map((item) => (item.id === pc.id ? pc : item)));
+      toast.show(error instanceof Error ? error.message : 'Falha ao atualizar status', 'error');
     }
   };
 
@@ -158,22 +168,21 @@ export default function HostDashboard() {
   };
 
   const handleSaveConnection = async (pc: PC) => {
-    setMessage('');
     try {
       const payload = {
         connectionHost: editForm.connectionHost.trim() || undefined,
         connectionPort: Number(editForm.connectionPort) || undefined,
         connectionNotes: editForm.connectionNotes.trim() || undefined,
       };
-      const updated = await fetchJson<PC>(`/pcs/${pc.id}`, {
+      const updated = await request<PC>(`/pcs/${pc.id}`, {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? updated : item)));
       setEditingPcId(null);
-      setMessage('Dados de conexao atualizados.');
+      toast.show('Dados de conexao atualizados.', 'success');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Erro ao atualizar conexao.');
+      toast.show(error instanceof Error ? error.message : 'Erro ao atualizar conexao.', 'error');
     }
   };
 
@@ -197,110 +206,146 @@ export default function HostDashboard() {
       )}
 
       {isHost && (
-        <>
-          <form onSubmit={handleCreatePC} className={styles.form}>
-            <h3>Cadastrar PC</h3>
-            <div className={styles.grid}>
-              <label>
-                Nome do PC
-                <input
-                  value={form.name}
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
-                  required
-                />
-              </label>
-              <label>
-                Nivel
-                <select value={form.level} onChange={(event) => setForm({ ...form, level: event.target.value })}>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                </select>
-              </label>
-              <label>
-                CPU
-                <input value={form.cpu} onChange={(event) => setForm({ ...form, cpu: event.target.value })} required />
-              </label>
-              <label>
-                RAM (GB)
-                <input
-                  type="number"
-                  value={form.ramGb}
-                  onChange={(event) => setForm({ ...form, ramGb: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                GPU
-                <input value={form.gpu} onChange={(event) => setForm({ ...form, gpu: event.target.value })} />
-              </label>
-              <label>
-                VRAM (GB)
-                <input
-                  type="number"
-                  value={form.vramGb}
-                  onChange={(event) => setForm({ ...form, vramGb: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Storage
-                <input
-                  value={form.storageType}
-                  onChange={(event) => setForm({ ...form, storageType: event.target.value })}
-                />
-              </label>
-              <label>
-                Upload (Mbps)
-                <input
-                  type="number"
-                  value={form.internetUploadMbps}
-                  onChange={(event) => setForm({ ...form, internetUploadMbps: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Preco por hora
-                <input
-                  type="number"
-                  value={form.pricePerHour}
-                  onChange={(event) => setForm({ ...form, pricePerHour: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Connection Host (IP/DNS)
-                <input
-                  value={form.connectionHost}
-                  onChange={(event) => setForm({ ...form, connectionHost: event.target.value })}
-                  placeholder="192.168.0.10"
-                />
-              </label>
-              <label>
-                Connection Port
-                <input
-                  type="number"
-                  value={form.connectionPort}
-                  onChange={(event) => setForm({ ...form, connectionPort: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Connection Notes
-                <input
-                  value={form.connectionNotes}
-                  onChange={(event) => setForm({ ...form, connectionNotes: event.target.value })}
-                  placeholder="Use Moonlight, perfil 1080p"
-                />
-              </label>
+        <section className={styles.list}>
+          <div className={styles.listHeader}>
+            <div>
+              <h3>Seus PCs</h3>
+              <p className={styles.listHint}>Controle disponibilidade e conexao por PC.</p>
             </div>
-            <button type="submit">Cadastrar PC</button>
-          </form>
+            <button
+              type="button"
+              onClick={() => setIsFormOpen((prev) => !prev)}
+              className={styles.toggleButton}
+              aria-expanded={isFormOpen}
+              aria-controls="pc-form"
+            >
+              <span>{isFormOpen ? 'Fechar cadastro' : 'Cadastrar PC'}</span>
+              <span className={styles.toggleIcon}>{isFormOpen ? 'v' : '>'}</span>
+            </button>
+          </div>
 
-          <section className={styles.list}>
-            <h3>Seus PCs</h3>
-            {isLoadingPcs && <p>Carregando PCs...</p>}
-            {!isLoadingPcs && pcs.length === 0 && <p>Nenhum PC cadastrado.</p>}
-            {pcs.map((pc) => (
+          {isFormOpen && (
+            <form onSubmit={handleCreatePC} className={`${styles.form} ${styles.formPanel}`} id="pc-form">
+              <h3>Cadastrar PC</h3>
+              <div className={styles.grid}>
+                <label>
+                  Nome do PC
+                  <input
+                    value={form.name}
+                    onChange={(event) => setForm({ ...form, name: event.target.value })}
+                    required
+                  />
+                </label>
+                <label>
+                  Nivel
+                  <select value={form.level} onChange={(event) => setForm({ ...form, level: event.target.value })}>
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C">C</option>
+                  </select>
+                </label>
+                <label>
+                  CPU
+                  <input
+                    value={form.cpu}
+                    onChange={(event) => setForm({ ...form, cpu: event.target.value })}
+                    required
+                  />
+                </label>
+                <label>
+                  RAM (GB)
+                  <input
+                    type="number"
+                    value={form.ramGb}
+                    onChange={(event) => setForm({ ...form, ramGb: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  GPU
+                  <input value={form.gpu} onChange={(event) => setForm({ ...form, gpu: event.target.value })} />
+                </label>
+                <label>
+                  VRAM (GB)
+                  <input
+                    type="number"
+                    value={form.vramGb}
+                    onChange={(event) => setForm({ ...form, vramGb: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  Storage
+                  <input
+                    value={form.storageType}
+                    onChange={(event) => setForm({ ...form, storageType: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Upload (Mbps)
+                  <input
+                    type="number"
+                    value={form.internetUploadMbps}
+                    onChange={(event) => setForm({ ...form, internetUploadMbps: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  Preco por hora
+                  <input
+                    type="number"
+                    value={form.pricePerHour}
+                    onChange={(event) => setForm({ ...form, pricePerHour: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  Connection Host (IP/DNS)
+                  <input
+                    value={form.connectionHost}
+                    onChange={(event) => setForm({ ...form, connectionHost: event.target.value })}
+                    placeholder="192.168.0.10"
+                  />
+                </label>
+                <label>
+                  Connection Port
+                  <input
+                    type="number"
+                    value={form.connectionPort}
+                    onChange={(event) => setForm({ ...form, connectionPort: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  Connection Notes
+                  <input
+                    value={form.connectionNotes}
+                    onChange={(event) => setForm({ ...form, connectionNotes: event.target.value })}
+                    placeholder="Use Moonlight, perfil 1080p"
+                  />
+                </label>
+              </div>
+              <div className={styles.formActions}>
+                <button type="submit">Cadastrar PC</button>
+                <button type="button" onClick={() => setIsFormOpen(false)} className={styles.ghost}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          )}
+
+          {isLoadingPcs && <p>Carregando PCs...</p>}
+          {!isLoadingPcs && pcs.length === 0 && <p>Nenhum PC cadastrado.</p>}
+          {pcs.map((pc) => {
+            const statusClass =
+              pc.status === 'ONLINE'
+                ? styles.statusOnline
+                : pc.status === 'OFFLINE'
+                  ? styles.statusOffline
+                  : styles.statusBusy;
+
+            return (
               <div key={pc.id} className={styles.pcCard}>
                 <div className={styles.pcInfo}>
-                  <strong>{pc.name}</strong>
-                  <span className={styles.pcStatus}>{pc.status}</span>
+                  <div className={styles.pcHeader}>
+                    <strong>{pc.name}</strong>
+                    <span className={`${styles.statusBadge} ${statusClass}`}>{pc.status}</span>
+                  </div>
                   <span>
                     Conexao: {pc.connectionHost ?? 'Nao informado'}:{pc.connectionPort ?? 47990}
                   </span>
@@ -362,12 +407,10 @@ export default function HostDashboard() {
                   </div>
                 )}
               </div>
-            ))}
-          </section>
-        </>
+            );
+          })}
+        </section>
       )}
-
-      {message && <p className={styles.message}>{message}</p>}
     </section>
   );
 }

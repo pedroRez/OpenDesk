@@ -12,6 +12,46 @@ export async function hostRoutes(fastify: FastifyInstance) {
     });
   });
 
+  fastify.get('/host/pcs', async (request, reply) => {
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host) {
+      return reply.status(403).send({ error: 'Usuario nao e host' });
+    }
+
+    return fastify.prisma.pC.findMany({
+      where: { hostId: user.host.id },
+    });
+  });
+
+  fastify.post('/host/profile', async (request, reply) => {
+    const schema = z.object({
+      displayName: z.string(),
+    });
+
+    const body = schema.parse(request.body);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+
+    const hostProfile = await fastify.prisma.hostProfile.upsert({
+      where: { userId: user.id },
+      update: { displayName: body.displayName },
+      create: { userId: user.id, displayName: body.displayName },
+    });
+
+    if (user.role !== 'HOST') {
+      await fastify.prisma.user.update({
+        where: { id: user.id },
+        data: { role: 'HOST' },
+      });
+    }
+
+    return reply.send({
+      hostProfile,
+      hostProfileId: hostProfile.id,
+    });
+  });
+
   fastify.post('/hosts', async (request, reply) => {
     const schema = z.object({
       displayName: z.string(),

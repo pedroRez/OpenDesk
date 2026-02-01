@@ -9,6 +9,7 @@ export default function Header() {
   const { user, logout } = useAuth();
   const { mode, clearMode } = useMode();
   const navigate = useNavigate();
+  const showQuickLinks = Boolean(user && mode);
 
   const handleLogout = () => {
     logout();
@@ -41,7 +42,7 @@ export default function Header() {
       </div>
 
       <nav className={styles.nav}>
-        {mode === 'CLIENT' && (
+        {showQuickLinks && mode === 'CLIENT' && (
           <NavLink
             to="/client/marketplace"
             className={({ isActive }) =>
@@ -51,7 +52,7 @@ export default function Header() {
             Marketplace
           </NavLink>
         )}
-        {mode === 'HOST' && (
+        {showQuickLinks && mode === 'HOST' && (
           <NavLink
             to="/host/dashboard"
             className={({ isActive }) =>

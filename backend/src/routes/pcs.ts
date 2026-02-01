@@ -6,8 +6,15 @@ import type { FastifyInstance } from 'fastify';
 import { requireUser } from '../utils/auth.js';
 
 export async function pcRoutes(fastify: FastifyInstance) {
-  fastify.get('/pcs', async () => {
+  fastify.get('/pcs', async (request) => {
+    const query = z
+      .object({
+        status: z.enum(['ONLINE', 'OFFLINE', 'BUSY']).optional(),
+      })
+      .parse(request.query ?? {});
+
     return fastify.prisma.pC.findMany({
+      where: query.status ? { status: query.status as PCStatus } : undefined,
       include: { softwareLinks: { include: { software: true } }, host: true },
     });
   });

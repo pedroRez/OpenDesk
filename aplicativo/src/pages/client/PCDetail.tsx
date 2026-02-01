@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { fetchJson } from '../../lib/api';
+import { request } from '../../lib/api';
 
 import styles from './PCDetail.module.css';
 
@@ -31,7 +31,7 @@ export default function PCDetail() {
 
   useEffect(() => {
     if (!id) return;
-    fetchJson<PCDetail>(`/pcs/${id}`)
+    request<PCDetail>(`/pcs/${id}`)
       .then((data) => {
         setPc(data);
         setError('');

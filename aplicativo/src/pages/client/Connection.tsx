@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { fetchJson } from '../../lib/api';
+import { request } from '../../lib/api';
 import { getStreamingProvider } from '../../lib/streamingProvider';
 
 import styles from './Connection.module.css';
@@ -28,7 +28,7 @@ export default function Connection() {
 
   useEffect(() => {
     if (!id) return;
-    fetchJson<{ session: SessionDetail }>(`/sessions/${id}`)
+    request<{ session: SessionDetail }>(`/sessions/${id}`)
       .then((data) => {
         setSession(data.session);
         setError('');

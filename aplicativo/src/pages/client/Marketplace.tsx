@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { fetchJson } from '../../lib/api';
+import { request } from '../../lib/api';
 
 import styles from './Marketplace.module.css';
 
@@ -31,7 +31,7 @@ export default function Marketplace() {
       setError('');
     }
     try {
-      const data = await fetchJson<PC[]>('/pcs');
+      const data = await request<PC[]>('/pcs?status=ONLINE');
       setPcs(data.filter((pc) => pc.status === 'ONLINE'));
       setError('');
     } catch (err) {
