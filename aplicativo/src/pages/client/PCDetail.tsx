@@ -87,7 +87,7 @@ export default function PCDetail() {
         {pc.connectionNotes && <p>Notas: {pc.connectionNotes}</p>}
       </section>
       <Link className={styles.button} to={`/client/reserve/${pc.id}`}>
-        Reservar por R$ {pc.pricePerHour}/hora
+        Conectar agora por R$ {pc.pricePerHour}/hora
       </Link>
     </div>
   );

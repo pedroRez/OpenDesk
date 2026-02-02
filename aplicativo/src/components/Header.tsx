@@ -43,14 +43,24 @@ export default function Header() {
 
       <nav className={styles.nav}>
         {showQuickLinks && mode === 'CLIENT' && (
-          <NavLink
-            to="/client/marketplace"
-            className={({ isActive }) =>
-              `${styles.link} ${isActive ? styles.linkActive : ''}`
-            }
-          >
-            Marketplace
-          </NavLink>
+          <>
+            <NavLink
+              to="/client/marketplace"
+              className={({ isActive }) =>
+                `${styles.link} ${isActive ? styles.linkActive : ''}`
+              }
+            >
+              Marketplace
+            </NavLink>
+            <NavLink
+              to="/client/reservations"
+              className={({ isActive }) =>
+                `${styles.link} ${isActive ? styles.linkActive : ''}`
+              }
+            >
+              Agendamentos
+            </NavLink>
+          </>
         )}
         {showQuickLinks && mode === 'HOST' && (
           <NavLink

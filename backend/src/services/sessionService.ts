@@ -1,4 +1,4 @@
-import { PCStatus, SessionStatus, WalletTxType, type PrismaClient } from '@prisma/client';
+import { PCStatus, QueueEntryStatus, SessionStatus, WalletTxType, type PrismaClient } from '@prisma/client';
 import { addMinutes } from 'date-fns';
 
 import { config } from '../config.js';
@@ -18,6 +18,8 @@ export class SessionError extends Error {
   }
 }
 
+type PrismaClientLike = PrismaClient | Prisma.TransactionClient;
+
 const allowedFailureReasons: FailureReason[] = ['HOST', 'CLIENT', 'PLATFORM', 'NONE'];
 
 function normalizeFailureReason(value?: string, hostFault?: boolean): FailureReason {
@@ -33,6 +35,141 @@ function normalizeFailureReason(value?: string, hostFault?: boolean): FailureRea
   return 'NONE';
 }
 
+async function createSessionInternal(params: {
+  prisma: PrismaClientLike;
+  pcId: string;
+  clientId: string;
+  minutesPurchased: number;
+  bypassCredits?: boolean;
+}): Promise<Session> {
+  const { prisma, pcId, clientId, minutesPurchased, bypassCredits = false } = params;
+
+  const pcRows = await prisma.$queryRaw<{
+    id: string;
+    status: PCStatus;
+    pricePerHour: number;
+  }[]>`
+      SELECT "id", "status", "pricePerHour" FROM "PC" WHERE "id" = ${pcId} FOR UPDATE
+    `;
+
+  const pc = pcRows[0];
+  if (!pc) {
+    throw new SessionError('PC nÃ£o encontrado', 'PC_NOT_FOUND', 404);
+  }
+  if (pc.status === PCStatus.BUSY) {
+    throw new SessionError('PC estÃ¡ ocupado', 'PC_BUSY', 409);
+  }
+  if (pc.status !== PCStatus.ONLINE) {
+    throw new SessionError('PC indisponÃ­vel', 'PC_OFFLINE', 409);
+  }
+
+  const existingSession = await prisma.session.findFirst({
+    where: {
+      pcId,
+      status: { in: [SessionStatus.PENDING, SessionStatus.ACTIVE] },
+    },
+  });
+
+  if (existingSession) {
+    throw new SessionError('PC jÃ¡ reservado', 'PC_BUSY', 409);
+  }
+
+  const existingClientSession = await prisma.session.findFirst({
+    where: {
+      clientUserId: clientId,
+      status: { in: [SessionStatus.PENDING, SessionStatus.ACTIVE] },
+    },
+  });
+
+  if (existingClientSession) {
+    throw new SessionError('Usuario jÃ¡ possui uma sessao ativa', 'SESSION_EXISTS', 409);
+  }
+
+  const priceTotal = (pc.pricePerHour * minutesPurchased) / 60;
+
+  const wallet = await prisma.wallet.findUnique({ where: { userId: clientId } });
+  if (!wallet) {
+    if (bypassCredits) {
+      await prisma.wallet.create({ data: { userId: clientId, balance: 0 } });
+    } else {
+      throw new SessionError('Saldo insuficiente', 'SALDO_INSUFICIENTE', 400);
+    }
+  }
+  if (!bypassCredits) {
+    if (!wallet || wallet.balance < priceTotal) {
+      throw new SessionError('Saldo insuficiente', 'SALDO_INSUFICIENTE', 400);
+    }
+  }
+
+  const session = await prisma.session.create({
+    data: {
+      pcId,
+      clientUserId: clientId,
+      status: SessionStatus.PENDING,
+      minutesPurchased,
+      priceTotal,
+    },
+  });
+
+  if (!bypassCredits) {
+    await prisma.wallet.update({
+      where: { userId: clientId },
+      data: { balance: { decrement: priceTotal } },
+    });
+
+    await prisma.walletTx.create({
+      data: {
+        userId: clientId,
+        type: WalletTxType.DEBIT,
+        amount: priceTotal,
+        reason: 'Reserva de sessao',
+        sessionId: session.id,
+      },
+    });
+  }
+  return session;
+}
+
+async function startSessionInternal(params: {
+  prisma: PrismaClientLike;
+  sessionId: string;
+}): Promise<Session> {
+  const { prisma, sessionId } = params;
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session) {
+    throw new SessionError('SessÃ£o nÃ£o encontrada', 'SESSION_NOT_FOUND', 404);
+  }
+  if (session.status !== SessionStatus.PENDING) {
+    throw new SessionError('SessÃ£o nÃ£o estÃ¡ pendente', 'INVALID_STATUS', 409);
+  }
+
+  const pcRows = await prisma.$queryRaw<{
+    id: string;
+    status: PCStatus;
+  }[]>`
+      SELECT "id", "status" FROM "PC" WHERE "id" = ${session.pcId} FOR UPDATE
+    `;
+
+  const pc = pcRows[0];
+  if (!pc || pc.status !== PCStatus.ONLINE) {
+    throw new SessionError('PC indisponÃ­vel', 'PC_BUSY', 409);
+  }
+
+  await prisma.pC.update({
+    where: { id: session.pcId },
+    data: { status: PCStatus.BUSY },
+  });
+
+  const now = new Date();
+  const endAt = addMinutes(now, session.minutesPurchased);
+
+  return prisma.session.update({
+    where: { id: session.id },
+    data: { status: SessionStatus.ACTIVE, startAt: now, endAt },
+  });
+}
+
 export async function createSession(params: {
   prisma: PrismaClient;
   pcId: string;
@@ -42,81 +179,9 @@ export async function createSession(params: {
 }): Promise<Session> {
   const { prisma, pcId, clientId, minutesPurchased, bypassCredits = false } = params;
 
-  return prisma.$transaction(async (tx) => {
-    const pcRows = await tx.$queryRaw<{
-      id: string;
-      status: PCStatus;
-      pricePerHour: number;
-    }[]>`
-      SELECT "id", "status", "pricePerHour" FROM "PC" WHERE "id" = ${pcId} FOR UPDATE
-    `;
-
-    const pc = pcRows[0];
-    if (!pc) {
-      throw new SessionError('PC não encontrado', 'PC_NOT_FOUND', 404);
-    }
-    if (pc.status === PCStatus.BUSY) {
-      throw new SessionError('PC está ocupado', 'PC_BUSY', 409);
-    }
-    if (pc.status !== PCStatus.ONLINE) {
-      throw new SessionError('PC indisponível', 'PC_OFFLINE', 409);
-    }
-
-    const existingSession = await tx.session.findFirst({
-      where: {
-        pcId,
-        status: { in: [SessionStatus.PENDING, SessionStatus.ACTIVE] },
-      },
-    });
-
-    if (existingSession) {
-      throw new SessionError('PC já reservado', 'PC_BUSY', 409);
-    }
-
-    const priceTotal = (pc.pricePerHour * minutesPurchased) / 60;
-
-    const wallet = await tx.wallet.findUnique({ where: { userId: clientId } });
-    if (!wallet) {
-      if (bypassCredits) {
-        await tx.wallet.create({ data: { userId: clientId, balance: 0 } });
-      } else {
-        throw new SessionError('Saldo insuficiente', 'SALDO_INSUFICIENTE', 400);
-      }
-    }
-    if (!bypassCredits) {
-      if (!wallet || wallet.balance < priceTotal) {
-        throw new SessionError('Saldo insuficiente', 'SALDO_INSUFICIENTE', 400);
-      }
-    }
-
-    const session = await tx.session.create({
-      data: {
-        pcId,
-        clientUserId: clientId,
-        status: SessionStatus.PENDING,
-        minutesPurchased,
-        priceTotal,
-      },
-    });
-
-    if (!bypassCredits) {
-      await tx.wallet.update({
-        where: { userId: clientId },
-        data: { balance: { decrement: priceTotal } },
-      });
-
-      await tx.walletTx.create({
-        data: {
-          userId: clientId,
-          type: WalletTxType.DEBIT,
-          amount: priceTotal,
-          reason: 'Reserva de sessao',
-          sessionId: session.id,
-        },
-      });
-    }
-    return session;
-  });
+  return prisma.$transaction(async (tx) =>
+    createSessionInternal({ prisma: tx, pcId, clientId, minutesPurchased, bypassCredits }),
+  );
 }
 
 export async function startSession(params: {
@@ -125,39 +190,86 @@ export async function startSession(params: {
 }): Promise<Session> {
   const { prisma, sessionId } = params;
 
-  return prisma.$transaction(async (tx) => {
-    const session = await tx.session.findUnique({ where: { id: sessionId } });
-    if (!session) {
-      throw new SessionError('Sessão não encontrada', 'SESSION_NOT_FOUND', 404);
-    }
-    if (session.status !== SessionStatus.PENDING) {
-      throw new SessionError('Sessão não está pendente', 'INVALID_STATUS', 409);
+  return prisma.$transaction(async (tx) => startSessionInternal({ prisma: tx, sessionId }));
+}
+
+export async function createAndStartSession(params: {
+  prisma: PrismaClientLike;
+  pcId: string;
+  clientId: string;
+  minutesPurchased: number;
+  bypassCredits?: boolean;
+}): Promise<Session> {
+  const { prisma, pcId, clientId, minutesPurchased, bypassCredits } = params;
+  const session = await createSessionInternal({
+    prisma,
+    pcId,
+    clientId,
+    minutesPurchased,
+    bypassCredits,
+  });
+  return startSessionInternal({ prisma, sessionId: session.id });
+}
+
+async function promoteNextInQueue(prisma: PrismaClient, pcId: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const pc = await tx.pC.findUnique({
+      where: { id: pcId },
+      select: { status: true },
+    });
+    if (!pc || pc.status === PCStatus.OFFLINE) {
+      return;
     }
 
-    const pcRows = await tx.$queryRaw<{
-      id: string;
-      status: PCStatus;
-    }[]>`
-      SELECT "id", "status" FROM "PC" WHERE "id" = ${session.pcId} FOR UPDATE
-    `;
-
-    const pc = pcRows[0];
-    if (!pc || pc.status !== PCStatus.ONLINE) {
-      throw new SessionError('PC indisponível', 'PC_BUSY', 409);
-    }
-
-    await tx.pC.update({
-      where: { id: session.pcId },
-      data: { status: PCStatus.BUSY },
+    const activeSession = await tx.session.findFirst({
+      where: {
+        pcId,
+        status: { in: [SessionStatus.PENDING, SessionStatus.ACTIVE] },
+      },
+      select: { id: true },
     });
 
-    const now = new Date();
-    const endAt = addMinutes(now, session.minutesPurchased);
+    if (activeSession) {
+      return;
+    }
 
-    return tx.session.update({
-      where: { id: session.id },
-      data: { status: SessionStatus.ACTIVE, startAt: now, endAt },
+    let entry = await tx.queueEntry.findFirst({
+      where: { pcId, status: QueueEntryStatus.WAITING },
+      orderBy: { createdAt: 'asc' },
     });
+
+    while (entry) {
+      try {
+        await createAndStartSession({
+          prisma: tx,
+          pcId,
+          clientId: entry.userId,
+          minutesPurchased: entry.minutesPurchased,
+        });
+
+        await tx.queueEntry.update({
+          where: { id: entry.id },
+          data: { status: QueueEntryStatus.ACTIVE },
+        });
+        return;
+      } catch (error) {
+        if (error instanceof SessionError && error.code === 'SALDO_INSUFICIENTE') {
+          await tx.queueEntry.update({
+            where: { id: entry.id },
+            data: { status: QueueEntryStatus.CANCELLED },
+          });
+          entry = await tx.queueEntry.findFirst({
+            where: { pcId, status: QueueEntryStatus.WAITING },
+            orderBy: { createdAt: 'asc' },
+          });
+          continue;
+        }
+        if (error instanceof SessionError && ['PC_OFFLINE', 'PC_BUSY', 'SESSION_EXISTS'].includes(error.code)) {
+          return;
+        }
+        throw error;
+      }
+    }
   });
 }
 
@@ -170,16 +282,16 @@ export async function endSession(params: {
 }): Promise<Session> {
   const { prisma, sessionId, failureReason, hostFault = false, releaseStatus } = params;
 
-  return prisma.$transaction(async (tx) => {
+  const updatedSession = await prisma.$transaction(async (tx) => {
     const session = await tx.session.findUnique({
       where: { id: sessionId },
       include: { pc: true },
     });
     if (!session) {
-      throw new SessionError('Sessão não encontrada', 'SESSION_NOT_FOUND', 404);
+      throw new SessionError('Sessao nao encontrada', 'SESSION_NOT_FOUND', 404);
     }
     if (session.status !== SessionStatus.ACTIVE) {
-      throw new SessionError('Sessão não está ativa', 'INVALID_STATUS', 409);
+      throw new SessionError('Sessao nao esta ativa', 'INVALID_STATUS', 409);
     }
 
     const endTime = new Date();
@@ -210,13 +322,14 @@ export async function endSession(params: {
           userId: session.clientUserId,
           type: WalletTxType.CREDIT,
           amount: settlement.clientCredit,
-          reason: 'Crédito por falha do host',
+          reason: 'Credito por falha do host',
           sessionId: session.id,
         },
       });
     }
 
-    const finalPcStatus = releaseStatus ?? PCStatus.ONLINE;
+    const finalPcStatus = releaseStatus ??
+      (session.pc.status === PCStatus.OFFLINE ? PCStatus.OFFLINE : PCStatus.ONLINE);
 
     await tx.pC.update({
       where: { id: session.pcId },
@@ -227,7 +340,7 @@ export async function endSession(params: {
       ? SessionStatus.FAILED
       : SessionStatus.ENDED;
 
-    const updatedSession = await tx.session.update({
+    const updated = await tx.session.update({
       where: { id: session.id },
       data: {
         status: finalStatus,
@@ -240,13 +353,30 @@ export async function endSession(params: {
       },
     });
 
+    await tx.queueEntry.updateMany({
+      where: {
+        pcId: session.pcId,
+        userId: session.clientUserId,
+        status: QueueEntryStatus.ACTIVE,
+      },
+      data: { status: QueueEntryStatus.EXPIRED },
+    });
+
     const reliabilityType: ReliabilityEventType =
       finalStatus === SessionStatus.FAILED ? 'SESSION_FAILED' : 'SESSION_OK';
 
     await recordReliabilityEvent(tx, session.pc.hostId, reliabilityType);
 
-    return updatedSession;
+    return updated;
   });
+
+  try {
+    await promoteNextInQueue(prisma, updatedSession.pcId);
+  } catch (error) {
+    console.error('Failed to promote queue after session end', error);
+  }
+
+  return updatedSession;
 }
 
 export async function expireSessions(prisma: PrismaClient): Promise<number> {

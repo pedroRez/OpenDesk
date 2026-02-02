@@ -27,7 +27,7 @@ export default function Reserve() {
     event.preventDefault();
     if (!pcId) return;
     if (!isAuthenticated || !user) {
-      setError('Faca login para reservar.');
+      setError('Faca login para conectar.');
       return;
     }
     if (minutesPurchased < 1 || minutesPurchased > 240) {
@@ -38,23 +38,25 @@ export default function Reserve() {
     setLoading(true);
     setError('');
     try {
-      const data = await request<{ session: { id: string } }>('/sessions', {
+      const data = await request<
+        | { status: 'ACTIVE'; sessionId: string | null; queueCount: number }
+        | { status: 'WAITING'; position: number; queueCount: number }
+      >(`/pcs/${pcId}/queue/join`, {
         method: 'POST',
         body: JSON.stringify({
-          pcId,
-          clientUserId: user.id,
           minutesPurchased,
         }),
       });
 
-      await request<{ session: { id: string } }>(`/sessions/${data.session.id}/start`, {
-        method: 'POST',
-      });
-
-      toast.show('Sessao criada', 'success');
-      navigate(`/client/session/${data.session.id}`);
+      if (data.status === 'ACTIVE' && data.sessionId) {
+        toast.show('Sessao criada', 'success');
+        navigate(`/client/session/${data.sessionId}`);
+      } else if (data.status === 'WAITING') {
+        toast.show(`Entrou na fila. Posicao: ${data.position}`, 'info');
+        navigate(`/client/queue/${pcId}`);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao reservar');
+      setError(err instanceof Error ? err.message : 'Erro ao conectar');
     } finally {
       setLoading(false);
     }
@@ -68,17 +70,17 @@ export default function Reserve() {
 
   return (
     <div className={styles.container}>
-      <h1>Reserva rapida</h1>
-      <p>Escolha a duracao para iniciar a sessao imediatamente.</p>
+      <h1>Conectar agora</h1>
+      <p>Escolha a duracao para iniciar a sessao. Se o PC estiver ocupado, voce entra na fila.</p>
       {isDevBypass && <div className={styles.devNotice}>Modo teste: creditos ignorados.</div>}
       <form onSubmit={handleSubmit} className={styles.form}>
         {user ? (
           <p>
-            Reservando como <strong>{user.name}</strong> ({user.email}).
+            Conectando como <strong>{user.name}</strong> ({user.email}).
           </p>
         ) : (
           <p>
-            Faca login para reservar.{' '}
+            Faca login para conectar.{' '}
             <Link to={`/login?next=${encodeURIComponent(`/client/reserve/${pcId}`)}`}>Entrar</Link>
           </p>
         )}
@@ -127,7 +129,7 @@ export default function Reserve() {
           </div>
         )}
         <button type="submit" disabled={loading}>
-          {loading ? 'Reservando...' : 'Reservar e iniciar'}
+          {loading ? 'Conectando...' : 'Conectar agora'}
         </button>
       </form>
     </div>

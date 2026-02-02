@@ -1,8 +1,10 @@
 import { useState } from 'react';
 
+import { useToast } from '../components/Toast';
 import { useMode, type AppMode } from '../lib/mode';
 import { useAuth } from '../lib/auth';
 import { apiBaseUrl } from '../lib/api';
+import { markLocalPcOffline } from '../lib/localPc';
 
 import styles from './Settings.module.css';
 
@@ -10,10 +12,26 @@ export default function Settings() {
   const { mode, setMode } = useMode();
   const { user } = useAuth();
   const [message, setMessage] = useState('');
+  const toast = useToast();
+  const [isSwitching, setIsSwitching] = useState(false);
 
-  const handleModeChange = (nextMode: AppMode) => {
+  const handleModeChange = async (nextMode: AppMode) => {
+    if (isSwitching) return;
+    setIsSwitching(true);
+    if (nextMode === 'CLIENT') {
+      try {
+        const changed = await markLocalPcOffline();
+        if (changed) {
+          toast.show('Este PC foi colocado OFFLINE porque o modo CLIENTE esta ativo nesta maquina.', 'info');
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Falha ao atualizar o PC local.';
+        toast.show(errorMessage, 'error');
+      }
+    }
     setMode(nextMode);
     setMessage(`Modo atualizado para ${nextMode === 'CLIENT' ? 'Cliente' : 'Host'}.`);
+    setIsSwitching(false);
   };
 
   return (
@@ -28,6 +46,7 @@ export default function Settings() {
             type="button"
             onClick={() => handleModeChange('CLIENT')}
             className={mode === 'CLIENT' ? styles.active : ''}
+            disabled={isSwitching}
           >
             Cliente
           </button>
@@ -35,6 +54,7 @@ export default function Settings() {
             type="button"
             onClick={() => handleModeChange('HOST')}
             className={mode === 'HOST' ? styles.active : ''}
+            disabled={isSwitching}
           >
             Host
           </button>

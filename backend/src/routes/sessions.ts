@@ -15,6 +15,11 @@ export async function sessionRoutes(fastify: FastifyInstance) {
     });
 
     const body = schema.parse(request.body);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (body.clientUserId !== user.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
     const header = request.headers['x-dev-bypass-credits'];
     const headerValue = Array.isArray(header) ? header[0] : header;
     const allowDevBypass = process.env.NODE_ENV !== 'production' && headerValue === 'true';
@@ -41,6 +46,16 @@ export async function sessionRoutes(fastify: FastifyInstance) {
 
   fastify.post('/sessions/:id/start', async (request, reply) => {
     const params = z.object({ id: z.string() }).parse(request.params);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+
+    const sessionRecord = await fastify.prisma.session.findUnique({ where: { id: params.id } });
+    if (!sessionRecord) {
+      return reply.status(404).send({ error: 'Sessao nao encontrada' });
+    }
+    if (sessionRecord.clientUserId !== user.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
 
     try {
       const session = await startSession({ prisma: fastify.prisma, sessionId: params.id });
@@ -63,6 +78,16 @@ export async function sessionRoutes(fastify: FastifyInstance) {
         hostFault: z.boolean().optional(),
       })
       .parse(request.body ?? {});
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+
+    const sessionRecord = await fastify.prisma.session.findUnique({ where: { id: params.id } });
+    if (!sessionRecord) {
+      return reply.status(404).send({ error: 'Sessao nao encontrada' });
+    }
+    if (sessionRecord.clientUserId !== user.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
 
     try {
       const session = await endSession({

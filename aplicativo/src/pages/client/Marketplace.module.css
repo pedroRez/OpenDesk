@@ -7,6 +7,7 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .counter {
@@ -15,11 +16,12 @@
   background: rgba(255, 255, 255, 0.85);
   border: 1px solid var(--stroke);
   font-weight: 600;
+  font-size: 0.9rem;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 18px;
 }
 
@@ -65,7 +67,7 @@
   padding: 18px;
   border-radius: 18px;
   border: 1px solid var(--stroke);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   display: grid;
   gap: 12px;
   box-shadow: 0 16px 30px rgba(10, 10, 16, 0.08);
@@ -76,10 +78,17 @@
   transform: translateY(-2px);
 }
 
-.cardFooter {
+.cardHeader {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.hostLine {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .specs {
@@ -92,9 +101,43 @@
   font-size: 0.85rem;
 }
 
-.status {
+.cardMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.queue {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.statusBadge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
   font-weight: 700;
-  color: var(--accent-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.statusOnline {
+  background: rgba(16, 185, 129, 0.15);
+  color: #0f766e;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+}
+
+.statusBusy {
+  background: rgba(251, 146, 60, 0.2);
+  color: #b45309;
+  border: 1px solid rgba(180, 83, 9, 0.2);
+}
+
+.statusOffline {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+  border: 1px solid rgba(71, 85, 105, 0.2);
 }
 
 .cardActions {
@@ -102,13 +145,38 @@
   gap: 8px;
 }
 
-.button {
-  padding: 8px 12px;
+.primaryButton,
+.secondaryButton {
+  padding: 10px 12px;
   border-radius: 12px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton {
   background: var(--accent);
   color: #fff7ef;
-  text-align: center;
-  font-weight: 600;
+}
+
+.primaryButton:hover {
+  background: var(--accent-strong);
+}
+
+.secondaryButton {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--stroke);
+  color: var(--accent-strong);
+}
+
+.secondaryButton:hover {
+  border-color: var(--accent-strong);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .secondaryLink {
@@ -120,4 +188,88 @@
 
 .secondaryLink:hover {
   text-decoration: underline;
+}
+
+.scheduleOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 10;
+}
+
+.schedulePanel {
+  width: min(420px, 90vw);
+  background: #f8fafc;
+  height: 100%;
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+  box-shadow: -20px 0 40px rgba(15, 23, 42, 0.2);
+  overflow-y: auto;
+}
+
+.scheduleHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.closeButton {
+  background: transparent;
+  border: 1px solid var(--stroke);
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.scheduleForm {
+  display: grid;
+  gap: 14px;
+}
+
+.scheduleForm label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.scheduleForm input,
+.scheduleForm select {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+}
+
+.availability {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--stroke);
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.85rem;
+}
+
+.availability ul {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.errorInline {
+  background: rgba(254, 226, 226, 0.9);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #b91c1c;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
+.muted {
+  color: var(--muted);
 }

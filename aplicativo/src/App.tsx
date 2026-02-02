@@ -17,6 +17,8 @@ import Settings from './pages/Settings';
 import Marketplace from './pages/client/Marketplace';
 import PCDetail from './pages/client/PCDetail';
 import Reserve from './pages/client/Reserve';
+import Queue from './pages/client/Queue';
+import Reservations from './pages/client/Reservations';
 import Session from './pages/client/Session';
 import Connection from './pages/client/Connection';
 import HostDashboard from './pages/host/HostDashboard';
@@ -73,6 +75,26 @@ function AppRoutes() {
           <RequireMode mode="CLIENT">
             <RequireAuth>
               <Reserve />
+            </RequireAuth>
+          </RequireMode>
+        }
+      />
+      <Route
+        path="/client/queue/:pcId"
+        element={
+          <RequireMode mode="CLIENT">
+            <RequireAuth>
+              <Queue />
+            </RequireAuth>
+          </RequireMode>
+        }
+      />
+      <Route
+        path="/client/reservations"
+        element={
+          <RequireMode mode="CLIENT">
+            <RequireAuth>
+              <Reservations />
             </RequireAuth>
           </RequireMode>
         }

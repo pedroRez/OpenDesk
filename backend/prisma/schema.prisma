@@ -32,6 +32,21 @@ enum SessionStatus {
   FAILED
 }
 
+enum QueueEntryStatus {
+  WAITING
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+enum ReservationStatus {
+  SCHEDULED
+  ACTIVE
+  CANCELLED
+  COMPLETED
+  EXPIRED
+}
+
 enum WalletTxType {
   CREDIT
   DEBIT
@@ -45,6 +60,8 @@ model User {
   createdAt DateTime      @default(now())
   host      HostProfile?
   sessions  Session[]     @relation("ClientSessions")
+  queueEntries QueueEntry[]
+  reservations Reservation[]
   wallet    Wallet?
   walletTxs WalletTx[]
 }
@@ -81,6 +98,8 @@ model PC {
   host                HostProfile   @relation(fields: [hostId], references: [id])
   softwareLinks       PCSoftware[]
   sessions            Session[]
+  queueEntries        QueueEntry[]
+  reservations        Reservation[]
 }
 
 model Software {
@@ -117,6 +136,35 @@ model Session {
   pc              PC            @relation(fields: [pcId], references: [id])
   client          User          @relation("ClientSessions", fields: [clientUserId], references: [id])
   walletTxs       WalletTx[]
+}
+
+model QueueEntry {
+  id               String           @id @default(uuid())
+  pcId             String
+  userId           String
+  minutesPurchased Int
+  status           QueueEntryStatus @default(WAITING)
+  createdAt        DateTime         @default(now())
+  pc               PC               @relation(fields: [pcId], references: [id])
+  user             User             @relation(fields: [userId], references: [id])
+
+  @@index([pcId, status, createdAt])
+  @@index([userId, status])
+}
+
+model Reservation {
+  id        String            @id @default(uuid())
+  pcId      String
+  userId    String
+  startAt   DateTime
+  endAt     DateTime
+  status    ReservationStatus @default(SCHEDULED)
+  createdAt DateTime          @default(now())
+  pc        PC                @relation(fields: [pcId], references: [id])
+  user      User              @relation(fields: [userId], references: [id])
+
+  @@index([pcId, status, startAt, endAt])
+  @@index([userId, status])
 }
 
 model Wallet {

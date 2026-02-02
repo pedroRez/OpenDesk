@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../components/Toast';
 import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { setPrimaryPcId } from '../../lib/hostState';
+import { setLocalPcId, setPrimaryPcId } from '../../lib/hostState';
 
 import styles from './HostDashboard.module.css';
 
@@ -130,6 +130,7 @@ export default function HostDashboard() {
       });
       setPcs((prev) => [created, ...prev]);
       setPrimaryPcId(created.id);
+      setLocalPcId(created.id);
       toast.show('PC cadastrado com sucesso!', 'success');
       setForm(createDefaultForm());
       setIsFormOpen(false);
