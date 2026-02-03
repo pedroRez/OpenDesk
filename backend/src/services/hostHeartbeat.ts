@@ -11,10 +11,36 @@ export async function registerHeartbeat(params: {
 }): Promise<void> {
   const { prisma, hostId, status } = params;
 
-  await prisma.hostProfile.update({
-    where: { id: hostId },
-    data: { lastSeenAt: new Date() },
-  });
+  try {
+    const before = await prisma.hostProfile.findUnique({
+      where: { id: hostId },
+      select: { lastSeenAt: true },
+    });
+    console.log('[HEARTBEAT][BACKEND] lastSeen before', {
+      hostId,
+      lastSeenAt: before?.lastSeenAt?.toISOString() ?? null,
+    });
+
+    await prisma.hostProfile.update({
+      where: { id: hostId },
+      data: { lastSeenAt: new Date() },
+    });
+
+    const after = await prisma.hostProfile.findUnique({
+      where: { id: hostId },
+      select: { lastSeenAt: true },
+    });
+    console.log('[HEARTBEAT][BACKEND] lastSeen after', {
+      hostId,
+      lastSeenAt: after?.lastSeenAt?.toISOString() ?? null,
+    });
+  } catch (error) {
+    console.error('[HEARTBEAT][BACKEND] erro ao atualizar lastSeen', {
+      hostId,
+      error: error instanceof Error ? error.message : error,
+    });
+    throw error;
+  }
 
   if (status) {
     await prisma.pC.updateMany({

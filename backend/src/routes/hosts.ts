@@ -86,19 +86,46 @@ export async function hostRoutes(fastify: FastifyInstance) {
 
     const bodySchema = z.object({
       status: z.enum(['ONLINE', 'OFFLINE', 'BUSY']).optional(),
+      pcId: z.string().nullable().optional(),
+      timestamp: z.string().optional(),
     });
     const body = bodySchema.parse(request.body ?? {});
+    const logTimestamp = body.timestamp ?? new Date().toISOString();
+    console.log('[HEARTBEAT][BACKEND] recebido', {
+      hostId: params.id,
+      pcId: body.pcId ?? null,
+      timestamp: logTimestamp,
+    });
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
     if (!user.host || user.host.id !== params.id) {
+      console.error('[HEARTBEAT][BACKEND] sem permissao', {
+        hostId: params.id,
+        userId: user?.id ?? null,
+      });
       return reply.status(403).send({ error: 'Sem permissao' });
     }
 
-    await registerHeartbeat({
-      prisma: fastify.prisma,
-      hostId: params.id,
-      status: body.status,
-    });
+    try {
+      await registerHeartbeat({
+        prisma: fastify.prisma,
+        hostId: params.id,
+        status: body.status,
+      });
+      console.log('[HEARTBEAT][BACKEND] atualizado', {
+        hostId: params.id,
+        pcId: body.pcId ?? null,
+        timestamp: logTimestamp,
+      });
+    } catch (error) {
+      console.error('[HEARTBEAT][BACKEND] erro ao atualizar', {
+        hostId: params.id,
+        pcId: body.pcId ?? null,
+        timestamp: logTimestamp,
+        error: error instanceof Error ? error.message : error,
+      });
+      throw error;
+    }
 
     return { ok: true };
   });
