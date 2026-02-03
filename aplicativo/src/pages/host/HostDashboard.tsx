@@ -1,10 +1,10 @@
 import type { FormEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useToast } from '../../components/Toast';
 import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { setLocalPcId, setPrimaryPcId } from '../../lib/hostState';
+import { getLocalPcId, getPrimaryPcId, setLocalPcId, setPrimaryPcId } from '../../lib/hostState';
 
 import styles from './HostDashboard.module.css';
 
@@ -73,6 +73,25 @@ export default function HostDashboard() {
 
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatPcId = useMemo(() => {
+    const localId = getLocalPcId();
+    if (localId) {
+      const localPc = pcs.find((pc) => pc.id === localId);
+      if (localPc?.status === 'ONLINE') {
+        return localPc.id;
+      }
+    }
+    const primaryId = getPrimaryPcId();
+    if (primaryId) {
+      const primaryPc = pcs.find((pc) => pc.id === primaryId);
+      if (primaryPc?.status === 'ONLINE') {
+        return primaryPc.id;
+      }
+    }
+    const anyOnline = pcs.find((pc) => pc.status === 'ONLINE');
+    return anyOnline?.id ?? null;
+  }, [pcs]);
 
   useEffect(() => {
     if (!hostProfileId) return;
@@ -91,6 +110,50 @@ export default function HostDashboard() {
       })
       .finally(() => setIsLoadingPcs(false));
   }, [hostProfileId, toast]);
+
+  useEffect(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+    if (!hostProfileId || !user?.id || !heartbeatPcId) {
+      return;
+    }
+
+    const hostId = hostProfileId;
+    const pcId = heartbeatPcId;
+    const intervalMs = 10000;
+    console.log('[HB][DESKTOP] start', { hostId, pcId, intervalMs });
+
+    const sendHeartbeat = async () => {
+      const timestamp = new Date().toISOString();
+      console.log('[HB][DESKTOP] tick', timestamp);
+      try {
+        await request(`/hosts/${hostId}/heartbeat`, {
+          method: 'POST',
+          body: JSON.stringify({ pcId, timestamp }),
+        });
+        console.log('[HB][DESKTOP] ok status', { hostId, pcId, timestamp });
+      } catch (error) {
+        console.error('[HB][DESKTOP] fail status', {
+          hostId,
+          pcId,
+          timestamp,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
+    };
+
+    sendHeartbeat();
+    heartbeatRef.current = setInterval(sendHeartbeat, intervalMs);
+
+    return () => {
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
+    };
+  }, [hostProfileId, user?.id, heartbeatPcId]);
 
   const handleCreateHostProfile = async () => {
     if (!user) return;

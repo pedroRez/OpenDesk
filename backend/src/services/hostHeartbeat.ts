@@ -16,7 +16,7 @@ export async function registerHeartbeat(params: {
       where: { id: hostId },
       select: { lastSeenAt: true },
     });
-    console.log('[HEARTBEAT][BACKEND] lastSeen before', {
+    console.log('[HB][BACKEND] lastSeen before', {
       hostId,
       lastSeenAt: before?.lastSeenAt?.toISOString() ?? null,
     });
@@ -30,12 +30,12 @@ export async function registerHeartbeat(params: {
       where: { id: hostId },
       select: { lastSeenAt: true },
     });
-    console.log('[HEARTBEAT][BACKEND] lastSeen after', {
+    console.log('[HB][BACKEND] lastSeen after', {
       hostId,
       lastSeenAt: after?.lastSeenAt?.toISOString() ?? null,
     });
   } catch (error) {
-    console.error('[HEARTBEAT][BACKEND] erro ao atualizar lastSeen', {
+    console.error('[HB][BACKEND] erro ao atualizar lastSeen', {
       hostId,
       error: error instanceof Error ? error.message : error,
     });

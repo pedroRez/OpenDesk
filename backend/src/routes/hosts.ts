@@ -91,17 +91,26 @@ export async function hostRoutes(fastify: FastifyInstance) {
     });
     const body = bodySchema.parse(request.body ?? {});
     const logTimestamp = body.timestamp ?? new Date().toISOString();
-    console.log('[HEARTBEAT][BACKEND] recebido', {
+    console.log('[HB][BACKEND] recebido', {
       hostId: params.id,
       pcId: body.pcId ?? null,
       timestamp: logTimestamp,
     });
     const user = await requireUser(request, reply, fastify.prisma);
-    if (!user) return;
+    if (!user) {
+      console.error('[HB][BACKEND] 401', {
+        hostId: params.id,
+        pcId: body.pcId ?? null,
+        timestamp: logTimestamp,
+      });
+      return;
+    }
     if (!user.host || user.host.id !== params.id) {
-      console.error('[HEARTBEAT][BACKEND] sem permissao', {
+      console.error('[HB][BACKEND] 403', {
         hostId: params.id,
         userId: user?.id ?? null,
+        pcId: body.pcId ?? null,
+        timestamp: logTimestamp,
       });
       return reply.status(403).send({ error: 'Sem permissao' });
     }
@@ -112,13 +121,13 @@ export async function hostRoutes(fastify: FastifyInstance) {
         hostId: params.id,
         status: body.status,
       });
-      console.log('[HEARTBEAT][BACKEND] atualizado', {
+      console.log('[HB][BACKEND] atualizado', {
         hostId: params.id,
         pcId: body.pcId ?? null,
         timestamp: logTimestamp,
       });
     } catch (error) {
-      console.error('[HEARTBEAT][BACKEND] erro ao atualizar', {
+      console.error('[HB][BACKEND] erro ao atualizar', {
         hostId: params.id,
         pcId: body.pcId ?? null,
         timestamp: logTimestamp,
