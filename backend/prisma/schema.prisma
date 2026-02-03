@@ -25,6 +25,14 @@ enum PCStatus {
   BUSY
 }
 
+enum PCCategory {
+  GAMES
+  DESIGN
+  VIDEO
+  DEV
+  OFFICE
+}
+
 enum SessionStatus {
   PENDING
   ACTIVE
@@ -62,6 +70,7 @@ model User {
   sessions  Session[]     @relation("ClientSessions")
   queueEntries QueueEntry[]
   reservations Reservation[]
+  favorites Favorite[]
   wallet    Wallet?
   walletTxs WalletTx[]
 }
@@ -76,6 +85,7 @@ model HostProfile {
   user             User     @relation(fields: [userId], references: [id])
   pcs              PC[]
   reliabilityEvents ReliabilityEvent[]
+  favorites        Favorite[]
 }
 
 model PC {
@@ -83,6 +93,10 @@ model PC {
   hostId              String
   name                String
   level               PCLevel
+  categories          PCCategory[]  @default([])
+  softwareTags        String[]      @default([])
+  specSummary         Json          @default("{}")
+  description         String        @default("")
   cpu                 String
   ramGb               Int
   gpu                 String
@@ -100,6 +114,7 @@ model PC {
   sessions            Session[]
   queueEntries        QueueEntry[]
   reservations        Reservation[]
+  favorites          Favorite[]
 }
 
 model Software {
@@ -116,6 +131,21 @@ model PCSoftware {
   software   Software @relation(fields: [softwareId], references: [id])
 
   @@id([pcId, softwareId])
+}
+
+model Favorite {
+  id        String      @id @default(uuid())
+  userId    String
+  pcId      String?
+  hostId    String?
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id])
+  pc        PC?         @relation(fields: [pcId], references: [id])
+  host      HostProfile? @relation(fields: [hostId], references: [id])
+
+  @@unique([userId, pcId])
+  @@unique([userId, hostId])
+  @@index([userId, createdAt])
 }
 
 model Session {

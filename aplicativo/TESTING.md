@@ -17,6 +17,12 @@
 - [ ] Encerrar uma sessao ativa e confirmar que o proximo da fila recebe "E sua vez!" e navega para a sessao.
 - [ ] Botao **Conectar agora** desativado quando PC esta OFFLINE.
 
+## Fluxo Cliente - Favoritos (API)
+- [ ] Favoritar um PC via `POST /favorites` com `pcId`.
+- [ ] Listar favoritos via `GET /favorites` e ver o PC favoritado com `queueCount`.
+- [ ] Desfavoritar via `DELETE /favorites` com `pcId`.
+- [ ] Tentar favoritar o mesmo PC duas vezes e receber erro de duplicata.
+
 ## Fluxo Cliente - Agendamento
 - [ ] Abrir **Agendar** em um PC online e ver painel lateral.
 - [ ] Ver horarios indisponiveis (availability) no painel.

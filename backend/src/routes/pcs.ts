@@ -7,16 +7,41 @@ import { createAndStartSession, SessionError } from '../services/sessionService.
 import { requireUser } from '../utils/auth.js';
 
 const DEFAULT_MINUTES_PURCHASED = 60;
+const PC_CATEGORY_ENUM = ['GAMES', 'DESIGN', 'VIDEO', 'DEV', 'OFFICE'] as const;
+const pcCategorySchema = z.enum(PC_CATEGORY_ENUM);
+const specSummarySchema = z.object({
+  cpu: z.string().min(1),
+  gpu: z.string().min(1),
+  ram: z.string().min(1),
+});
+const categoriesQuerySchema = z.preprocess((value) => {
+  if (value === undefined || value === null) return undefined;
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return parsed.length > 0 ? parsed : undefined;
+  }
+  return value;
+}, z.array(pcCategorySchema)).optional();
 
 export async function pcRoutes(fastify: FastifyInstance) {
   fastify.get('/pcs', async (request) => {
     const query = z
       .object({
         status: z.enum(['ONLINE', 'OFFLINE', 'BUSY']).optional(),
+        categories: categoriesQuerySchema,
       })
       .parse(request.query ?? {});
 
+    const where = query.categories?.length
+      ? { categories: { hasSome: query.categories } }
+      : undefined;
+
     const pcs = await fastify.prisma.pC.findMany({
+      where,
       include: {
         softwareLinks: { include: { software: true } },
         host: true,
@@ -89,6 +114,10 @@ export async function pcRoutes(fastify: FastifyInstance) {
       hostId: z.string().optional(),
       name: z.string(),
       level: z.enum(['A', 'B', 'C']),
+      categories: z.array(pcCategorySchema).optional(),
+      softwareTags: z.array(z.string().min(1)).optional(),
+      specSummary: specSummarySchema.optional(),
+      description: z.string().max(280).optional(),
       cpu: z.string(),
       ramGb: z.number(),
       gpu: z.string(),
@@ -112,12 +141,32 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Host invalido' });
     }
 
-    const { hostId: _hostId, ...payload } = body;
+    const {
+      hostId: _hostId,
+      categories,
+      softwareTags,
+      specSummary,
+      description,
+      connectionPort,
+      ...payload
+    } = body;
+    const resolvedSpecSummary =
+      specSummary ??
+      ({
+        cpu: payload.cpu,
+        gpu: payload.gpu,
+        ram: `${payload.ramGb} GB`,
+      } satisfies z.infer<typeof specSummarySchema>);
+
     return fastify.prisma.pC.create({
       data: {
         ...payload,
         hostId: user.host.id,
-        connectionPort: body.connectionPort ?? 47990,
+        connectionPort: connectionPort ?? 47990,
+        categories: categories ?? [],
+        softwareTags: softwareTags ?? [],
+        description: description ?? '',
+        specSummary: resolvedSpecSummary,
       },
     });
   });
@@ -127,6 +176,10 @@ export async function pcRoutes(fastify: FastifyInstance) {
     const schema = z.object({
       name: z.string().optional(),
       level: z.enum(['A', 'B', 'C']).optional(),
+      categories: z.array(pcCategorySchema).optional(),
+      softwareTags: z.array(z.string().min(1)).optional(),
+      specSummary: specSummarySchema.optional(),
+      description: z.string().max(280).optional(),
       cpu: z.string().optional(),
       ramGb: z.number().optional(),
       gpu: z.string().optional(),
@@ -156,6 +209,19 @@ export async function pcRoutes(fastify: FastifyInstance) {
     }
 
     const data = { ...body };
+    const shouldSyncSpecSummary =
+      body.specSummary ??
+      (body.cpu || body.gpu || body.ramGb
+        ? {
+            cpu: body.cpu ?? pc.cpu,
+            gpu: body.gpu ?? pc.gpu,
+            ram: `${body.ramGb ?? pc.ramGb} GB`,
+          }
+        : undefined);
+
+    if (shouldSyncSpecSummary) {
+      data.specSummary = shouldSyncSpecSummary;
+    }
     if (body.connectionPort === undefined) {
       delete data.connectionPort;
     }

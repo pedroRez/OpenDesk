@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import { config } from './config.js';
 import { prismaPlugin } from './plugins/prisma.js';
 import { authRoutes } from './routes/auth.js';
+import { favoriteRoutes } from './routes/favorites.js';
 import { hostRoutes } from './routes/hosts.js';
 import { pcRoutes } from './routes/pcs.js';
 import { sessionRoutes } from './routes/sessions.js';
@@ -27,6 +28,7 @@ async function start() {
     app.get('/health', async () => ({ status: 'ok' }));
 
     await app.register(authRoutes);
+    await app.register(favoriteRoutes);
     await app.register(hostRoutes);
     await app.register(pcRoutes);
     await app.register(softwareRoutes);
