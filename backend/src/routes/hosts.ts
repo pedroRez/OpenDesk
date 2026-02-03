@@ -1,14 +1,39 @@
 import { z } from 'zod';
 
 import { registerHeartbeat } from '../services/hostHeartbeat.js';
+import { getReliabilityBadge, getReliabilityStats, getReliabilityStatsMap } from '../services/hostReliabilityStats.js';
 import { requireUser } from '../utils/auth.js';
 
 import type { FastifyInstance } from 'fastify';
 
 export async function hostRoutes(fastify: FastifyInstance) {
   fastify.get('/hosts', async () => {
-    return fastify.prisma.hostProfile.findMany({
+    const hosts = await fastify.prisma.hostProfile.findMany({
       include: { pcs: true, user: true },
+    });
+
+    const reliabilityMap = await getReliabilityStatsMap(
+      fastify.prisma,
+      hosts.map((host) => host.id),
+    );
+
+    return hosts.map((host) => {
+      const reliability = reliabilityMap.get(host.id);
+      const stats =
+        reliability?.stats ?? {
+          sessionsTotal: host.sessionsTotal ?? 0,
+          sessionsCompleted: host.sessionsCompleted ?? 0,
+          sessionsDropped: host.sessionsDropped ?? 0,
+          onlineMinutes7d: 0,
+          lastDropAt: host.lastDropAt ?? null,
+        };
+      const badge = reliability?.badge ?? getReliabilityBadge(stats);
+
+      return {
+        ...host,
+        reliabilityStats: stats,
+        reliabilityBadge: badge,
+      };
     });
   });
 
@@ -19,9 +44,19 @@ export async function hostRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Usuario nao e host' });
     }
 
-    return fastify.prisma.pC.findMany({
+    const pcs = await fastify.prisma.pC.findMany({
       where: { hostId: user.host.id },
     });
+
+    const badge = getReliabilityBadge({
+      sessionsTotal: user.host?.sessionsTotal ?? 0,
+      sessionsCompleted: user.host?.sessionsCompleted ?? 0,
+    });
+
+    return pcs.map((pc) => ({
+      ...pc,
+      reliabilityBadge: badge,
+    }));
   });
 
   fastify.post('/host/profile', async (request, reply) => {
@@ -46,8 +81,25 @@ export async function hostRoutes(fastify: FastifyInstance) {
       });
     }
 
+    const reliability = await getReliabilityStats(fastify.prisma, hostProfile.id);
+
     return reply.send({
-      hostProfile,
+      hostProfile: {
+        ...hostProfile,
+        reliabilityStats: reliability?.stats ?? {
+          sessionsTotal: hostProfile.sessionsTotal ?? 0,
+          sessionsCompleted: hostProfile.sessionsCompleted ?? 0,
+          sessionsDropped: hostProfile.sessionsDropped ?? 0,
+          onlineMinutes7d: 0,
+          lastDropAt: hostProfile.lastDropAt ?? null,
+        },
+        reliabilityBadge:
+          reliability?.badge ??
+          getReliabilityBadge({
+            sessionsTotal: hostProfile.sessionsTotal ?? 0,
+            sessionsCompleted: hostProfile.sessionsCompleted ?? 0,
+          }),
+      },
       hostProfileId: hostProfile.id,
     });
   });
@@ -74,8 +126,25 @@ export async function hostRoutes(fastify: FastifyInstance) {
       });
     }
 
+    const reliability = await getReliabilityStats(fastify.prisma, hostProfile.id);
+
     return reply.send({
-      hostProfile,
+      hostProfile: {
+        ...hostProfile,
+        reliabilityStats: reliability?.stats ?? {
+          sessionsTotal: hostProfile.sessionsTotal ?? 0,
+          sessionsCompleted: hostProfile.sessionsCompleted ?? 0,
+          sessionsDropped: hostProfile.sessionsDropped ?? 0,
+          onlineMinutes7d: 0,
+          lastDropAt: hostProfile.lastDropAt ?? null,
+        },
+        reliabilityBadge:
+          reliability?.badge ??
+          getReliabilityBadge({
+            sessionsTotal: hostProfile.sessionsTotal ?? 0,
+            sessionsCompleted: hostProfile.sessionsCompleted ?? 0,
+          }),
+      },
       hostProfileId: hostProfile.id,
     });
   });

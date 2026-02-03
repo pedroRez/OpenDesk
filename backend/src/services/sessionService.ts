@@ -4,6 +4,7 @@ import { addMinutes } from 'date-fns';
 import { config } from '../config.js';
 import { calculateSettlement, type FailureReason } from '../utils/penalty.js';
 import { recordReliabilityEvent, type ReliabilityEventType } from './hostReliability.js';
+import { recordHostSessionEnd, recordHostSessionStart } from './hostReliabilityStats.js';
 
 import type { Session } from '@prisma/client';
 
@@ -147,8 +148,9 @@ async function startSessionInternal(params: {
   const pcRows = await prisma.$queryRaw<{
     id: string;
     status: PCStatus;
+    hostId: string;
   }[]>`
-      SELECT "id", "status" FROM "PC" WHERE "id" = ${session.pcId} FOR UPDATE
+      SELECT "id", "status", "hostId" FROM "PC" WHERE "id" = ${session.pcId} FOR UPDATE
     `;
 
   const pc = pcRows[0];
@@ -164,10 +166,14 @@ async function startSessionInternal(params: {
   const now = new Date();
   const endAt = addMinutes(now, session.minutesPurchased);
 
-  return prisma.session.update({
+  const updatedSession = await prisma.session.update({
     where: { id: session.id },
     data: { status: SessionStatus.ACTIVE, startAt: now, endAt },
   });
+
+  await recordHostSessionStart(prisma, pc.hostId);
+
+  return updatedSession;
 }
 
 export async function createSession(params: {
@@ -366,6 +372,10 @@ export async function endSession(params: {
       finalStatus === SessionStatus.FAILED ? 'SESSION_FAILED' : 'SESSION_OK';
 
     await recordReliabilityEvent(tx, session.pc.hostId, reliabilityType);
+    await recordHostSessionEnd(tx, session.pc.hostId, {
+      status: finalStatus === SessionStatus.FAILED ? 'DROPPED' : 'COMPLETED',
+      endedAt: endTime,
+    });
 
     return updated;
   });

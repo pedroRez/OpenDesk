@@ -27,6 +27,12 @@
 - [ ] Abrir a area **Favoritos** e ver a lista de PCs/Hosts.
 - [ ] Texto de protecao sobre jogos/softwares visivel no marketplace.
 
+## Fluxo Cliente - Confiabilidade
+- [ ] Host novo aparece com badge **Novo** no card do PC.
+- [ ] Apos >=5 sessoes concluidas, o badge muda para **Confiavel**.
+- [ ] Simular queda/erro e validar que o badge muda para **Instavel**.
+- [ ] Tooltip do badge explica a base do score.
+
 ## Fluxo Cliente - Agendamento
 - [ ] Abrir **Agendar** em um PC online e ver painel lateral.
 - [ ] Ver horarios indisponiveis (availability) no painel.

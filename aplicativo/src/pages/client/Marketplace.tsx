@@ -9,6 +9,7 @@ import { useAuth } from '../../lib/auth';
 import styles from './Marketplace.module.css';
 
 type PCCategory = 'GAMES' | 'DESIGN' | 'VIDEO' | 'DEV' | 'OFFICE';
+type ReliabilityBadge = 'CONFIAVEL' | 'NOVO' | 'INSTAVEL';
 
 type PCSpecSummary = {
   cpu?: string;
@@ -23,6 +24,7 @@ type PC = {
   pricePerHour: number;
   status: 'ONLINE' | 'OFFLINE' | 'BUSY';
   queueCount: number;
+  reliabilityBadge?: ReliabilityBadge;
   categories?: PCCategory[];
   softwareTags?: string[];
   specSummary?: PCSpecSummary | null;
@@ -66,6 +68,12 @@ const CATEGORY_LABELS: Record<PCCategory, string> = {
   DEV: 'Dev',
   OFFICE: 'Office',
 };
+const RELIABILITY_LABELS: Record<ReliabilityBadge, string> = {
+  CONFIAVEL: 'Confiavel',
+  NOVO: 'Novo',
+  INSTAVEL: 'Instavel',
+};
+const RELIABILITY_TOOLTIP = 'Baseado em sessoes concluidas e tempo online recente.';
 
 const formatDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -639,6 +647,14 @@ export default function Marketplace() {
           const hostName = pc.host?.displayName ?? 'N/A';
           const hostId = pc.host?.id ?? null;
           const isFavoriteHost = hostId ? favoriteHostIds.has(hostId) : false;
+          const reliabilityValue: ReliabilityBadge = pc.reliabilityBadge ?? 'NOVO';
+          const reliabilityLabel = RELIABILITY_LABELS[reliabilityValue];
+          const reliabilityClass =
+            reliabilityValue === 'CONFIAVEL'
+              ? styles.reliabilityConfiavel
+              : reliabilityValue === 'INSTAVEL'
+                ? styles.reliabilityInstavel
+                : styles.reliabilityNovo;
           return (
             <article key={pc.id} className={styles.card}>
               <div>
@@ -658,6 +674,13 @@ export default function Marketplace() {
                     </button>
                     <span className={`${styles.statusBadge} ${statusClass}`}>{pc.status}</span>
                   </div>
+                </div>
+                <div
+                  className={`${styles.reliabilityBadge} ${reliabilityClass}`}
+                  title={RELIABILITY_TOOLTIP}
+                >
+                  <span className={styles.reliabilityDot} />
+                  {reliabilityLabel}
                 </div>
                 <div className={styles.hostLine}>
                   <span>Host: {hostName}</span>

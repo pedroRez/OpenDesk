@@ -4,6 +4,7 @@ import { PCStatus, QueueEntryStatus, ReservationStatus, SessionStatus } from '@p
 import type { FastifyInstance } from 'fastify';
 
 import { createAndStartSession, SessionError } from '../services/sessionService.js';
+import { getReliabilityBadge } from '../services/hostReliabilityStats.js';
 import { requireUser } from '../utils/auth.js';
 
 const DEFAULT_MINUTES_PURCHASED = 60;
@@ -66,10 +67,17 @@ export async function pcRoutes(fastify: FastifyInstance) {
 
     const queueCountMap = new Map(queueCounts.map((item) => [item.pcId, item._count._all]));
 
-    const enriched = pcs.map(({ sessions, ...pc }) => ({
+    const enriched = pcs.map(({ sessions, host, ...pc }) => ({
       ...pc,
+      host,
       status: sessions.length > 0 ? PCStatus.BUSY : pc.status,
       queueCount: queueCountMap.get(pc.id) ?? 0,
+      reliabilityBadge: host
+        ? getReliabilityBadge({
+            sessionsTotal: host.sessionsTotal ?? 0,
+            sessionsCompleted: host.sessionsCompleted ?? 0,
+          })
+        : 'NOVO',
     }));
 
     if (query.status) {
@@ -101,11 +109,18 @@ export async function pcRoutes(fastify: FastifyInstance) {
       where: { pcId: pc.id, status: QueueEntryStatus.WAITING },
     });
 
-    const { sessions, ...rest } = pc;
+    const { sessions, host, ...rest } = pc;
     return {
       ...rest,
+      host,
       status: sessions.length > 0 ? PCStatus.BUSY : pc.status,
       queueCount,
+      reliabilityBadge: host
+        ? getReliabilityBadge({
+            sessionsTotal: host.sessionsTotal ?? 0,
+            sessionsCompleted: host.sessionsCompleted ?? 0,
+          })
+        : 'NOVO',
     };
   });
 

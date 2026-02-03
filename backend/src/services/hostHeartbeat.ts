@@ -3,6 +3,7 @@ import { PCStatus, SessionStatus, type PrismaClient } from '@prisma/client';
 import { config } from '../config.js';
 import { endSession } from './sessionService.js';
 import { recordReliabilityEvent } from './hostReliability.js';
+import { recordHostDrop, recordHostOnlineMinute } from './hostReliabilityStats.js';
 
 export async function registerHeartbeat(params: {
   prisma: PrismaClient;
@@ -34,6 +35,10 @@ export async function registerHeartbeat(params: {
       lastSeenAt: updated.lastSeenAt?.toISOString() ?? null,
       now: now.toISOString(),
     });
+
+    if (status !== PCStatus.OFFLINE) {
+      await recordHostOnlineMinute(prisma, hostId, now);
+    }
   } catch (error) {
     console.error('[HB][BACKEND] erro ao atualizar lastSeen', {
       hostId,
@@ -88,6 +93,7 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
       });
 
       await recordReliabilityEvent(prisma, host.id, 'HOST_DOWN');
+      await recordHostDrop(prisma, host.id, now);
 
       const sessions = await prisma.session.findMany({
         where: {

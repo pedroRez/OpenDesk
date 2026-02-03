@@ -80,12 +80,17 @@ model HostProfile {
   userId           String   @unique
   displayName      String
   reliabilityScore Float    @default(100)
+  sessionsTotal    Int      @default(0)
+  sessionsCompleted Int     @default(0)
+  sessionsDropped  Int      @default(0)
+  lastDropAt       DateTime?
   lastSeenAt       DateTime @default(now())
   createdAt        DateTime @default(now())
   user             User     @relation(fields: [userId], references: [id])
   pcs              PC[]
   reliabilityEvents ReliabilityEvent[]
   favorites        Favorite[]
+  onlineMinutes    HostOnlineMinute[]
 }
 
 model PC {
@@ -221,4 +226,13 @@ model ReliabilityEvent {
   type      String
   createdAt DateTime @default(now())
   host      HostProfile @relation(fields: [hostId], references: [id])
+}
+
+model HostOnlineMinute {
+  hostId String
+  minute DateTime
+  host   HostProfile @relation(fields: [hostId], references: [id])
+
+  @@id([hostId, minute])
+  @@index([minute])
 }

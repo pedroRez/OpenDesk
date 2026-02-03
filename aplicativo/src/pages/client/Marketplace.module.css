@@ -153,6 +153,46 @@
   gap: 8px;
 }
 
+.reliabilityBadge {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  width: fit-content;
+}
+
+.reliabilityDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.reliabilityConfiavel {
+  color: #0f766e;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(15, 118, 110, 0.2);
+}
+
+.reliabilityNovo {
+  color: #b45309;
+  background: rgba(251, 146, 60, 0.15);
+  border-color: rgba(180, 83, 9, 0.2);
+}
+
+.reliabilityInstavel {
+  color: #b91c1c;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(185, 28, 28, 0.2);
+}
+
 .hostLine {
   margin: 4px 0 0;
   color: var(--muted);
