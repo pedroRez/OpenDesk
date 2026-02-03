@@ -8,6 +8,14 @@ import { useAuth } from '../../lib/auth';
 
 import styles from './Marketplace.module.css';
 
+type PCCategory = 'GAMES' | 'DESIGN' | 'VIDEO' | 'DEV' | 'OFFICE';
+
+type PCSpecSummary = {
+  cpu?: string;
+  gpu?: string;
+  ram?: string;
+};
+
 type PC = {
   id: string;
   name: string;
@@ -15,7 +23,11 @@ type PC = {
   pricePerHour: number;
   status: 'ONLINE' | 'OFFLINE' | 'BUSY';
   queueCount: number;
-  host?: { displayName: string } | null;
+  categories?: PCCategory[];
+  softwareTags?: string[];
+  specSummary?: PCSpecSummary | null;
+  description?: string | null;
+  host?: { id: string; displayName: string } | null;
   cpu?: string;
   ramGb?: number;
   gpu?: string;
@@ -23,6 +35,17 @@ type PC = {
   storageType?: string;
   internetUploadMbps?: number;
 };
+
+type FavoriteItem = {
+  id: string;
+  pcId: string | null;
+  hostId: string | null;
+  createdAt: string;
+  pc: { id: string; name: string; status: 'ONLINE' | 'OFFLINE' | 'BUSY'; queueCount: number } | null;
+  host: { id: string; displayName: string } | null;
+};
+
+type FavoritePcTarget = Pick<PC, 'id' | 'name' | 'status' | 'queueCount'>;
 
 type ReservationSlot = {
   id: string;
@@ -36,6 +59,13 @@ type QueueJoinResponse =
   | { status: 'WAITING'; position: number; queueCount: number };
 
 const DEFAULT_MINUTES = 60;
+const CATEGORY_LABELS: Record<PCCategory, string> = {
+  GAMES: 'Jogos',
+  DESIGN: 'Design',
+  VIDEO: 'Video',
+  DEV: 'Dev',
+  OFFICE: 'Office',
+};
 
 const formatDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -56,10 +86,33 @@ const formatTime = (value: string) =>
 const formatDateLabel = (value: Date) =>
   value.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
+const formatSpecSummary = (pc: PC) => {
+  const summary = pc.specSummary ?? {};
+  const cpu = summary.cpu ?? pc.cpu;
+  const gpu = summary.gpu ?? pc.gpu;
+  const ramRaw = summary.ram ?? (pc.ramGb ? `${pc.ramGb} GB` : undefined);
+  const ram =
+    ramRaw && ramRaw.toLowerCase().includes('ram') ? ramRaw : ramRaw ? `${ramRaw} RAM` : undefined;
+  const parts = [gpu, ram, cpu].filter(Boolean);
+  return parts.length > 0 ? parts.join(' | ') : '';
+};
+
+const truncate = (value: string | null | undefined, max = 120) => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max - 1).trim()}...`;
+};
+
 export default function Marketplace() {
   const [pcs, setPcs] = useState<PC[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [favoritesError, setFavoritesError] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<PCCategory[]>([]);
+  const [selectedSoftwareTags, setSelectedSoftwareTags] = useState<string[]>([]);
   const [connectingPcId, setConnectingPcId] = useState<string | null>(null);
   const [schedulePc, setSchedulePc] = useState<PC | null>(null);
   const [scheduleDate, setScheduleDate] = useState(() => formatDateInput(new Date()));
@@ -97,11 +150,38 @@ export default function Marketplace() {
     }
   };
 
+  const loadFavorites = async () => {
+    if (!isAuthenticated) {
+      setFavorites([]);
+      setFavoritesError('');
+      return;
+    }
+    setFavoritesLoading(true);
+    try {
+      const data = await request<FavoriteItem[]>('/favorites');
+      setFavorites(data ?? []);
+      setFavoritesError('');
+    } catch (err) {
+      setFavoritesError(err instanceof Error ? err.message : 'Erro ao carregar favoritos');
+    } finally {
+      setFavoritesLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadPcs(true);
     const intervalId = setInterval(() => loadPcs(false), 12000);
     return () => clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadFavorites();
+    } else {
+      setFavorites([]);
+      setFavoritesError('');
+    }
+  }, [isAuthenticated, user?.id]);
 
   const statusCounts = useMemo(() => {
     return pcs.reduce(
@@ -115,6 +195,154 @@ export default function Marketplace() {
       { total: 0, online: 0, busy: 0, offline: 0 },
     );
   }, [pcs]);
+
+  const favoritePcIds = useMemo(
+    () => new Set(favorites.filter((favorite) => favorite.pcId).map((favorite) => favorite.pcId!)),
+    [favorites],
+  );
+
+  const favoriteHostIds = useMemo(
+    () =>
+      new Set(favorites.filter((favorite) => favorite.hostId).map((favorite) => favorite.hostId!)),
+    [favorites],
+  );
+
+  const availableSoftwareTags = useMemo(() => {
+    const set = new Set<string>();
+    pcs.forEach((pc) => {
+      pc.softwareTags?.forEach((tag) => {
+        if (tag && tag.trim()) {
+          set.add(tag.trim());
+        }
+      });
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pcs]);
+
+  const filtersActive = selectedCategories.length > 0 || selectedSoftwareTags.length > 0;
+
+  const filteredPcs = useMemo(() => {
+    return pcs.filter((pc) => {
+      const categories = pc.categories ?? [];
+      const tags = pc.softwareTags ?? [];
+      const matchesCategory =
+        selectedCategories.length === 0 ||
+        categories.some((category) => selectedCategories.includes(category));
+      const matchesTags =
+        selectedSoftwareTags.length === 0 ||
+        tags.some((tag) => selectedSoftwareTags.includes(tag));
+      return matchesCategory && matchesTags;
+    });
+  }, [pcs, selectedCategories, selectedSoftwareTags]);
+
+  const handleToggleFavoritePc = async (pc: FavoritePcTarget) => {
+    if (!isAuthenticated || !user) {
+      toast.show('Faca login para favoritar.', 'info');
+      navigate(`/login?next=${encodeURIComponent('/client/marketplace')}`);
+      return;
+    }
+
+    const isFavorite = favoritePcIds.has(pc.id);
+    const previous = favorites;
+
+    if (isFavorite) {
+      setFavorites((prev) => prev.filter((favorite) => favorite.pcId !== pc.id));
+      try {
+        await request('/favorites', {
+          method: 'DELETE',
+          body: JSON.stringify({ pcId: pc.id }),
+        });
+      } catch (err) {
+        setFavorites(previous);
+        toast.show(err instanceof Error ? err.message : 'Erro ao desfavoritar', 'error');
+      }
+      return;
+    }
+
+    const optimistic: FavoriteItem = {
+      id: `temp-pc-${pc.id}`,
+      pcId: pc.id,
+      hostId: null,
+      createdAt: new Date().toISOString(),
+      pc: {
+        id: pc.id,
+        name: pc.name,
+        status: pc.status,
+        queueCount: pc.queueCount,
+      },
+      host: null,
+    };
+
+    setFavorites((prev) => [optimistic, ...prev]);
+    try {
+      const response = await request<{ favorite: { id: string; createdAt: string } }>('/favorites', {
+        method: 'POST',
+        body: JSON.stringify({ pcId: pc.id }),
+      });
+      setFavorites((prev) =>
+        prev.map((item) =>
+          item.id === optimistic.id
+            ? { ...item, id: response.favorite.id, createdAt: response.favorite.createdAt }
+            : item,
+        ),
+      );
+    } catch (err) {
+      setFavorites(previous);
+      toast.show(err instanceof Error ? err.message : 'Erro ao favoritar', 'error');
+    }
+  };
+
+  const handleToggleFavoriteHost = async (hostId: string, displayName: string) => {
+    if (!isAuthenticated || !user) {
+      toast.show('Faca login para favoritar.', 'info');
+      navigate(`/login?next=${encodeURIComponent('/client/marketplace')}`);
+      return;
+    }
+
+    const isFavorite = favoriteHostIds.has(hostId);
+    const previous = favorites;
+
+    if (isFavorite) {
+      setFavorites((prev) => prev.filter((favorite) => favorite.hostId !== hostId));
+      try {
+        await request('/favorites', {
+          method: 'DELETE',
+          body: JSON.stringify({ hostId }),
+        });
+      } catch (err) {
+        setFavorites(previous);
+        toast.show(err instanceof Error ? err.message : 'Erro ao desfavoritar host', 'error');
+      }
+      return;
+    }
+
+    const optimistic: FavoriteItem = {
+      id: `temp-host-${hostId}`,
+      pcId: null,
+      hostId,
+      createdAt: new Date().toISOString(),
+      pc: null,
+      host: { id: hostId, displayName },
+    };
+
+    setFavorites((prev) => [optimistic, ...prev]);
+    try {
+      const response = await request<{ favorite: { id: string; createdAt: string } }>('/favorites', {
+        method: 'POST',
+        body: JSON.stringify({ hostId }),
+      });
+      setFavorites((prev) =>
+        prev.map((item) =>
+          item.id === optimistic.id
+            ? { ...item, id: response.favorite.id, createdAt: response.favorite.createdAt }
+            : item,
+        ),
+      );
+    } catch (err) {
+      setFavorites(previous);
+      toast.show(err instanceof Error ? err.message : 'Erro ao favoritar host', 'error');
+    }
+  };
 
   const handleConnectNow = async (pc: PC) => {
     if (!isAuthenticated || !user) {
@@ -227,6 +455,23 @@ export default function Marketplace() {
     }
   };
 
+  const handleCategoryToggle = (category: PCCategory) => {
+    setSelectedCategories((prev) =>
+      prev.includes(category) ? prev.filter((item) => item !== category) : [...prev, category],
+    );
+  };
+
+  const handleSoftwareToggle = (tag: string) => {
+    setSelectedSoftwareTags((prev) =>
+      prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag],
+    );
+  };
+
+  const clearFilters = () => {
+    setSelectedCategories([]);
+    setSelectedSoftwareTags([]);
+  };
+
   return (
     <section className={styles.container}>
       <header className={styles.header}>
@@ -238,6 +483,126 @@ export default function Marketplace() {
           {statusCounts.total} PCs | {statusCounts.online} online | {statusCounts.busy} ocupados
         </div>
       </header>
+
+      <section className={styles.favoritesPanel}>
+        <div className={styles.favoritesHeader}>
+          <div>
+            <h2>Favoritos</h2>
+            <p className={styles.muted}>Acesse rapidamente os PCs e Hosts que voce gosta.</p>
+          </div>
+          <span className={styles.favoritesCount}>{favorites.length} itens</span>
+        </div>
+        {!isAuthenticated && (
+          <p className={styles.muted}>Faca login para salvar favoritos e acessar esta lista.</p>
+        )}
+        {isAuthenticated && favoritesLoading && <p>Carregando favoritos...</p>}
+        {isAuthenticated && favoritesError && <p className={styles.errorInline}>{favoritesError}</p>}
+        {isAuthenticated && !favoritesLoading && !favoritesError && favorites.length === 0 && (
+          <p className={styles.muted}>Nenhum favorito ainda. Use a estrela nos cards.</p>
+        )}
+        {favorites.length > 0 && (
+          <ul className={styles.favoritesList}>
+            {favorites.map((favorite) => {
+              if (favorite.pc) {
+                return (
+                  <li key={favorite.id} className={styles.favoriteItem}>
+                    <div className={styles.favoriteInfo}>
+                      <strong>{favorite.pc.name}</strong>
+                      <div className={styles.favoriteMeta}>
+                        <span>Status: {favorite.pc.status}</span>
+                        <span>Fila: {favorite.pc.queueCount}</span>
+                      </div>
+                    </div>
+                    <div className={styles.favoriteActions}>
+                      <Link className={styles.favoriteLink} to={`/client/pcs/${favorite.pc.id}`}>
+                        Ver detalhes
+                      </Link>
+                      <button
+                        type="button"
+                        className={styles.favoriteToggle}
+                        onClick={() => favorite.pc && handleToggleFavoritePc(favorite.pc)}
+                        aria-label="Desfavoritar PC"
+                      >
+                        ★
+                      </button>
+                    </div>
+                  </li>
+                );
+              }
+              if (favorite.host) {
+                return (
+                  <li key={favorite.id} className={styles.favoriteItem}>
+                    <div className={styles.favoriteInfo}>
+                      <strong>{favorite.host.displayName}</strong>
+                      <div className={styles.favoriteMeta}>
+                        <span>Host favorito</span>
+                      </div>
+                    </div>
+                    <div className={styles.favoriteActions}>
+                      <button
+                        type="button"
+                        className={styles.favoriteToggle}
+                        onClick={() =>
+                          handleToggleFavoriteHost(favorite.host!.id, favorite.host!.displayName)
+                        }
+                        aria-label="Desfavoritar host"
+                      >
+                        ★
+                      </button>
+                    </div>
+                  </li>
+                );
+              }
+              return null;
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className={styles.filters}>
+        <div className={styles.filterGroup}>
+          <span className={styles.filterLabel}>Categorias</span>
+          <div className={styles.filterOptions}>
+            {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
+              const category = key as PCCategory;
+              return (
+                <label key={category} className={styles.filterOption}>
+                  <input
+                    type="checkbox"
+                    checked={selectedCategories.includes(category)}
+                    onChange={() => handleCategoryToggle(category)}
+                  />
+                  {label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+        <div className={styles.filterGroup}>
+          <span className={styles.filterLabel}>Softwares e plataformas</span>
+          <div className={styles.filterOptions}>
+            {availableSoftwareTags.length === 0 && <span className={styles.muted}>Sem tags.</span>}
+            {availableSoftwareTags.map((tag) => (
+              <label key={tag} className={styles.filterOption}>
+                <input
+                  type="checkbox"
+                  checked={selectedSoftwareTags.includes(tag)}
+                  onChange={() => handleSoftwareToggle(tag)}
+                />
+                {tag}
+              </label>
+            ))}
+          </div>
+        </div>
+        <button
+          type="button"
+          className={styles.clearFilters}
+          onClick={clearFilters}
+          disabled={!filtersActive}
+        >
+          Limpar filtros
+        </button>
+      </section>
 
       {isLoading && <p>Carregando PCs...</p>}
       {error && (
@@ -254,9 +619,12 @@ export default function Marketplace() {
       {!isLoading && !error && pcs.length === 0 && (
         <div className={styles.empty}>Nenhum PC disponivel no momento. Tente novamente em alguns instantes.</div>
       )}
+      {!isLoading && !error && pcs.length > 0 && filteredPcs.length === 0 && filtersActive && (
+        <div className={styles.empty}>Nenhum PC corresponde aos filtros selecionados.</div>
+      )}
 
       <div className={styles.grid}>
-        {pcs.map((pc) => {
+        {filteredPcs.map((pc) => {
           const isOffline = pc.status === 'OFFLINE';
           const isBusy = pc.status === 'BUSY';
           const statusClass =
@@ -265,6 +633,12 @@ export default function Marketplace() {
               : pc.status === 'BUSY'
                 ? styles.statusBusy
                 : styles.statusOffline;
+          const specSummary = formatSpecSummary(pc);
+          const description = truncate(pc.description, 140);
+          const isFavoritePc = favoritePcIds.has(pc.id);
+          const hostName = pc.host?.displayName ?? 'N/A';
+          const hostId = pc.host?.id ?? null;
+          const isFavoriteHost = hostId ? favoriteHostIds.has(hostId) : false;
           return (
             <article key={pc.id} className={styles.card}>
               <div>
@@ -273,9 +647,51 @@ export default function Marketplace() {
                     <h3>{pc.name}</h3>
                     <p>Nivel {pc.level}</p>
                   </div>
-                  <span className={`${styles.statusBadge} ${statusClass}`}>{pc.status}</span>
+                  <div className={styles.cardHeaderActions}>
+                    <button
+                      type="button"
+                      className={`${styles.favoriteToggle} ${isFavoritePc ? styles.favoriteActive : ''}`}
+                      onClick={() => handleToggleFavoritePc(pc)}
+                      aria-label={isFavoritePc ? 'Desfavoritar PC' : 'Favoritar PC'}
+                    >
+                      {isFavoritePc ? '★' : '☆'}
+                    </button>
+                    <span className={`${styles.statusBadge} ${statusClass}`}>{pc.status}</span>
+                  </div>
                 </div>
-                <p className={styles.hostLine}>Host: {pc.host?.displayName ?? 'N/A'}</p>
+                <div className={styles.hostLine}>
+                  <span>Host: {hostName}</span>
+                  {hostId && (
+                    <button
+                      type="button"
+                      className={`${styles.favoriteToggle} ${isFavoriteHost ? styles.favoriteActive : ''}`}
+                      onClick={() => handleToggleFavoriteHost(hostId, hostName)}
+                      aria-label={isFavoriteHost ? 'Desfavoritar host' : 'Favoritar host'}
+                    >
+                      {isFavoriteHost ? '★' : '☆'}
+                    </button>
+                  )}
+                </div>
+                {pc.categories && pc.categories.length > 0 && (
+                  <div className={styles.tagRow}>
+                    {pc.categories.map((category) => (
+                      <span key={category} className={`${styles.tag} ${styles.tagCategory}`}>
+                        {CATEGORY_LABELS[category] ?? category}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {pc.softwareTags && pc.softwareTags.length > 0 && (
+                  <div className={styles.tagRow}>
+                    {pc.softwareTags.map((tag) => (
+                      <span key={`${pc.id}-${tag}`} className={`${styles.tag} ${styles.tagSoftware}`}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {specSummary && <p className={styles.specSummary}>{specSummary}</p>}
+                {description && <p className={styles.description}>{description}</p>}
                 <ul className={styles.specs}>
                   <li>
                     <strong>CPU:</strong> {pc.cpu ?? 'Nao informado'}
@@ -329,6 +745,10 @@ export default function Marketplace() {
           );
         })}
       </div>
+
+      <footer className={styles.policyNote}>
+        O OpenDesk nao fornece jogos ou softwares. O usuario utiliza suas proprias contas e licencas.
+      </footer>
 
       {schedulePc && (
         <div className={styles.scheduleOverlay} role="dialog" aria-modal="true">

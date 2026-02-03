@@ -17,11 +17,15 @@
 - [ ] Encerrar uma sessao ativa e confirmar que o proximo da fila recebe "E sua vez!" e navega para a sessao.
 - [ ] Botao **Conectar agora** desativado quando PC esta OFFLINE.
 
-## Fluxo Cliente - Favoritos (API)
-- [ ] Favoritar um PC via `POST /favorites` com `pcId`.
-- [ ] Listar favoritos via `GET /favorites` e ver o PC favoritado com `queueCount`.
-- [ ] Desfavoritar via `DELETE /favorites` com `pcId`.
-- [ ] Tentar favoritar o mesmo PC duas vezes e receber erro de duplicata.
+## Fluxo Cliente - Marketplace (Filtros e Favoritos)
+- [ ] Filtrar por categoria (ex.: Jogos, Dev) e ver lista atualizada.
+- [ ] Filtrar por software/plataforma (ex.: Steam, Photoshop) e ver lista atualizada.
+- [ ] Limpar filtros e ver todos os PCs novamente.
+- [ ] Favoritar um PC no card e ver a estrela ativa.
+- [ ] Desfavoritar um PC e ver a estrela inativa.
+- [ ] Tentar favoritar o mesmo PC duas vezes e confirmar que nao duplica.
+- [ ] Abrir a area **Favoritos** e ver a lista de PCs/Hosts.
+- [ ] Texto de protecao sobre jogos/softwares visivel no marketplace.
 
 ## Fluxo Cliente - Agendamento
 - [ ] Abrir **Agendar** em um PC online e ver painel lateral.
