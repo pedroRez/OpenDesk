@@ -12,6 +12,7 @@ export async function registerHeartbeat(params: {
   const { prisma, hostId, status } = params;
 
   try {
+    const now = new Date();
     const before = await prisma.hostProfile.findUnique({
       where: { id: hostId },
       select: { lastSeenAt: true },
@@ -19,20 +20,19 @@ export async function registerHeartbeat(params: {
     console.log('[HB][BACKEND] lastSeen before', {
       hostId,
       lastSeenAt: before?.lastSeenAt?.toISOString() ?? null,
+      now: now.toISOString(),
     });
 
-    await prisma.hostProfile.update({
+    const updated = await prisma.hostProfile.update({
       where: { id: hostId },
-      data: { lastSeenAt: new Date() },
-    });
-
-    const after = await prisma.hostProfile.findUnique({
-      where: { id: hostId },
+      data: { lastSeenAt: now },
       select: { lastSeenAt: true },
     });
+
     console.log('[HB][BACKEND] lastSeen after', {
       hostId,
-      lastSeenAt: after?.lastSeenAt?.toISOString() ?? null,
+      lastSeenAt: updated.lastSeenAt?.toISOString() ?? null,
+      now: now.toISOString(),
     });
   } catch (error) {
     console.error('[HB][BACKEND] erro ao atualizar lastSeen', {
@@ -51,18 +51,37 @@ export async function registerHeartbeat(params: {
 }
 
 export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> {
-  const cutoff = new Date(Date.now() - config.hostHeartbeatTimeoutMs);
+  const now = new Date();
+  const thresholdMs = config.hostHeartbeatTimeoutMs;
+  const cutoff = new Date(now.getTime() - thresholdMs);
 
   const hosts = await prisma.hostProfile.findMany({
     where: {
       lastSeenAt: { lt: cutoff },
       pcs: { some: { status: { not: PCStatus.OFFLINE } } },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      lastSeenAt: true,
+      pcs: {
+        where: { status: { not: PCStatus.OFFLINE } },
+        select: { id: true, status: true },
+      },
+    },
   });
 
   await Promise.all(
     hosts.map(async (host) => {
+      const diffMs = host.lastSeenAt ? now.getTime() - host.lastSeenAt.getTime() : null;
+      console.warn('[HB][BACKEND] timeout derrubando host', {
+        hostId: host.id,
+        pcIds: host.pcs.map((pc) => pc.id),
+        lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
+        now: now.toISOString(),
+        diffMs,
+        thresholdMs,
+      });
+
       await prisma.pC.updateMany({
         where: { hostId: host.id },
         data: { status: PCStatus.OFFLINE },
