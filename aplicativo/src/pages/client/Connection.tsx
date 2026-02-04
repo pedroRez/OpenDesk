@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { request } from '../../lib/api';
-import { getStreamingProvider } from '../../lib/streamingProvider';
+import { isMoonlightAvailable, launchMoonlight } from '../../lib/moonlightLauncher';
 
 import styles from './Connection.module.css';
 
@@ -10,6 +10,7 @@ type SessionDetail = {
   id: string;
   status: 'PENDING' | 'ACTIVE' | 'ENDED' | 'FAILED';
   pc: {
+    id?: string;
     name: string;
     connectionHost?: string | null;
     connectionPort?: number | null;
@@ -22,9 +23,9 @@ export default function Connection() {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [showDetails, setShowDetails] = useState(false);
   const [providerMessage, setProviderMessage] = useState('');
   const [installed, setInstalled] = useState<boolean | null>(null);
+  const [connectHint, setConnectHint] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -38,15 +39,41 @@ export default function Connection() {
   }, [id]);
 
   useEffect(() => {
-    const provider = getStreamingProvider();
-    provider.isInstalled().then(setInstalled).catch(() => setInstalled(false));
+    isMoonlightAvailable().then(setInstalled).catch(() => setInstalled(false));
   }, []);
 
   const handleConnect = async () => {
-    if (!id) return;
-    const provider = getStreamingProvider();
-    const result = await provider.connect(id);
-    setProviderMessage(result.message ?? 'Abra seu cliente externo para conectar.');
+    if (!id || !session?.pc?.id) return;
+    try {
+      const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
+        method: 'POST',
+        body: JSON.stringify({ pcId: session.pc.id }),
+      });
+      console.log('[STREAM][CLIENT] token ok', { pcId: session.pc.id, expiresAt: tokenResponse.expiresAt });
+
+      const resolveResponse = await request<{
+        connectAddress: string;
+        connectHint?: string | null;
+        pcName: string;
+      }>('/stream/resolve', {
+        method: 'POST',
+        body: JSON.stringify({ token: tokenResponse.token }),
+      });
+      console.log('[STREAM][CLIENT] resolve ok', { pcName: resolveResponse.pcName });
+      setConnectHint(resolveResponse.connectHint ?? null);
+
+      const launched = await launchMoonlight(resolveResponse.connectAddress);
+      if (launched) {
+        console.log('[STREAM][CLIENT] launch ok');
+        setProviderMessage('Abrindo Moonlight para conectar...');
+      } else {
+        console.error('[STREAM][CLIENT] launch fail');
+        setProviderMessage('Nao foi possivel abrir o Moonlight automaticamente.');
+      }
+    } catch (err) {
+      console.error('[STREAM][CLIENT] token/resolve fail', err);
+      setProviderMessage(err instanceof Error ? err.message : 'Nao foi possivel iniciar a conexao.');
+    }
   };
 
   if (loading) {
@@ -73,7 +100,7 @@ export default function Connection() {
         <h3>Instrucoes (MVP)</h3>
         <ol>
           <li>Abra o Moonlight (ou outro cliente compativel).</li>
-          <li>Adicione o host com IP/DNS e porta informados.</li>
+          <li>Selecione o host e inicie a conexao.</li>
           <li>Complete o pareamento se necessario.</li>
           <li>Inicie a conexao.</li>
         </ol>
@@ -83,22 +110,8 @@ export default function Connection() {
         {installed === false && (
           <p className={styles.muted}>Moonlight nao detectado. Instale antes de conectar.</p>
         )}
+        {connectHint && <p className={styles.muted}>{connectHint}</p>}
         {providerMessage && <p className={styles.muted}>{providerMessage}</p>}
-      </div>
-
-      <div className={styles.panel}>
-        <h3>Detalhes da conexao</h3>
-        {!showDetails ? (
-          <button type="button" onClick={() => setShowDetails(true)} className={styles.ghost}>
-            Mostrar detalhes
-          </button>
-        ) : (
-          <div className={styles.details}>
-            <p>Host: {session.pc.connectionHost ?? 'Nao informado'}</p>
-            <p>Porta: {session.pc.connectionPort ?? 47990}</p>
-            {session.pc.connectionNotes && <p>Notas: {session.pc.connectionNotes}</p>}
-          </div>
-        )}
       </div>
     </div>
   );

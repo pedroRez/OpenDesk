@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/Toast';
 import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { getStreamingProvider } from '../../lib/streamingProvider';
+import { isMoonlightAvailable, launchMoonlight } from '../../lib/moonlightLauncher';
 
 import styles from './Session.module.css';
 
@@ -17,6 +17,7 @@ type SessionDetail = {
   endAt: string | null;
   failureReason?: string | null;
   pc: {
+    id?: string;
     name: string;
     connectionHost?: string | null;
     connectionPort?: number | null;
@@ -34,9 +35,9 @@ export default function Session() {
   const [loading, setLoading] = useState(true);
   const [ending, setEnding] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
   const [providerMessage, setProviderMessage] = useState('');
   const [installed, setInstalled] = useState<boolean | null>(null);
+  const [connectHint, setConnectHint] = useState<string | null>(null);
 
   const loadSession = async () => {
     if (isLoading || !isAuthenticated || !id) {
@@ -63,8 +64,7 @@ export default function Session() {
   }, [id, isAuthenticated, isLoading]);
 
   useEffect(() => {
-    const provider = getStreamingProvider();
-    provider.isInstalled().then(setInstalled).catch(() => setInstalled(false));
+    isMoonlightAvailable().then(setInstalled).catch(() => setInstalled(false));
   }, []);
 
   const remainingMinutes = useMemo(() => {
@@ -96,13 +96,36 @@ export default function Session() {
   };
 
   const handleConnect = async () => {
-    if (!id) return;
+    if (!id || !session?.pc?.id) return;
     setConnecting(true);
     try {
-      const provider = getStreamingProvider();
-      const result = await provider.connect(id);
-      setProviderMessage(result.message ?? 'Abra seu cliente externo para conectar.');
+      const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
+        method: 'POST',
+        body: JSON.stringify({ pcId: session.pc.id }),
+      });
+      console.log('[STREAM][CLIENT] token ok', { pcId: session.pc.id, expiresAt: tokenResponse.expiresAt });
+
+      const resolveResponse = await request<{
+        connectAddress: string;
+        connectHint?: string | null;
+        pcName: string;
+      }>('/stream/resolve', {
+        method: 'POST',
+        body: JSON.stringify({ token: tokenResponse.token }),
+      });
+      console.log('[STREAM][CLIENT] resolve ok', { pcName: resolveResponse.pcName });
+      setConnectHint(resolveResponse.connectHint ?? null);
+
+      const launched = await launchMoonlight(resolveResponse.connectAddress);
+      if (launched) {
+        console.log('[STREAM][CLIENT] launch ok');
+        setProviderMessage('Abrindo Moonlight para conectar...');
+      } else {
+        console.error('[STREAM][CLIENT] launch fail');
+        setProviderMessage('Nao foi possivel abrir o Moonlight automaticamente.');
+      }
     } catch (err) {
+      console.error('[STREAM][CLIENT] token/resolve fail', err);
       setProviderMessage(err instanceof Error ? err.message : 'Nao foi possivel iniciar a conexao.');
     } finally {
       setConnecting(false);
@@ -191,27 +214,15 @@ export default function Session() {
           <h3>Como conectar</h3>
           <ol className={styles.instructions}>
             <li>Abra o Moonlight (ou outro cliente compativel).</li>
-            <li>Adicione o host com IP/DNS e porta informados.</li>
+            <li>Selecione o host e inicie a conexao.</li>
             <li>Complete o pareamento se necessario.</li>
             <li>Inicie a conexao.</li>
           </ol>
           {installed === false && (
             <p className={styles.muted}>Moonlight nao detectado. Instale antes de conectar.</p>
           )}
+          {connectHint && <p className={styles.muted}>{connectHint}</p>}
           {providerMessage && <p className={styles.muted}>{providerMessage}</p>}
-          <div className={styles.details}>
-            {!showDetails ? (
-              <button type="button" onClick={() => setShowDetails(true)} className={styles.ghostButton}>
-                Mostrar detalhes
-              </button>
-            ) : (
-              <div className={styles.detailsCard}>
-                <p>Host: {session.pc.connectionHost ?? 'Nao informado'}</p>
-                <p>Porta: {session.pc.connectionPort ?? 47990}</p>
-                {session.pc.connectionNotes && <p>Notas: {session.pc.connectionNotes}</p>}
-              </div>
-            )}
-          </div>
         </div>
       )}
 

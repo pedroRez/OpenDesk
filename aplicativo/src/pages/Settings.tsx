@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth';
 import { apiBaseUrl } from '../lib/api';
 import { markLocalPcOffline } from '../lib/localPc';
 import { getSunshinePath, setSunshinePath } from '../lib/sunshineSettings';
+import { getMoonlightPath, setMoonlightPath } from '../lib/moonlightSettings';
 
 import styles from './Settings.module.css';
 
@@ -16,6 +17,7 @@ export default function Settings() {
   const toast = useToast();
   const [isSwitching, setIsSwitching] = useState(false);
   const [sunshinePath, setSunshinePathValue] = useState(() => getSunshinePath() ?? '');
+  const [moonlightPath, setMoonlightPathValue] = useState(() => getMoonlightPath() ?? '');
 
   const handleModeChange = async (nextMode: AppMode) => {
     if (isSwitching) return;
@@ -89,6 +91,21 @@ export default function Settings() {
             onChange={(event) => setSunshinePathValue(event.target.value)}
             onBlur={() => setSunshinePath(sunshinePath)}
             placeholder="C:\\Program Files\\Sunshine\\sunshine.exe"
+          />
+        </label>
+        <p className={styles.helper}>Se vazio, tentamos caminhos padrao do Windows.</p>
+      </div>
+
+      <div className={styles.card}>
+        <h3>Streaming (Moonlight)</h3>
+        <p>Defina o caminho do executavel para abrir o Moonlight automaticamente no modo Cliente.</p>
+        <label className={styles.field}>
+          Caminho do Moonlight
+          <input
+            value={moonlightPath}
+            onChange={(event) => setMoonlightPathValue(event.target.value)}
+            onBlur={() => setMoonlightPath(moonlightPath)}
+            placeholder="C:\\Program Files\\Moonlight Game Streaming\\Moonlight.exe"
           />
         </label>
         <p className={styles.helper}>Se vazio, tentamos caminhos padrao do Windows.</p>
