@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PCStatus, QueueEntryStatus, ReservationStatus, SessionStatus } from '@prisma/client';
+import { NetworkProvider, PCStatus, QueueEntryStatus, ReservationStatus, SessionStatus } from '@prisma/client';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -67,7 +67,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
 
     const queueCountMap = new Map(queueCounts.map((item) => [item.pcId, item._count._all]));
 
-    const enriched = pcs.map(({ sessions, host, ...pc }) => ({
+    const enriched = pcs.map(({ sessions, host, connectAddress: _connectAddress, ...pc }) => ({
       ...pc,
       host,
       status: sessions.length > 0 ? PCStatus.BUSY : pc.status,
@@ -109,7 +109,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
       where: { pcId: pc.id, status: QueueEntryStatus.WAITING },
     });
 
-    const { sessions, host, ...rest } = pc;
+    const { sessions, host, connectAddress: _connectAddress, ...rest } = pc;
     return {
       ...rest,
       host,
@@ -122,6 +122,40 @@ export async function pcRoutes(fastify: FastifyInstance) {
           })
         : 'NOVO',
     };
+  });
+
+  fastify.post('/pcs/:pcId/network', async (request, reply) => {
+    const params = z.object({ pcId: z.string() }).parse(request.params);
+    const schema = z.object({
+      networkProvider: z.enum(['DIRECT', 'RELAY']).default('DIRECT'),
+      connectAddress: z.string().min(1),
+      connectHint: z.string().max(200).optional(),
+    });
+    const body = schema.parse(request.body);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host) {
+      return reply.status(403).send({ error: 'Usuario nao e host' });
+    }
+
+    const pc = await fastify.prisma.pC.findUnique({ where: { id: params.pcId } });
+    if (!pc) {
+      return reply.status(404).send({ error: 'PC nao encontrado' });
+    }
+    if (pc.hostId !== user.host.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
+
+    const updated = await fastify.prisma.pC.update({
+      where: { id: params.pcId },
+      data: {
+        networkProvider: body.networkProvider as NetworkProvider,
+        connectAddress: body.connectAddress,
+        connectHint: body.connectHint ?? null,
+      },
+    });
+
+    return reply.send({ pc: updated });
   });
 
   fastify.post('/pcs', async (request, reply) => {

@@ -25,6 +25,11 @@ enum PCStatus {
   BUSY
 }
 
+enum NetworkProvider {
+  DIRECT
+  RELAY
+}
+
 enum PCCategory {
   GAMES
   DESIGN
@@ -71,6 +76,7 @@ model User {
   queueEntries QueueEntry[]
   reservations Reservation[]
   favorites Favorite[]
+  streamConnectTokens StreamConnectToken[]
   wallet    Wallet?
   walletTxs WalletTx[]
 }
@@ -98,6 +104,9 @@ model PC {
   hostId              String
   name                String
   level               PCLevel
+  networkProvider     NetworkProvider @default(DIRECT)
+  connectAddress      String?
+  connectHint         String?
   categories          PCCategory[]  @default([])
   softwareTags        String[]      @default([])
   specSummary         Json          @default("{}")
@@ -120,6 +129,7 @@ model PC {
   queueEntries        QueueEntry[]
   reservations        Reservation[]
   favorites          Favorite[]
+  streamConnectTokens StreamConnectToken[]
 }
 
 model Software {
@@ -235,4 +245,18 @@ model HostOnlineMinute {
 
   @@id([hostId, minute])
   @@index([minute])
+}
+
+model StreamConnectToken {
+  token     String   @id
+  userId    String
+  pcId      String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  consumedAt DateTime?
+  user      User     @relation(fields: [userId], references: [id])
+  pc        PC       @relation(fields: [pcId], references: [id])
+
+  @@index([pcId, expiresAt])
+  @@index([userId, expiresAt])
 }

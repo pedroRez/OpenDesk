@@ -9,6 +9,7 @@ import { hostRoutes } from './routes/hosts.js';
 import { pcRoutes } from './routes/pcs.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { softwareRoutes } from './routes/software.js';
+import { streamRoutes } from './routes/stream.js';
 import { walletRoutes } from './routes/wallet.js';
 import { handleHostTimeouts } from './services/hostHeartbeat.js';
 import { expireSessions } from './services/sessionService.js';
@@ -33,6 +34,7 @@ async function start() {
     await app.register(pcRoutes);
     await app.register(softwareRoutes);
     await app.register(sessionRoutes);
+    await app.register(streamRoutes);
     await app.register(walletRoutes);
 
     setInterval(async () => {
