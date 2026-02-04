@@ -11,6 +11,26 @@
   box-shadow: var(--shadow);
 }
 
+.field {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 12px;
+}
+
+.field input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+}
+
+.helper {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .modeButtons {
   display: flex;
   gap: 12px;

@@ -5,6 +5,8 @@ import { useToast } from '../../components/Toast';
 import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { getLocalPcId, getPrimaryPcId, setLocalPcId, setPrimaryPcId } from '../../lib/hostState';
+import { DEFAULT_CONNECT_HINT, resolveConnectAddress } from '../../lib/networkAddress';
+import { ensureSunshineRunning } from '../../lib/sunshineController';
 
 import styles from './HostDashboard.module.css';
 
@@ -70,6 +72,7 @@ export default function HostDashboard() {
     connectionNotes: '',
   });
   const [form, setForm] = useState<PCInput>(createDefaultForm);
+  const [isPublishingNetwork, setIsPublishingNetwork] = useState(false);
 
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
@@ -197,6 +200,9 @@ export default function HostDashboard() {
       toast.show('PC cadastrado com sucesso!', 'success');
       setForm(createDefaultForm());
       setIsFormOpen(false);
+      if (created.status === 'ONLINE') {
+        await publishNetwork(created.id);
+      }
     } catch (error) {
       toast.show(error instanceof Error ? error.message : 'Erro ao cadastrar PC', 'error');
     }
@@ -216,9 +222,42 @@ export default function HostDashboard() {
       });
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? data.pc : item)));
       toast.show(nextStatus === 'ONLINE' ? 'PC ficou online' : 'PC ficou offline', 'success');
+      if (nextStatus === 'ONLINE') {
+        await publishNetwork(pc.id);
+      }
     } catch (error) {
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? pc : item)));
       toast.show(error instanceof Error ? error.message : 'Falha ao atualizar status', 'error');
+    }
+  };
+
+  const publishNetwork = async (pcId: string) => {
+    if (isPublishingNetwork) return;
+    setIsPublishingNetwork(true);
+    console.log('[NET][HOST] publishing connectAddress', { pcId });
+    try {
+      const running = await ensureSunshineRunning();
+      if (!running) {
+        console.error('[NET][HOST] sunshine not running; abort publish', { pcId });
+        return;
+      }
+      const connectAddress = await resolveConnectAddress();
+      await request(`/pcs/${pcId}/network`, {
+        method: 'POST',
+        body: JSON.stringify({
+          networkProvider: 'DIRECT',
+          connectAddress,
+          connectHint: DEFAULT_CONNECT_HINT,
+        }),
+      });
+      console.log('[NET][HOST] publish ok', { pcId, connectHint: DEFAULT_CONNECT_HINT });
+    } catch (error) {
+      console.error('[NET][HOST] publish fail', {
+        pcId,
+        error: error instanceof Error ? error.message : error,
+      });
+    } finally {
+      setIsPublishingNetwork(false);
     }
   };
 

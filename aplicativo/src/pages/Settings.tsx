@@ -5,6 +5,7 @@ import { useMode, type AppMode } from '../lib/mode';
 import { useAuth } from '../lib/auth';
 import { apiBaseUrl } from '../lib/api';
 import { markLocalPcOffline } from '../lib/localPc';
+import { getSunshinePath, setSunshinePath } from '../lib/sunshineSettings';
 
 import styles from './Settings.module.css';
 
@@ -14,6 +15,7 @@ export default function Settings() {
   const [message, setMessage] = useState('');
   const toast = useToast();
   const [isSwitching, setIsSwitching] = useState(false);
+  const [sunshinePath, setSunshinePathValue] = useState(() => getSunshinePath() ?? '');
 
   const handleModeChange = async (nextMode: AppMode) => {
     if (isSwitching) return;
@@ -75,6 +77,21 @@ export default function Settings() {
       <div className={styles.card}>
         <h3>API</h3>
         <p>Endpoint atual: {apiBaseUrl}</p>
+      </div>
+
+      <div className={styles.card}>
+        <h3>Streaming (Sunshine)</h3>
+        <p>Defina o caminho do executavel para iniciar o Sunshine automaticamente no modo Host.</p>
+        <label className={styles.field}>
+          Caminho do Sunshine
+          <input
+            value={sunshinePath}
+            onChange={(event) => setSunshinePathValue(event.target.value)}
+            onBlur={() => setSunshinePath(sunshinePath)}
+            placeholder="C:\\Program Files\\Sunshine\\sunshine.exe"
+          />
+        </label>
+        <p className={styles.helper}>Se vazio, tentamos caminhos padrao do Windows.</p>
       </div>
 
       {message && <p className={styles.message}>{message}</p>}
