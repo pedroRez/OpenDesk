@@ -39,6 +39,10 @@
 - [ ] Abrir o modal **Inserir PIN de pareamento**, informar um PIN e enviar.
 - [ ] Ver mensagem de sucesso/erro no modal.
 
+## Streaming - Robustez (Already Running)
+- [ ] Cenário A: Sunshine ja aberto -> colocar PC ONLINE -> nao duplicar processo e logar "[STREAM][HOST] sunshine already running".
+- [ ] Cenário B: Moonlight ja aberto -> clicar "Conectar agora" -> nao quebrar e logar "[STREAM][CLIENT] moonlight already running, attempting reuse".
+
 ## Fluxo Cliente - Agendamento
 - [ ] Abrir **Agendar** em um PC online e ver painel lateral.
 - [ ] Ver horarios indisponiveis (availability) no painel.

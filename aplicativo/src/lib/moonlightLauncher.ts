@@ -8,6 +8,19 @@ const FALLBACK_PATHS = [
   'C:\\Program Files (x86)\\Moonlight Game Streaming\\Moonlight.exe',
 ];
 
+async function isMoonlightRunning(): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  try {
+    const command = Command.create('cmd', ['/c', 'tasklist', '/FI', 'IMAGENAME eq Moonlight.exe']);
+    const output = await command.execute();
+    const stdout = (output.stdout ?? '').toString().toLowerCase();
+    return stdout.includes('moonlight.exe');
+  } catch (error) {
+    console.warn('[STREAM][CLIENT] moonlight check fail', { error });
+    return false;
+  }
+}
+
 async function resolveMoonlightPaths(): Promise<string[]> {
   const userPath = getMoonlightPath();
   if (userPath) return [userPath, ...FALLBACK_PATHS];
@@ -26,6 +39,11 @@ export async function launchMoonlight(connectAddress: string): Promise<boolean> 
     return false;
   }
 
+  const alreadyRunning = await isMoonlightRunning();
+  if (alreadyRunning) {
+    console.log('[STREAM][CLIENT] moonlight already running, attempting reuse');
+  }
+
   const paths = await resolveMoonlightPaths();
   for (const path of paths) {
     try {
@@ -39,5 +57,5 @@ export async function launchMoonlight(connectAddress: string): Promise<boolean> 
   }
 
   console.error('[STREAM][CLIENT] launch fail (no valid path)');
-  return false;
+  return alreadyRunning;
 }

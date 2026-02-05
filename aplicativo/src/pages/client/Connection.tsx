@@ -23,6 +23,7 @@ export default function Connection() {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
   const [providerMessage, setProviderMessage] = useState('');
   const [installed, setInstalled] = useState<boolean | null>(null);
   const [connectHint, setConnectHint] = useState<string | null>(null);
@@ -48,6 +49,11 @@ export default function Connection() {
       setProviderMessage('Moonlight nao encontrado. Configure o caminho em Configuracoes.');
       return;
     }
+    if (connecting) {
+      console.log('[STREAM][CLIENT] connect lock active');
+      return;
+    }
+    setConnecting(true);
     try {
       const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
         method: 'POST',
@@ -77,6 +83,8 @@ export default function Connection() {
     } catch (err) {
       console.error('[STREAM][CLIENT] token/resolve fail', err);
       setProviderMessage(err instanceof Error ? err.message : 'Nao foi possivel iniciar a conexao.');
+    } finally {
+      setConnecting(false);
     }
   };
 

@@ -11,6 +11,20 @@ const FALLBACK_PATHS = [
 type SunshineProcess = { kill: () => Promise<void> };
 
 let sunshineProcess: SunshineProcess | null = null;
+let sunshineCheckInFlight: Promise<boolean> | null = null;
+
+async function isSunshineRunning(): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  try {
+    const command = Command.create('cmd', ['/c', 'tasklist', '/FI', 'IMAGENAME eq sunshine.exe']);
+    const output = await command.execute();
+    const stdout = (output.stdout ?? '').toString().toLowerCase();
+    return stdout.includes('sunshine.exe');
+  } catch (error) {
+    console.warn('[STREAM][HOST] sunshine check fail', { error });
+    return false;
+  }
+}
 
 async function tryStart(path: string): Promise<SunshineProcess | null> {
   try {
@@ -35,23 +49,40 @@ export async function ensureSunshineRunning(): Promise<boolean> {
     return false;
   }
   if (sunshineProcess) {
-    console.log('[STREAM][HOST] sunshine ok (already running)');
+    console.log('[STREAM][HOST] sunshine already running');
     return true;
   }
-
-  console.log('[STREAM][HOST] sunshine start');
-  const paths = await resolveSunshinePaths();
-  for (const path of paths) {
-    const process = await tryStart(path);
-    if (process) {
-      sunshineProcess = process;
-      console.log('[STREAM][HOST] sunshine ok', { path });
-      return true;
-    }
+  if (sunshineCheckInFlight) {
+    return sunshineCheckInFlight;
   }
 
-  console.error('[STREAM][HOST] sunshine fail (no valid path)');
-  return false;
+  sunshineCheckInFlight = (async () => {
+    const running = await isSunshineRunning();
+    if (running) {
+      console.log('[STREAM][HOST] sunshine already running');
+      return true;
+    }
+
+    console.log('[STREAM][HOST] sunshine start');
+    const paths = await resolveSunshinePaths();
+    for (const path of paths) {
+      const process = await tryStart(path);
+      if (process) {
+        sunshineProcess = process;
+        console.log('[STREAM][HOST] sunshine ok', { path });
+        return true;
+      }
+    }
+
+    console.error('[STREAM][HOST] sunshine fail (no valid path)');
+    return false;
+  })();
+
+  try {
+    return await sunshineCheckInFlight;
+  } finally {
+    sunshineCheckInFlight = null;
+  }
 }
 
 export async function stopSunshine(): Promise<void> {

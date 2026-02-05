@@ -108,6 +108,10 @@ export default function Session() {
       setConnectStatus('failed');
       return;
     }
+    if (connecting) {
+      console.log('[STREAM][CLIENT] connect lock active');
+      return;
+    }
     setConnecting(true);
     setConnectStatus('preparing');
     try {
