@@ -8,7 +8,6 @@ import { getLocalPcId, getPrimaryPcId, setLocalPcId, setPrimaryPcId } from '../.
 import { DEFAULT_CONNECT_HINT, resolveConnectAddress } from '../../lib/networkAddress';
 import { detectSunshinePath, ensureSunshineRunning } from '../../lib/sunshineController';
 import { getSunshinePath, setSunshinePath } from '../../lib/sunshineSettings';
-import { isTauriRuntime } from '../../lib/hostDaemon';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
 
@@ -260,20 +259,21 @@ export default function HostDashboard() {
   };
 
   const handleSunshineBrowse = async () => {
-    if (!isTauriRuntime()) {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Executavel', extensions: ['exe'] }],
+        defaultPath: 'sunshine.exe',
+      });
+      if (typeof selected === 'string' && selected) {
+        const normalized = normalizeWindowsPath(selected);
+        setSunshinePath(normalized);
+        console.log('[PATH] selected sunshinePath=', normalized);
+        setSunshineHelpStatus('Sunshine selecionado.');
+      }
+    } catch (error) {
+      console.warn('[PATH] sunshine picker fail', error);
       setSunshineHelpStatus('Selecao disponivel apenas no app desktop.');
-      return;
-    }
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: 'Executavel', extensions: ['exe'] }],
-      defaultPath: 'sunshine.exe',
-    });
-    if (typeof selected === 'string' && selected) {
-      const normalized = normalizeWindowsPath(selected);
-      setSunshinePath(normalized);
-      console.log('[PATH] selected sunshinePath=', normalized);
-      setSunshineHelpStatus('Sunshine selecionado.');
     }
   };
 

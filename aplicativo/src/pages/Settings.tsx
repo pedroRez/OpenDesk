@@ -10,7 +10,6 @@ import { getMoonlightPath, setMoonlightPath } from '../lib/moonlightSettings';
 import { detectSunshinePath } from '../lib/sunshineController';
 import { detectMoonlightPath } from '../lib/moonlightLauncher';
 import { normalizeWindowsPath, pathExists } from '../lib/pathUtils';
-import { isTauriRuntime } from '../lib/hostDaemon';
 import { open } from '@tauri-apps/plugin-dialog';
 
 import styles from './Settings.module.css';
@@ -108,21 +107,22 @@ export default function Settings() {
             <button
               type="button"
               onClick={async () => {
-                if (!isTauriRuntime()) {
+                try {
+                  const selected = await open({
+                    multiple: false,
+                    filters: [{ name: 'Executavel', extensions: ['exe'] }],
+                    defaultPath: 'sunshine.exe',
+                  });
+                  if (typeof selected === 'string' && selected) {
+                    const normalized = normalizeWindowsPath(selected);
+                    setSunshinePathValue(normalized);
+                    setSunshinePath(normalized);
+                    console.log('[PATH] selected sunshinePath=', normalized);
+                    setSunshineStatus('Sunshine selecionado.');
+                  }
+                } catch (error) {
+                  console.warn('[PATH] sunshine picker fail', error);
                   setSunshineStatus('Selecao disponivel apenas no app desktop.');
-                  return;
-                }
-                const selected = await open({
-                  multiple: false,
-                  filters: [{ name: 'Executavel', extensions: ['exe'] }],
-                  defaultPath: 'sunshine.exe',
-                });
-                if (typeof selected === 'string' && selected) {
-                  const normalized = normalizeWindowsPath(selected);
-                  setSunshinePathValue(normalized);
-                  setSunshinePath(normalized);
-                  console.log('[PATH] selected sunshinePath=', normalized);
-                  setSunshineStatus('Sunshine selecionado.');
                 }
               }}
             >
@@ -202,21 +202,22 @@ export default function Settings() {
             <button
               type="button"
               onClick={async () => {
-                if (!isTauriRuntime()) {
+                try {
+                  const selected = await open({
+                    multiple: false,
+                    filters: [{ name: 'Executavel', extensions: ['exe'] }],
+                    defaultPath: 'Moonlight.exe',
+                  });
+                  if (typeof selected === 'string' && selected) {
+                    const normalized = normalizeWindowsPath(selected);
+                    setMoonlightPathValue(normalized);
+                    setMoonlightPath(normalized);
+                    console.log('[PATH] selected moonlightPath=', normalized);
+                    setMoonlightStatus('Moonlight selecionado.');
+                  }
+                } catch (error) {
+                  console.warn('[PATH] moonlight picker fail', error);
                   setMoonlightStatus('Selecao disponivel apenas no app desktop.');
-                  return;
-                }
-                const selected = await open({
-                  multiple: false,
-                  filters: [{ name: 'Executavel', extensions: ['exe'] }],
-                  defaultPath: 'Moonlight.exe',
-                });
-                if (typeof selected === 'string' && selected) {
-                  const normalized = normalizeWindowsPath(selected);
-                  setMoonlightPathValue(normalized);
-                  setMoonlightPath(normalized);
-                  console.log('[PATH] selected moonlightPath=', normalized);
-                  setMoonlightStatus('Moonlight selecionado.');
                 }
               }}
             >

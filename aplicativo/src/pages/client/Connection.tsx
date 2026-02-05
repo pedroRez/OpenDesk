@@ -4,7 +4,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { request } from '../../lib/api';
 import { isMoonlightAvailable, launchMoonlight, detectMoonlightPath } from '../../lib/moonlightLauncher';
 import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
-import { isTauriRuntime } from '../../lib/hostDaemon';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
 
@@ -61,21 +60,22 @@ export default function Connection() {
   }, []);
 
   const handleMoonlightBrowse = async () => {
-    if (!isTauriRuntime()) {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Executavel', extensions: ['exe'] }],
+        defaultPath: 'Moonlight.exe',
+      });
+      if (typeof selected === 'string' && selected) {
+        const normalized = normalizeWindowsPath(selected);
+        setMoonlightPath(normalized);
+        console.log('[PATH] selected moonlightPath=', normalized);
+        setMoonlightHelpStatus('Moonlight selecionado.');
+        setInstalled(true);
+      }
+    } catch (error) {
+      console.warn('[PATH] moonlight picker fail', error);
       setMoonlightHelpStatus('Selecao disponivel apenas no app desktop.');
-      return;
-    }
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: 'Executavel', extensions: ['exe'] }],
-      defaultPath: 'Moonlight.exe',
-    });
-    if (typeof selected === 'string' && selected) {
-      const normalized = normalizeWindowsPath(selected);
-      setMoonlightPath(normalized);
-      console.log('[PATH] selected moonlightPath=', normalized);
-      setMoonlightHelpStatus('Moonlight selecionado.');
-      setInstalled(true);
     }
   };
 
