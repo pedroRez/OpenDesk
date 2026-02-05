@@ -44,6 +44,10 @@ export default function Connection() {
 
   const handleConnect = async () => {
     if (!id || !session?.pc?.id) return;
+    if (installed === false) {
+      setProviderMessage('Moonlight nao encontrado. Configure o caminho em Configuracoes.');
+      return;
+    }
     try {
       const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
         method: 'POST',

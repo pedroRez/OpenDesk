@@ -33,6 +33,12 @@
 - [ ] Simular queda/erro e validar que o badge muda para **Instavel**.
 - [ ] Tooltip do badge explica a base do score.
 
+## Fluxo Cliente - Streaming (Pareamento Assistido)
+- [ ] Clicar em **Conectar** na sessao e ver estados: "Preparando conexao..." e "Abrindo Moonlight...".
+- [ ] Se Moonlight nao for encontrado, ver mensagem pedindo configurar o path em Configuracoes.
+- [ ] Abrir o modal **Inserir PIN de pareamento**, informar um PIN e enviar.
+- [ ] Ver mensagem de sucesso/erro no modal.
+
 ## Fluxo Cliente - Agendamento
 - [ ] Abrir **Agendar** em um PC online e ver painel lateral.
 - [ ] Ver horarios indisponiveis (availability) no painel.

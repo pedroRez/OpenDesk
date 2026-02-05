@@ -112,4 +112,39 @@ export async function streamRoutes(fastify: FastifyInstance) {
       pcName: record.pc.name,
     });
   });
+
+  fastify.post('/stream/pairing', async (request, reply) => {
+    const body = z.object({ pcId: z.string(), pin: z.string().min(1).max(12) }).parse(request.body);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+
+    const pc = await fastify.prisma.pC.findUnique({
+      where: { id: body.pcId },
+      select: { id: true, name: true },
+    });
+    if (!pc) {
+      fastify.log.warn({ pcId: body.pcId, userId: user.id }, 'Stream pairing error: PC not found');
+      return reply.status(404).send({ error: 'PC nao encontrado' });
+    }
+
+    const session = await fastify.prisma.session.findFirst({
+      where: {
+        pcId: pc.id,
+        clientUserId: user.id,
+        status: { in: [SessionStatus.PENDING, SessionStatus.ACTIVE] },
+      },
+      select: { id: true },
+    });
+    if (!session) {
+      fastify.log.warn({ pcId: pc.id, userId: user.id }, 'Stream pairing error: not authorized');
+      return reply.status(403).send({ error: 'Sem permissao para parear' });
+    }
+
+    fastify.log.info(
+      { pcId: pc.id, pcName: pc.name, userId: user.id, pin: body.pin },
+      'Stream pairing PIN received',
+    );
+
+    return reply.send({ ok: true });
+  });
 }

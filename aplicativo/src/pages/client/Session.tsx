@@ -38,6 +38,12 @@ export default function Session() {
   const [providerMessage, setProviderMessage] = useState('');
   const [installed, setInstalled] = useState<boolean | null>(null);
   const [connectHint, setConnectHint] = useState<string | null>(null);
+  const [connectStatus, setConnectStatus] = useState<'idle' | 'preparing' | 'opening' | 'failed'>(
+    'idle',
+  );
+  const [showPairingModal, setShowPairingModal] = useState(false);
+  const [pairingPin, setPairingPin] = useState('');
+  const [pairingMessage, setPairingMessage] = useState('');
 
   const loadSession = async () => {
     if (isLoading || !isAuthenticated || !id) {
@@ -97,7 +103,13 @@ export default function Session() {
 
   const handleConnect = async () => {
     if (!id || !session?.pc?.id) return;
+    if (installed === false) {
+      setProviderMessage('Moonlight nao encontrado. Configure o caminho em Configuracoes.');
+      setConnectStatus('failed');
+      return;
+    }
     setConnecting(true);
+    setConnectStatus('preparing');
     try {
       const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
         method: 'POST',
@@ -116,6 +128,7 @@ export default function Session() {
       console.log('[STREAM][CLIENT] resolve ok', { pcName: resolveResponse.pcName });
       setConnectHint(resolveResponse.connectHint ?? null);
 
+      setConnectStatus('opening');
       const launched = await launchMoonlight(resolveResponse.connectAddress);
       if (launched) {
         console.log('[STREAM][CLIENT] launch ok');
@@ -123,12 +136,27 @@ export default function Session() {
       } else {
         console.error('[STREAM][CLIENT] launch fail');
         setProviderMessage('Nao foi possivel abrir o Moonlight automaticamente.');
+        setConnectStatus('failed');
       }
     } catch (err) {
       console.error('[STREAM][CLIENT] token/resolve fail', err);
       setProviderMessage(err instanceof Error ? err.message : 'Nao foi possivel iniciar a conexao.');
+      setConnectStatus('failed');
     } finally {
       setConnecting(false);
+    }
+  };
+
+  const handleSubmitPairing = async () => {
+    if (!session?.pc?.id || !pairingPin.trim()) return;
+    try {
+      await request('/stream/pairing', {
+        method: 'POST',
+        body: JSON.stringify({ pcId: session.pc.id, pin: pairingPin.trim() }),
+      });
+      setPairingMessage('PIN enviado. Verifique o pareamento no Sunshine/Moonlight.');
+    } catch (err) {
+      setPairingMessage(err instanceof Error ? err.message : 'Falha ao enviar o PIN.');
     }
   };
 
@@ -219,10 +247,50 @@ export default function Session() {
             <li>Inicie a conexao.</li>
           </ol>
           {installed === false && (
-            <p className={styles.muted}>Moonlight nao detectado. Instale antes de conectar.</p>
+            <p className={styles.muted}>
+              Moonlight nao detectado. Configure o caminho em Configuracoes.
+            </p>
+          )}
+          {connectStatus === 'preparing' && <p className={styles.muted}>Preparando conexao...</p>}
+          {connectStatus === 'opening' && <p className={styles.muted}>Abrindo Moonlight...</p>}
+          {connectStatus === 'failed' && (
+            <p className={styles.muted}>Falha ao conectar. Tente novamente.</p>
           )}
           {connectHint && <p className={styles.muted}>{connectHint}</p>}
           {providerMessage && <p className={styles.muted}>{providerMessage}</p>}
+          <button type="button" className={styles.ghostButton} onClick={() => setShowPairingModal(true)}>
+            Inserir PIN de pareamento
+          </button>
+        </div>
+      )}
+
+      {showPairingModal && (
+        <div className={styles.modalOverlay} role="dialog" aria-modal="true">
+          <div className={styles.modal}>
+            <div>
+              <h3>Pareamento assistido</h3>
+              <p className={styles.muted}>
+                Se o Sunshine/Moonlight solicitar um PIN, informe abaixo para registrar o pareamento.
+              </p>
+            </div>
+            <label className={styles.modalField}>
+              PIN
+              <input
+                value={pairingPin}
+                onChange={(event) => setPairingPin(event.target.value)}
+                placeholder="Ex.: 1234"
+              />
+            </label>
+            {pairingMessage && <p className={styles.muted}>{pairingMessage}</p>}
+            <div className={styles.modalActions}>
+              <button type="button" onClick={handleSubmitPairing}>
+                Enviar PIN
+              </button>
+              <button type="button" onClick={() => setShowPairingModal(false)} className={styles.secondaryButton}>
+                Fechar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
