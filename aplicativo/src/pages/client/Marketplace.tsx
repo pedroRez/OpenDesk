@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import { useToast } from '../../components/Toast';
 import { request } from '../../lib/api';
@@ -105,6 +105,17 @@ const formatSpecSummary = (pc: PC) => {
   return parts.length > 0 ? parts.join(' | ') : '';
 };
 
+const formatCompactSpecs = (pc: PC) => {
+  const summary = pc.specSummary ?? {};
+  const ramRaw = summary.ram ?? (pc.ramGb ? `${pc.ramGb}GB` : undefined);
+  const ram = ramRaw ? ramRaw.replace(/\s+/g, '') : undefined;
+  const cpu = summary.cpu ?? pc.cpu;
+  const gpu = summary.gpu ?? pc.gpu;
+  const storage = pc.storageType;
+  const parts = [ram, cpu, gpu, storage].filter(Boolean);
+  return parts.length > 0 ? parts.join(' | ') : '';
+};
+
 const truncate = (value: string | null | undefined, max = 120) => {
   if (!value) return '';
   const trimmed = value.trim();
@@ -121,7 +132,11 @@ export default function Marketplace() {
   const [favoritesError, setFavoritesError] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<PCCategory[]>([]);
   const [selectedSoftwareTags, setSelectedSoftwareTags] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [favoritesOpen, setFavoritesOpen] = useState(true);
+  const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [connectingPcId, setConnectingPcId] = useState<string | null>(null);
+  const [detailsPc, setDetailsPc] = useState<PC | null>(null);
   const [schedulePc, setSchedulePc] = useState<PC | null>(null);
   const [scheduleDate, setScheduleDate] = useState(() => formatDateInput(new Date()));
   const [scheduleTime, setScheduleTime] = useState(() => {
@@ -227,7 +242,13 @@ export default function Marketplace() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [pcs]);
 
-  const filtersActive = selectedCategories.length > 0 || selectedSoftwareTags.length > 0;
+  const searchTokens = useMemo(
+    () => searchQuery.toLowerCase().split(/\s+/).filter(Boolean),
+    [searchQuery],
+  );
+
+  const filtersActive =
+    selectedCategories.length > 0 || selectedSoftwareTags.length > 0 || searchTokens.length > 0;
 
   const filteredPcs = useMemo(() => {
     return pcs.filter((pc) => {
@@ -239,9 +260,33 @@ export default function Marketplace() {
       const matchesTags =
         selectedSoftwareTags.length === 0 ||
         tags.some((tag) => selectedSoftwareTags.includes(tag));
-      return matchesCategory && matchesTags;
+      if (!matchesCategory || !matchesTags) return false;
+
+      if (searchTokens.length === 0) return true;
+
+      const specLine = formatCompactSpecs(pc);
+      const categoryLabels = categories.map((category) => CATEGORY_LABELS[category] ?? category);
+      const searchable = [
+        pc.name,
+        pc.host?.displayName,
+        pc.cpu,
+        pc.gpu,
+        pc.storageType,
+        pc.specSummary?.cpu,
+        pc.specSummary?.gpu,
+        pc.specSummary?.ram,
+        specLine,
+        ...(pc.softwareTags ?? []),
+        ...categoryLabels,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      const compact = searchable.replace(/\s+/g, '');
+
+      return searchTokens.every((token) => searchable.includes(token) || compact.includes(token));
     });
-  }, [pcs, selectedCategories, selectedSoftwareTags]);
+  }, [pcs, selectedCategories, selectedSoftwareTags, searchTokens]);
 
   const handleToggleFavoritePc = async (pc: FavoritePcTarget) => {
     if (!isAuthenticated || !user) {
@@ -478,6 +523,7 @@ export default function Marketplace() {
   const clearFilters = () => {
     setSelectedCategories([]);
     setSelectedSoftwareTags([]);
+    setSearchQuery('');
   };
 
   return (
@@ -492,281 +538,273 @@ export default function Marketplace() {
         </div>
       </header>
 
-      <section className={styles.favoritesPanel}>
-        <div className={styles.favoritesHeader}>
-          <div>
-            <h2>Favoritos</h2>
-            <p className={styles.muted}>Acesse rapidamente os PCs e Hosts que voce gosta.</p>
+      <div className={styles.marketplaceLayout}>
+        <aside className={styles.sidebar}>
+          <div className={styles.sideSection}>
+            <button
+              type="button"
+              className={styles.sideToggle}
+              onClick={() => setFavoritesOpen((prev) => !prev)}
+              aria-expanded={favoritesOpen}
+            >
+              <span>Favoritos</span>
+              <span className={styles.chevron}>{favoritesOpen ? 'v' : '>'}</span>
+            </button>
+            {favoritesOpen && (
+              <div className={styles.sideContent}>
+                <span className={styles.sideCount}>{favorites.length} itens</span>
+                {!isAuthenticated && (
+                  <p className={styles.muted}>Faca login para salvar favoritos e acessar esta lista.</p>
+                )}
+                {isAuthenticated && favoritesLoading && <p>Carregando favoritos...</p>}
+                {isAuthenticated && favoritesError && <p className={styles.errorInline}>{favoritesError}</p>}
+                {isAuthenticated && !favoritesLoading && !favoritesError && favorites.length === 0 && (
+                  <p className={styles.muted}>Nenhum favorito ainda.</p>
+                )}
+                {favorites.length > 0 && (
+                  <ul className={styles.sideList}>
+                    {favorites.map((favorite) => {
+                      if (favorite.pc) {
+                        const statusClass =
+                          favorite.pc.status === 'ONLINE'
+                            ? styles.statusOnline
+                            : favorite.pc.status === 'BUSY'
+                              ? styles.statusBusy
+                              : styles.statusOffline;
+                        return (
+                          <li key={favorite.id} className={styles.sideItem}>
+                            <button
+                              type="button"
+                              className={styles.sideItemMain}
+                              onClick={() =>
+                                setDetailsPc(pcs.find((pc) => pc.id === favorite.pc?.id) ?? null)
+                              }
+                            >
+                              <span className={`${styles.statusDot} ${statusClass}`} />
+                              <span className={styles.sideItemName}>{favorite.pc.name}</span>
+                            </button>
+                            <div className={styles.sideItemActions}>
+                              <span className={styles.sideQueue}>fila {favorite.pc.queueCount}</span>
+                              <button
+                                type="button"
+                                className={styles.iconButton}
+                                onClick={() => handleToggleFavoritePc(favorite.pc)}
+                                aria-label="Desfavoritar PC"
+                              >
+                                *
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      }
+                      if (favorite.host) {
+                        return (
+                          <li key={favorite.id} className={styles.sideItem}>
+                            <div className={styles.sideItemMain}>
+                              <span className={styles.sideItemName}>{favorite.host.displayName}</span>
+                            </div>
+                            <div className={styles.sideItemActions}>
+                              <button
+                                type="button"
+                                className={styles.iconButton}
+                                onClick={() =>
+                                  handleToggleFavoriteHost(favorite.host!.id, favorite.host!.displayName)
+                                }
+                                aria-label="Desfavoritar host"
+                              >
+                                *
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      }
+                      return null;
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
-          <span className={styles.favoritesCount}>{favorites.length} itens</span>
-        </div>
-        {!isAuthenticated && (
-          <p className={styles.muted}>Faca login para salvar favoritos e acessar esta lista.</p>
-        )}
-        {isAuthenticated && favoritesLoading && <p>Carregando favoritos...</p>}
-        {isAuthenticated && favoritesError && <p className={styles.errorInline}>{favoritesError}</p>}
-        {isAuthenticated && !favoritesLoading && !favoritesError && favorites.length === 0 && (
-          <p className={styles.muted}>Nenhum favorito ainda. Use a estrela nos cards.</p>
-        )}
-        {favorites.length > 0 && (
-          <ul className={styles.favoritesList}>
-            {favorites.map((favorite) => {
-              if (favorite.pc) {
-                return (
-                  <li key={favorite.id} className={styles.favoriteItem}>
-                    <div className={styles.favoriteInfo}>
-                      <strong>{favorite.pc.name}</strong>
-                      <div className={styles.favoriteMeta}>
-                        <span>Status: {favorite.pc.status}</span>
-                        <span>Fila: {favorite.pc.queueCount}</span>
-                      </div>
-                    </div>
-                    <div className={styles.favoriteActions}>
-                      <Link className={styles.favoriteLink} to={`/client/pcs/${favorite.pc.id}`}>
-                        Ver detalhes
-                      </Link>
-                      <button
-                        type="button"
-                        className={styles.favoriteToggle}
-                        onClick={() => favorite.pc && handleToggleFavoritePc(favorite.pc)}
-                        aria-label="Desfavoritar PC"
-                      >
-                        ★
-                      </button>
-                    </div>
-                  </li>
-                );
-              }
-              if (favorite.host) {
-                return (
-                  <li key={favorite.id} className={styles.favoriteItem}>
-                    <div className={styles.favoriteInfo}>
-                      <strong>{favorite.host.displayName}</strong>
-                      <div className={styles.favoriteMeta}>
-                        <span>Host favorito</span>
-                      </div>
-                    </div>
-                    <div className={styles.favoriteActions}>
-                      <button
-                        type="button"
-                        className={styles.favoriteToggle}
-                        onClick={() =>
-                          handleToggleFavoriteHost(favorite.host!.id, favorite.host!.displayName)
-                        }
-                        aria-label="Desfavoritar host"
-                      >
-                        ★
-                      </button>
-                    </div>
-                  </li>
-                );
-              }
-              return null;
-            })}
-          </ul>
-        )}
-      </section>
 
-      <section className={styles.filters}>
-        <div className={styles.filterGroup}>
-          <span className={styles.filterLabel}>Categorias</span>
-          <div className={styles.filterOptions}>
-            {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
-              const category = key as PCCategory;
+          <div className={styles.sideSection}>
+            <button
+              type="button"
+              className={styles.sideToggle}
+              onClick={() => setCategoriesOpen((prev) => !prev)}
+              aria-expanded={categoriesOpen}
+            >
+              <span>Categorias</span>
+              <span className={styles.chevron}>{categoriesOpen ? 'v' : '>'}</span>
+            </button>
+            {categoriesOpen && (
+              <div className={styles.sideContent}>
+                <div className={styles.sideOptions}>
+                  {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
+                    const category = key as PCCategory;
+                    return (
+                      <label key={category} className={styles.filterOption}>
+                        <input
+                          type="checkbox"
+                          checked={selectedCategories.includes(category)}
+                          onChange={() => handleCategoryToggle(category)}
+                        />
+                        {label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <main className={styles.main}>
+          <div className={styles.searchRow}>
+            <div className={styles.searchField}>
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Buscar host, specs (ex: 16GB SSD RX6600)"
+              />
+            </div>
+            <button
+              type="button"
+              className={styles.clearFilters}
+              onClick={clearFilters}
+              disabled={!filtersActive}
+            >
+              Limpar filtros
+            </button>
+          </div>
+
+          <section className={styles.filters}>
+            <div className={styles.filterGroup}>
+              <span className={styles.filterLabel}>Softwares e plataformas</span>
+              <div className={styles.filterOptions}>
+                {availableSoftwareTags.length === 0 && <span className={styles.muted}>Sem tags.</span>}
+                {availableSoftwareTags.map((tag) => (
+                  <label key={tag} className={styles.filterOption}>
+                    <input
+                      type="checkbox"
+                      checked={selectedSoftwareTags.includes(tag)}
+                      onChange={() => handleSoftwareToggle(tag)}
+                    />
+                    {tag}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {isLoading && <p>Carregando PCs...</p>}
+          {error && (
+            <div className={styles.error}>
+              <div>
+                <strong>Falha ao carregar PCs</strong>
+                <p>{error}</p>
+              </div>
+              <button type="button" onClick={() => loadPcs(true)} className={styles.retryButton}>
+                Tentar novamente
+              </button>
+            </div>
+          )}
+          {!isLoading && !error && pcs.length === 0 && (
+            <div className={styles.empty}>
+              Nenhum PC disponivel no momento. Tente novamente em alguns instantes.
+            </div>
+          )}
+          {!isLoading && !error && pcs.length > 0 && filteredPcs.length === 0 && filtersActive && (
+            <div className={styles.empty}>Nenhum PC corresponde aos filtros selecionados.</div>
+          )}
+
+          <div className={styles.grid}>
+            {filteredPcs.map((pc) => {
+              const isOffline = pc.status === 'OFFLINE';
+              const isBusy = pc.status === 'BUSY';
+              const statusClass =
+                pc.status === 'ONLINE'
+                  ? styles.statusOnline
+                  : pc.status === 'BUSY'
+                    ? styles.statusBusy
+                    : styles.statusOffline;
+              const specLine = formatCompactSpecs(pc);
+              const isFavoritePc = favoritePcIds.has(pc.id);
+              const hostName = pc.host?.displayName ?? 'N/A';
+              const hostId = pc.host?.id ?? null;
+              const isFavoriteHost = hostId ? favoriteHostIds.has(hostId) : false;
               return (
-                <label key={category} className={styles.filterOption}>
-                  <input
-                    type="checkbox"
-                    checked={selectedCategories.includes(category)}
-                    onChange={() => handleCategoryToggle(category)}
-                  />
-                  {label}
-                </label>
+                <article key={pc.id} className={styles.card}>
+                  <div className={styles.cardTop}>
+                    <div className={styles.pcIcon} aria-hidden="true" />
+                    <div className={styles.cardMain}>
+                      <div className={styles.cardTitleRow}>
+                        <span className={`${styles.statusDot} ${statusClass}`} />
+                        <h3>{pc.name}</h3>
+                        <button
+                          type="button"
+                          className={`${styles.iconButton} ${isFavoritePc ? styles.favoriteActive : ''}`}
+                          onClick={() => handleToggleFavoritePc(pc)}
+                          aria-label={isFavoritePc ? 'Desfavoritar PC' : 'Favoritar PC'}
+                        >
+                          {isFavoritePc ? '*' : '+'}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          onClick={() => setDetailsPc(pc)}
+                          aria-label="Ver detalhes"
+                        >
+                          i
+                        </button>
+                      </div>
+                      <div className={styles.hostRow}>
+                        <span className={styles.hostName}>{hostName}</span>
+                        {hostId && (
+                          <button
+                            type="button"
+                            className={`${styles.iconButton} ${isFavoriteHost ? styles.favoriteActive : ''}`}
+                            onClick={() => handleToggleFavoriteHost(hostId, hostName)}
+                            aria-label={isFavoriteHost ? 'Desfavoritar host' : 'Favoritar host'}
+                          >
+                            {isFavoriteHost ? '*' : '+'}
+                          </button>
+                        )}
+                      </div>
+                      {specLine && <div className={styles.specLine}>{specLine}</div>}
+                    </div>
+                  </div>
+
+                  <div className={styles.cardMeta}>
+                    <span className={styles.price}>R$ {pc.pricePerHour}/hora</span>
+                    <span className={styles.queue}>
+                      <span className={styles.queueIcon} aria-hidden="true" />
+                      {pc.queueCount} na fila
+                    </span>
+                  </div>
+
+                  <div className={styles.cardActions}>
+                    <button
+                      type="button"
+                      className={styles.primaryButton}
+                      onClick={() => handleConnectNow(pc)}
+                      disabled={isOffline || connectingPcId === pc.id}
+                    >
+                      {connectingPcId === pc.id ? 'Conectando...' : isBusy ? 'Entrar na fila' : 'Conectar'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      onClick={() => openSchedule(pc)}
+                      disabled={isOffline}
+                    >
+                      Agendar
+                    </button>
+                  </div>
+                </article>
               );
             })}
           </div>
-        </div>
-        <div className={styles.filterGroup}>
-          <span className={styles.filterLabel}>Softwares e plataformas</span>
-          <div className={styles.filterOptions}>
-            {availableSoftwareTags.length === 0 && <span className={styles.muted}>Sem tags.</span>}
-            {availableSoftwareTags.map((tag) => (
-              <label key={tag} className={styles.filterOption}>
-                <input
-                  type="checkbox"
-                  checked={selectedSoftwareTags.includes(tag)}
-                  onChange={() => handleSoftwareToggle(tag)}
-                />
-                {tag}
-              </label>
-            ))}
-          </div>
-        </div>
-        <button
-          type="button"
-          className={styles.clearFilters}
-          onClick={clearFilters}
-          disabled={!filtersActive}
-        >
-          Limpar filtros
-        </button>
-      </section>
-
-      {isLoading && <p>Carregando PCs...</p>}
-      {error && (
-        <div className={styles.error}>
-          <div>
-            <strong>Falha ao carregar PCs</strong>
-            <p>{error}</p>
-          </div>
-          <button type="button" onClick={() => loadPcs(true)} className={styles.retryButton}>
-            Tentar novamente
-          </button>
-        </div>
-      )}
-      {!isLoading && !error && pcs.length === 0 && (
-        <div className={styles.empty}>Nenhum PC disponivel no momento. Tente novamente em alguns instantes.</div>
-      )}
-      {!isLoading && !error && pcs.length > 0 && filteredPcs.length === 0 && filtersActive && (
-        <div className={styles.empty}>Nenhum PC corresponde aos filtros selecionados.</div>
-      )}
-
-      <div className={styles.grid}>
-        {filteredPcs.map((pc) => {
-          const isOffline = pc.status === 'OFFLINE';
-          const isBusy = pc.status === 'BUSY';
-          const statusClass =
-            pc.status === 'ONLINE'
-              ? styles.statusOnline
-              : pc.status === 'BUSY'
-                ? styles.statusBusy
-                : styles.statusOffline;
-          const specSummary = formatSpecSummary(pc);
-          const description = truncate(pc.description, 140);
-          const isFavoritePc = favoritePcIds.has(pc.id);
-          const hostName = pc.host?.displayName ?? 'N/A';
-          const hostId = pc.host?.id ?? null;
-          const isFavoriteHost = hostId ? favoriteHostIds.has(hostId) : false;
-          const reliabilityValue: ReliabilityBadge = pc.reliabilityBadge ?? 'NOVO';
-          const reliabilityLabel = RELIABILITY_LABELS[reliabilityValue];
-          const reliabilityClass =
-            reliabilityValue === 'CONFIAVEL'
-              ? styles.reliabilityConfiavel
-              : reliabilityValue === 'INSTAVEL'
-                ? styles.reliabilityInstavel
-                : styles.reliabilityNovo;
-          return (
-            <article key={pc.id} className={styles.card}>
-              <div>
-                <div className={styles.cardHeader}>
-                  <div>
-                    <h3>{pc.name}</h3>
-                    <p>Nivel {pc.level}</p>
-                  </div>
-                  <div className={styles.cardHeaderActions}>
-                    <button
-                      type="button"
-                      className={`${styles.favoriteToggle} ${isFavoritePc ? styles.favoriteActive : ''}`}
-                      onClick={() => handleToggleFavoritePc(pc)}
-                      aria-label={isFavoritePc ? 'Desfavoritar PC' : 'Favoritar PC'}
-                    >
-                      {isFavoritePc ? '★' : '☆'}
-                    </button>
-                    <span className={`${styles.statusBadge} ${statusClass}`}>{pc.status}</span>
-                  </div>
-                </div>
-                <div
-                  className={`${styles.reliabilityBadge} ${reliabilityClass}`}
-                  title={RELIABILITY_TOOLTIP}
-                >
-                  <span className={styles.reliabilityDot} />
-                  {reliabilityLabel}
-                </div>
-                <div className={styles.hostLine}>
-                  <span>Host: {hostName}</span>
-                  {hostId && (
-                    <button
-                      type="button"
-                      className={`${styles.favoriteToggle} ${isFavoriteHost ? styles.favoriteActive : ''}`}
-                      onClick={() => handleToggleFavoriteHost(hostId, hostName)}
-                      aria-label={isFavoriteHost ? 'Desfavoritar host' : 'Favoritar host'}
-                    >
-                      {isFavoriteHost ? '★' : '☆'}
-                    </button>
-                  )}
-                </div>
-                {pc.categories && pc.categories.length > 0 && (
-                  <div className={styles.tagRow}>
-                    {pc.categories.map((category) => (
-                      <span key={category} className={`${styles.tag} ${styles.tagCategory}`}>
-                        {CATEGORY_LABELS[category] ?? category}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {pc.softwareTags && pc.softwareTags.length > 0 && (
-                  <div className={styles.tagRow}>
-                    {pc.softwareTags.map((tag) => (
-                      <span key={`${pc.id}-${tag}`} className={`${styles.tag} ${styles.tagSoftware}`}>
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {specSummary && <p className={styles.specSummary}>{specSummary}</p>}
-                {description && <p className={styles.description}>{description}</p>}
-                <ul className={styles.specs}>
-                  <li>
-                    <strong>CPU:</strong> {pc.cpu ?? 'Nao informado'}
-                  </li>
-                  <li>
-                    <strong>RAM:</strong> {pc.ramGb ? `${pc.ramGb} GB` : 'Nao informado'}
-                  </li>
-                  <li>
-                    <strong>GPU:</strong>{' '}
-                    {pc.gpu ? `${pc.gpu}${pc.vramGb ? ` (${pc.vramGb} GB VRAM)` : ''}` : 'Nao informado'}
-                  </li>
-                  <li>
-                    <strong>Storage:</strong> {pc.storageType ?? 'Nao informado'}
-                  </li>
-                  <li>
-                    <strong>Upload:</strong>{' '}
-                    {pc.internetUploadMbps ? `${pc.internetUploadMbps} Mbps` : 'Nao informado'}
-                  </li>
-                </ul>
-              </div>
-              <div className={styles.cardMeta}>
-                <span>R$ {pc.pricePerHour}/hora</span>
-                <span className={styles.queue}>Fila: {pc.queueCount}</span>
-              </div>
-              <div className={styles.cardActions}>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  onClick={() => handleConnectNow(pc)}
-                  disabled={isOffline || connectingPcId === pc.id}
-                >
-                  {connectingPcId === pc.id
-                    ? 'Conectando...'
-                    : isBusy
-                      ? 'Conectar agora (entrar na fila)'
-                      : 'Conectar agora'}
-                </button>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  onClick={() => openSchedule(pc)}
-                  disabled={isOffline}
-                >
-                  Agendar
-                </button>
-                <Link className={styles.secondaryLink} to={`/client/pcs/${pc.id}`}>
-                  Ver detalhes
-                </Link>
-              </div>
-            </article>
-          );
-        })}
+        </main>
       </div>
 
       <footer className={styles.policyNote}>
@@ -838,6 +876,89 @@ export default function Marketplace() {
                 {scheduling ? 'Agendando...' : 'Confirmar agendamento'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {detailsPc && (
+        <div className={styles.detailsOverlay} role="dialog" aria-modal="true">
+          <div className={styles.detailsPanel}>
+            <div className={styles.detailsHeader}>
+              <div>
+                <h2>{detailsPc.name}</h2>
+                <p className={styles.muted}>Host: {detailsPc.host?.displayName ?? 'N/A'}</p>
+              </div>
+              <button type="button" onClick={() => setDetailsPc(null)} className={styles.closeButton}>
+                Fechar
+              </button>
+            </div>
+
+            <div className={styles.detailsSection}>
+              <strong>Specs</strong>
+              <p className={styles.specSummary}>{formatSpecSummary(detailsPc)}</p>
+              <ul className={styles.specs}>
+                <li>
+                  <strong>CPU:</strong> {detailsPc.cpu ?? 'Nao informado'}
+                </li>
+                <li>
+                  <strong>RAM:</strong>{' '}
+                  {detailsPc.ramGb ? `${detailsPc.ramGb} GB` : detailsPc.specSummary?.ram ?? 'Nao informado'}
+                </li>
+                <li>
+                  <strong>GPU:</strong>{' '}
+                  {detailsPc.gpu
+                    ? `${detailsPc.gpu}${detailsPc.vramGb ? ` (${detailsPc.vramGb} GB VRAM)` : ''}`
+                    : 'Nao informado'}
+                </li>
+                <li>
+                  <strong>Storage:</strong> {detailsPc.storageType ?? 'Nao informado'}
+                </li>
+                <li>
+                  <strong>Upload:</strong>{' '}
+                  {detailsPc.internetUploadMbps ? `${detailsPc.internetUploadMbps} Mbps` : 'Nao informado'}
+                </li>
+              </ul>
+            </div>
+
+            {detailsPc.description && (
+              <div className={styles.detailsSection}>
+                <strong>Descricao</strong>
+                <p className={styles.muted}>{truncate(detailsPc.description, 240)}</p>
+              </div>
+            )}
+
+            {detailsPc.categories && detailsPc.categories.length > 0 && (
+              <div className={styles.detailsSection}>
+                <strong>Categorias</strong>
+                <div className={styles.tagRow}>
+                  {detailsPc.categories.map((category) => (
+                    <span key={category} className={`${styles.tag} ${styles.tagCategory}`}>
+                      {CATEGORY_LABELS[category] ?? category}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {detailsPc.softwareTags && detailsPc.softwareTags.length > 0 && (
+              <div className={styles.detailsSection}>
+                <strong>Softwares</strong>
+                <div className={styles.tagRow}>
+                  {detailsPc.softwareTags.map((tag) => (
+                    <span key={`${detailsPc.id}-${tag}`} className={`${styles.tag} ${styles.tagSoftware}`}>
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={styles.detailsSection}>
+              <strong>Confiabilidade</strong>
+              <p className={styles.muted}>
+                {RELIABILITY_LABELS[detailsPc.reliabilityBadge ?? 'NOVO']} - {RELIABILITY_TOOLTIP}
+              </p>
+            </div>
           </div>
         </div>
       )}
