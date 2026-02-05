@@ -14,7 +14,12 @@ import { walletRoutes } from './routes/wallet.js';
 import { handleHostTimeouts } from './services/hostHeartbeat.js';
 import { expireSessions } from './services/sessionService.js';
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: {
+    level: config.logLevel,
+  },
+  disableRequestLogging: true,
+});
 
 async function start() {
   try {
@@ -36,6 +41,34 @@ async function start() {
     await app.register(sessionRoutes);
     await app.register(streamRoutes);
     await app.register(walletRoutes);
+
+    app.addHook('onResponse', async (request, reply) => {
+      const method = request.method.toUpperCase();
+      if (config.httpLogIgnoreMethods.includes(method)) {
+        return;
+      }
+
+      const status = reply.statusCode;
+      const isDebug = config.logLevel.toLowerCase() === 'debug';
+      if (!isDebug && status < 400) {
+        return;
+      }
+
+      const payload = {
+        method,
+        url: request.url,
+        status,
+        durationMs: reply.getResponseTime(),
+      };
+
+      if (status >= 500) {
+        app.log.error(payload, 'HTTP error');
+      } else if (status >= 400) {
+        app.log.warn(payload, 'HTTP error');
+      } else {
+        app.log.info(payload, 'HTTP request');
+      }
+    });
 
     setInterval(async () => {
       try {

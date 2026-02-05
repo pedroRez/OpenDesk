@@ -14,31 +14,16 @@ export async function registerHeartbeat(params: {
 
   try {
     const now = new Date();
-    const before = await prisma.hostProfile.findUnique({
-      where: { id: hostId },
-      select: { lastSeenAt: true },
-    });
-    console.log('[HB][BACKEND] lastSeen before', {
-      hostId,
-      lastSeenAt: before?.lastSeenAt?.toISOString() ?? null,
-      now: now.toISOString(),
-    });
-
-    const updated = await prisma.hostProfile.update({
+    await prisma.hostProfile.update({
       where: { id: hostId },
       data: { lastSeenAt: now },
-      select: { lastSeenAt: true },
-    });
-
-    console.log('[HB][BACKEND] lastSeen after', {
-      hostId,
-      lastSeenAt: updated.lastSeenAt?.toISOString() ?? null,
-      now: now.toISOString(),
     });
 
     if (status !== PCStatus.OFFLINE) {
       await recordHostOnlineMinute(prisma, hostId, now);
     }
+
+    logHeartbeatSample(hostId, now);
   } catch (error) {
     console.error('[HB][BACKEND] erro ao atualizar lastSeen', {
       hostId,
@@ -52,6 +37,27 @@ export async function registerHeartbeat(params: {
       where: { hostId },
       data: { status },
     });
+  }
+}
+
+const lastHeartbeatLogByHost = new Map<string, number>();
+
+function logHeartbeatSample(hostId: string, timestamp: Date): void {
+  const level = (config.logHeartbeat ?? 'sampled').toLowerCase();
+  const isDebug = level === 'debug' || level === 'full' || level === 'true';
+  if (level === 'off' || level === 'false') return;
+
+  if (isDebug) {
+    console.log('[HB][BACKEND] alive', { hostId, timestamp: timestamp.toISOString() });
+    return;
+  }
+
+  const nowMs = timestamp.getTime();
+  const last = lastHeartbeatLogByHost.get(hostId) ?? 0;
+  const intervalMs = Math.max(1, config.heartbeatLogSampleSeconds) * 1000;
+  if (nowMs - last >= intervalMs) {
+    lastHeartbeatLogByHost.set(hostId, nowMs);
+    console.log('[HB][BACKEND] alive', { hostId, timestamp: timestamp.toISOString() });
   }
 }
 

@@ -77,6 +77,7 @@ export default function HostDashboard() {
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastHeartbeatLogRef = useRef<number>(0);
   const heartbeatPcId = useMemo(() => {
     const localId = getLocalPcId();
     if (localId) {
@@ -130,13 +131,25 @@ export default function HostDashboard() {
 
     const sendHeartbeat = async () => {
       const timestamp = new Date().toISOString();
-      console.log('[HB][DESKTOP] tick', timestamp);
       try {
         await request(`/hosts/${hostId}/heartbeat`, {
           method: 'POST',
           body: JSON.stringify({ pcId, timestamp }),
         });
-        console.log('[HB][DESKTOP] ok status', { hostId, pcId, timestamp });
+        const logLevel = (import.meta.env.VITE_LOG_HEARTBEAT ?? 'sampled').toLowerCase();
+        const isDebug = logLevel === 'debug' || logLevel === 'full' || logLevel === 'true';
+        if (logLevel !== 'off' && logLevel !== 'false') {
+          if (isDebug) {
+            console.log('[HB][DESKTOP] alive', { hostId, pcId, timestamp });
+          } else {
+            const sampleSeconds = Number(import.meta.env.VITE_HEARTBEAT_LOG_SAMPLE_SECONDS ?? 60);
+            const nowMs = Date.now();
+            if (nowMs - lastHeartbeatLogRef.current >= sampleSeconds * 1000) {
+              lastHeartbeatLogRef.current = nowMs;
+              console.log('[HB][DESKTOP] alive', { hostId, pcId, timestamp });
+            }
+          }
+        }
       } catch (error) {
         console.error('[HB][DESKTOP] fail status', {
           hostId,

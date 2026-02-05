@@ -1,4 +1,4 @@
-# OpenDesk
+﻿# OpenDesk
 
 Marketplace de aluguel de PCs remotos por hora. Este monorepo contém o MVP com backend + web e placeholders para os futuros clientes.
 
@@ -60,6 +60,12 @@ A API ficará em `http://localhost:3333` e o frontend em `http://localhost:3000`
 - Redis é opcional (não utilizado no MVP).
 - Job simples de expiração roda com `setInterval`.
 
+### Logs (env)
+- `LOG_LEVEL` (default `info`; `debug` habilita logs completos)
+- `LOG_HEARTBEAT` (`off`, `sampled`, `debug`; default `sampled`)
+- `HEARTBEAT_LOG_SAMPLE_SECONDS` (default `60`)
+- `HTTP_LOG_IGNORE_METHODS` (default `OPTIONS`)
+
 ### Política de penalidade
 Quando a falha é do host:
 - `valor_proporcional = priceTotal * (minutesUsed / minutesPurchased)`
@@ -93,3 +99,4 @@ pnpm --filter backend test
 ```
 
 > Observação: os testes de lock dependem de `DATABASE_URL` configurado.
+
