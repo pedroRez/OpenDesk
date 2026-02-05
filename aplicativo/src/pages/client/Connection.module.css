@@ -48,3 +48,9 @@ button {
 .muted {
   color: var(--muted);
 }
+
+.actionsRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}

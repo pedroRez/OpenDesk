@@ -207,3 +207,33 @@ select {
   color: var(--ink) !important;
   border: 1px solid var(--stroke) !important;
 }
+
+.missingPanel {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(244, 93, 18, 0.4);
+  background: rgba(244, 93, 18, 0.08);
+  display: grid;
+  gap: 10px;
+}
+
+.missingActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.missingActions button {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.helperText {
+  color: var(--muted);
+  font-size: 0.9rem;
+}

@@ -4,7 +4,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/Toast';
 import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { isMoonlightAvailable, launchMoonlight } from '../../lib/moonlightLauncher';
+import { isMoonlightAvailable, launchMoonlight, detectMoonlightPath } from '../../lib/moonlightLauncher';
+import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
+import { isTauriRuntime } from '../../lib/hostDaemon';
+import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
+import { open } from '@tauri-apps/api/dialog';
 
 import styles from './Session.module.css';
 
@@ -44,6 +48,8 @@ export default function Session() {
   const [showPairingModal, setShowPairingModal] = useState(false);
   const [pairingPin, setPairingPin] = useState('');
   const [pairingMessage, setPairingMessage] = useState('');
+  const [showMoonlightHelp, setShowMoonlightHelp] = useState(false);
+  const [moonlightHelpStatus, setMoonlightHelpStatus] = useState('');
 
   const loadSession = async () => {
     if (isLoading || !isAuthenticated || !id) {
@@ -70,8 +76,57 @@ export default function Session() {
   }, [id, isAuthenticated, isLoading]);
 
   useEffect(() => {
-    isMoonlightAvailable().then(setInstalled).catch(() => setInstalled(false));
+    isMoonlightAvailable()
+      .then((available) => {
+        setInstalled(available);
+        if (!available) {
+          setShowMoonlightHelp(true);
+        }
+      })
+      .catch(() => {
+        setInstalled(false);
+        setShowMoonlightHelp(true);
+      });
   }, []);
+
+  const handleMoonlightBrowse = async () => {
+    if (!isTauriRuntime()) {
+      setMoonlightHelpStatus('Selecao disponivel apenas no app desktop.');
+      return;
+    }
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Executavel', extensions: ['exe'] }],
+      defaultPath: 'Moonlight.exe',
+    });
+    if (typeof selected === 'string' && selected) {
+      const normalized = normalizeWindowsPath(selected);
+      setMoonlightPath(normalized);
+      console.log('[PATH] selected moonlightPath=', normalized);
+      setMoonlightHelpStatus('Moonlight selecionado.');
+      setInstalled(true);
+    }
+  };
+
+  const handleMoonlightVerify = async () => {
+    const current = getMoonlightPath();
+    if (current) {
+      const exists = await pathExists(current);
+      if (exists) {
+        setMoonlightHelpStatus('Detectado OK');
+        setInstalled(true);
+        return;
+      }
+      setMoonlightHelpStatus('Nao encontrado');
+    }
+    const fallback = await detectMoonlightPath();
+    if (fallback) {
+      setMoonlightHelpStatus('Encontrado automaticamente');
+      setInstalled(true);
+    } else {
+      setMoonlightHelpStatus('Nao encontrado. Use "Procurar...".');
+    }
+  };
 
   const remainingMinutes = useMemo(() => {
     if (!session) return 0;
@@ -106,6 +161,7 @@ export default function Session() {
     if (installed === false) {
       setProviderMessage('Moonlight nao encontrado. Configure o caminho em Configuracoes.');
       setConnectStatus('failed');
+      setShowMoonlightHelp(true);
       return;
     }
     if (connecting) {
@@ -265,6 +321,27 @@ export default function Session() {
           <button type="button" className={styles.ghostButton} onClick={() => setShowPairingModal(true)}>
             Inserir PIN de pareamento
           </button>
+        </div>
+      )}
+
+      {showMoonlightHelp && (
+        <div className={styles.panel}>
+          <strong>Moonlight nao detectado.</strong>
+          <p className={styles.muted}>
+            O OpenDesk instalara/configurara automaticamente em producao. Em DEV, informe o caminho.
+          </p>
+          <div className={styles.actionsRow}>
+            <button type="button" onClick={handleMoonlightBrowse}>
+              Procurar...
+            </button>
+            <button type="button" onClick={handleMoonlightVerify} className={styles.ghostButton}>
+              Verificar
+            </button>
+            <button type="button" onClick={() => navigate('/settings')} className={styles.ghostButton}>
+              Abrir configuracoes
+            </button>
+          </div>
+          {moonlightHelpStatus && <p className={styles.muted}>{moonlightHelpStatus}</p>}
         </div>
       )}
 

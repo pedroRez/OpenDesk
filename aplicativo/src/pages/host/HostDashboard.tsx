@@ -6,7 +6,11 @@ import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { getLocalPcId, getPrimaryPcId, setLocalPcId, setPrimaryPcId } from '../../lib/hostState';
 import { DEFAULT_CONNECT_HINT, resolveConnectAddress } from '../../lib/networkAddress';
-import { ensureSunshineRunning } from '../../lib/sunshineController';
+import { detectSunshinePath, ensureSunshineRunning } from '../../lib/sunshineController';
+import { getSunshinePath, setSunshinePath } from '../../lib/sunshineSettings';
+import { isTauriRuntime } from '../../lib/hostDaemon';
+import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
+import { open } from '@tauri-apps/api/dialog';
 
 import styles from './HostDashboard.module.css';
 
@@ -73,6 +77,8 @@ export default function HostDashboard() {
   });
   const [form, setForm] = useState<PCInput>(createDefaultForm);
   const [isPublishingNetwork, setIsPublishingNetwork] = useState(false);
+  const [showSunshineHelp, setShowSunshineHelp] = useState(false);
+  const [sunshineHelpStatus, setSunshineHelpStatus] = useState('');
 
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
@@ -227,6 +233,15 @@ export default function HostDashboard() {
       return;
     }
     const nextStatus = pc.status === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
+    if (nextStatus === 'ONLINE') {
+      const detected = await detectSunshinePath();
+      if (!detected) {
+        setShowSunshineHelp(true);
+        setSunshineHelpStatus('Sunshine nao detectado.');
+        toast.show('Sunshine nao detectado. Configure o caminho para ficar ONLINE.', 'error');
+        return;
+      }
+    }
     setPcs((prev) => prev.map((item) => (item.id === pc.id ? { ...item, status: nextStatus } : item)));
     try {
       const data = await request<{ pc: PC }>(`/pcs/${pc.id}/status`, {
@@ -241,6 +256,42 @@ export default function HostDashboard() {
     } catch (error) {
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? pc : item)));
       toast.show(error instanceof Error ? error.message : 'Falha ao atualizar status', 'error');
+    }
+  };
+
+  const handleSunshineBrowse = async () => {
+    if (!isTauriRuntime()) {
+      setSunshineHelpStatus('Selecao disponivel apenas no app desktop.');
+      return;
+    }
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Executavel', extensions: ['exe'] }],
+      defaultPath: 'sunshine.exe',
+    });
+    if (typeof selected === 'string' && selected) {
+      const normalized = normalizeWindowsPath(selected);
+      setSunshinePath(normalized);
+      console.log('[PATH] selected sunshinePath=', normalized);
+      setSunshineHelpStatus('Sunshine selecionado.');
+    }
+  };
+
+  const handleSunshineVerify = async () => {
+    const current = getSunshinePath();
+    if (current) {
+      const exists = await pathExists(current);
+      if (exists) {
+        setSunshineHelpStatus('Detectado OK');
+        return;
+      }
+      setSunshineHelpStatus('Nao encontrado');
+    }
+    const fallback = await detectSunshinePath();
+    if (fallback) {
+      setSunshineHelpStatus('Encontrado automaticamente');
+    } else {
+      setSunshineHelpStatus('Nao encontrado. Use "Procurar...".');
     }
   };
 
@@ -447,6 +498,21 @@ export default function HostDashboard() {
 
           {isLoadingPcs && <p>Carregando PCs...</p>}
           {!isLoadingPcs && pcs.length === 0 && <p>Nenhum PC cadastrado.</p>}
+          {showSunshineHelp && (
+            <div className={styles.missingPanel}>
+              <strong>Sunshine nao detectado.</strong>
+              <p>O OpenDesk instalara/configurara automaticamente em producao. Em DEV, informe o caminho.</p>
+              <div className={styles.missingActions}>
+                <button type="button" onClick={handleSunshineBrowse}>
+                  Procurar...
+                </button>
+                <button type="button" onClick={handleSunshineVerify} className={styles.ghost}>
+                  Verificar
+                </button>
+              </div>
+              {sunshineHelpStatus && <p className={styles.helperText}>{sunshineHelpStatus}</p>}
+            </div>
+          )}
           {pcs.map((pc) => {
             const statusClass =
               pc.status === 'ONLINE'
