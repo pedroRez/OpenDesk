@@ -151,20 +151,20 @@ export default function Settings() {
                 if (normalized) {
                   const exists = await pathExists(normalized);
                   if (exists) {
-                    setSunshineStatus('Detectado ✅');
+                    setSunshineStatus('Detectado OK');
                     setSunshinePathValue(normalized);
                     setSunshinePath(normalized);
                     return;
                   }
-                  setSunshineStatus('Nao encontrado ❌');
+                  setSunshineStatus('Nao encontrado');
                 }
                 const fallback = await detectSunshinePath();
                 if (fallback) {
                   setSunshinePathValue(fallback);
                   setSunshinePath(fallback);
-                  setSunshineStatus('Encontrado automaticamente ✅');
+                  setSunshineStatus('Encontrado automaticamente');
                 } else {
-                  setSunshineStatus('Nao encontrado ❌. Use "Procurar...".');
+                  setSunshineStatus('Nao encontrado. Use "Procurar...".');
                 }
               }}
             >
@@ -239,20 +239,20 @@ export default function Settings() {
                 if (normalized) {
                   const exists = await pathExists(normalized);
                   if (exists) {
-                    setMoonlightStatus('Detectado ✅');
+                    setMoonlightStatus('Detectado OK');
                     setMoonlightPathValue(normalized);
                     setMoonlightPath(normalized);
                     return;
                   }
-                  setMoonlightStatus('Nao encontrado ❌');
+                  setMoonlightStatus('Nao encontrado');
                 }
                 const fallback = await detectMoonlightPath();
                 if (fallback) {
                   setMoonlightPathValue(fallback);
                   setMoonlightPath(fallback);
-                  setMoonlightStatus('Encontrado automaticamente ✅');
+                  setMoonlightStatus('Encontrado automaticamente');
                 } else {
-                  setMoonlightStatus('Nao encontrado ❌. Use "Procurar...".');
+                  setMoonlightStatus('Nao encontrado. Use "Procurar...".');
                 }
               }}
             >

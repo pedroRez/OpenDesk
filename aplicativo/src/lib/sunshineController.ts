@@ -1,8 +1,14 @@
 import { Command } from '@tauri-apps/plugin-shell';
 
-import { getSunshinePath } from './sunshineSettings';
+import { getSunshinePath, setSunshinePath } from './sunshineSettings';
 import { isTauriRuntime } from './hostDaemon';
-import { findExistingPath, normalizeWindowsPath, pathExists } from './pathUtils';
+import {
+  findExistingPath,
+  getWindowsEnv,
+  normalizeWindowsPath,
+  pathExists,
+  whichBinary,
+} from './pathUtils';
 
 const FALLBACK_PATHS = [
   'C:\\Program Files\\Sunshine\\sunshine.exe',
@@ -39,9 +45,29 @@ async function tryStart(path: string): Promise<SunshineProcess | null> {
 }
 
 async function resolveSunshinePaths(): Promise<string[]> {
+  const paths: string[] = [];
   const userPath = getSunshinePath();
-  if (userPath) return [userPath, ...FALLBACK_PATHS].map(normalizeWindowsPath);
-  return [...FALLBACK_PATHS].map(normalizeWindowsPath);
+  if (userPath) {
+    paths.push(userPath);
+  }
+  const programFiles = await getWindowsEnv('ProgramFiles');
+  const programFilesX86 = await getWindowsEnv('ProgramFiles(x86)');
+  if (programFiles) {
+    paths.push(`${programFiles}\\Sunshine\\sunshine.exe`);
+  }
+  if (programFilesX86) {
+    paths.push(`${programFilesX86}\\Sunshine\\sunshine.exe`);
+  }
+  paths.push(...FALLBACK_PATHS);
+
+  const normalized = paths.map(normalizeWindowsPath).filter(Boolean);
+  const unique = Array.from(new Set(normalized));
+
+  const wherePath = await whichBinary('sunshine');
+  if (wherePath) {
+    unique.push(wherePath);
+  }
+  return Array.from(new Set(unique));
 }
 
 export async function ensureSunshineRunning(): Promise<boolean> {
@@ -90,7 +116,15 @@ export async function ensureSunshineRunning(): Promise<boolean> {
 
 export async function detectSunshinePath(): Promise<string | null> {
   const paths = await resolveSunshinePaths();
-  return findExistingPath(paths);
+  const detected = await findExistingPath(paths);
+  if (detected) {
+    const current = getSunshinePath();
+    if (current !== detected) {
+      setSunshinePath(detected);
+      console.log('[PATH] autodetected sunshinePath=', detected);
+    }
+  }
+  return detected;
 }
 
 export async function stopSunshine(): Promise<void> {

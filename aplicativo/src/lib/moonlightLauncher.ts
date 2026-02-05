@@ -1,8 +1,14 @@
 import { Command } from '@tauri-apps/plugin-shell';
 
 import { isTauriRuntime } from './hostDaemon';
-import { getMoonlightPath } from './moonlightSettings';
-import { findExistingPath, normalizeWindowsPath, pathExists } from './pathUtils';
+import { getMoonlightPath, setMoonlightPath } from './moonlightSettings';
+import {
+  findExistingPath,
+  getWindowsEnv,
+  normalizeWindowsPath,
+  pathExists,
+  whichBinary,
+} from './pathUtils';
 
 const FALLBACK_PATHS = [
   'C:\\Program Files\\Moonlight Game Streaming\\Moonlight.exe',
@@ -23,9 +29,29 @@ async function isMoonlightRunning(): Promise<boolean> {
 }
 
 async function resolveMoonlightPaths(): Promise<string[]> {
+  const paths: string[] = [];
   const userPath = getMoonlightPath();
-  if (userPath) return [userPath, ...FALLBACK_PATHS].map(normalizeWindowsPath);
-  return [...FALLBACK_PATHS].map(normalizeWindowsPath);
+  if (userPath) {
+    paths.push(userPath);
+  }
+  const programFiles = await getWindowsEnv('ProgramFiles');
+  const programFilesX86 = await getWindowsEnv('ProgramFiles(x86)');
+  if (programFiles) {
+    paths.push(`${programFiles}\\Moonlight Game Streaming\\Moonlight.exe`);
+  }
+  if (programFilesX86) {
+    paths.push(`${programFilesX86}\\Moonlight Game Streaming\\Moonlight.exe`);
+  }
+  paths.push(...FALLBACK_PATHS);
+
+  const normalized = paths.map(normalizeWindowsPath).filter(Boolean);
+  const unique = Array.from(new Set(normalized));
+
+  const wherePath = await whichBinary('moonlight');
+  if (wherePath) {
+    unique.push(wherePath);
+  }
+  return Array.from(new Set(unique));
 }
 
 export async function isMoonlightAvailable(): Promise<boolean> {
@@ -66,5 +92,13 @@ export async function launchMoonlight(connectAddress: string): Promise<boolean> 
 
 export async function detectMoonlightPath(): Promise<string | null> {
   const paths = await resolveMoonlightPaths();
-  return findExistingPath(paths);
+  const detected = await findExistingPath(paths);
+  if (detected) {
+    const current = getMoonlightPath();
+    if (current !== detected) {
+      setMoonlightPath(detected);
+      console.log('[PATH] autodetected moonlightPath=', detected);
+    }
+  }
+  return detected;
 }
