@@ -2,6 +2,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 
 import { getSunshinePath } from './sunshineSettings';
 import { isTauriRuntime } from './hostDaemon';
+import { findExistingPath, normalizeWindowsPath, pathExists } from './pathUtils';
 
 const FALLBACK_PATHS = [
   'C:\\Program Files\\Sunshine\\sunshine.exe',
@@ -39,8 +40,8 @@ async function tryStart(path: string): Promise<SunshineProcess | null> {
 
 async function resolveSunshinePaths(): Promise<string[]> {
   const userPath = getSunshinePath();
-  if (userPath) return [userPath, ...FALLBACK_PATHS];
-  return [...FALLBACK_PATHS];
+  if (userPath) return [userPath, ...FALLBACK_PATHS].map(normalizeWindowsPath);
+  return [...FALLBACK_PATHS].map(normalizeWindowsPath);
 }
 
 export async function ensureSunshineRunning(): Promise<boolean> {
@@ -66,6 +67,8 @@ export async function ensureSunshineRunning(): Promise<boolean> {
     console.log('[STREAM][HOST] sunshine start');
     const paths = await resolveSunshinePaths();
     for (const path of paths) {
+      const exists = await pathExists(path);
+      if (!exists) continue;
       const process = await tryStart(path);
       if (process) {
         sunshineProcess = process;
@@ -83,6 +86,11 @@ export async function ensureSunshineRunning(): Promise<boolean> {
   } finally {
     sunshineCheckInFlight = null;
   }
+}
+
+export async function detectSunshinePath(): Promise<string | null> {
+  const paths = await resolveSunshinePaths();
+  return findExistingPath(paths);
 }
 
 export async function stopSunshine(): Promise<void> {

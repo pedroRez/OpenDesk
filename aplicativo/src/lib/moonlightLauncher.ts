@@ -2,6 +2,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 
 import { isTauriRuntime } from './hostDaemon';
 import { getMoonlightPath } from './moonlightSettings';
+import { findExistingPath, normalizeWindowsPath, pathExists } from './pathUtils';
 
 const FALLBACK_PATHS = [
   'C:\\Program Files\\Moonlight Game Streaming\\Moonlight.exe',
@@ -23,14 +24,15 @@ async function isMoonlightRunning(): Promise<boolean> {
 
 async function resolveMoonlightPaths(): Promise<string[]> {
   const userPath = getMoonlightPath();
-  if (userPath) return [userPath, ...FALLBACK_PATHS];
-  return [...FALLBACK_PATHS];
+  if (userPath) return [userPath, ...FALLBACK_PATHS].map(normalizeWindowsPath);
+  return [...FALLBACK_PATHS].map(normalizeWindowsPath);
 }
 
 export async function isMoonlightAvailable(): Promise<boolean> {
   if (!isTauriRuntime()) return false;
   const paths = await resolveMoonlightPaths();
-  return paths.length > 0;
+  const existing = await findExistingPath(paths);
+  return Boolean(existing);
 }
 
 export async function launchMoonlight(connectAddress: string): Promise<boolean> {
@@ -46,6 +48,8 @@ export async function launchMoonlight(connectAddress: string): Promise<boolean> 
 
   const paths = await resolveMoonlightPaths();
   for (const path of paths) {
+    const exists = await pathExists(path);
+    if (!exists) continue;
     try {
       const command = Command.create(path, [connectAddress]);
       await command.spawn();
@@ -58,4 +62,9 @@ export async function launchMoonlight(connectAddress: string): Promise<boolean> 
 
   console.error('[STREAM][CLIENT] launch fail (no valid path)');
   return alreadyRunning;
+}
+
+export async function detectMoonlightPath(): Promise<string | null> {
+  const paths = await resolveMoonlightPaths();
+  return findExistingPath(paths);
 }

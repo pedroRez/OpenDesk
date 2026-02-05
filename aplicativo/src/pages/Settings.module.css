@@ -58,3 +58,24 @@
   font-weight: 600;
   color: var(--accent-strong);
 }
+
+.pathActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pathActions button {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ghostButton {
+  background: transparent;
+  color: var(--ink);
+}
