@@ -69,7 +69,18 @@ export async function streamRoutes(fastify: FastifyInstance) {
 
     const record = await fastify.prisma.streamConnectToken.findUnique({
       where: { token: body.token },
-      include: { pc: true },
+      include: {
+        pc: {
+          select: {
+            id: true,
+            name: true,
+            connectAddress: true,
+            connectHint: true,
+            connectionHost: true,
+            connectionPort: true,
+          },
+        },
+      },
     });
 
     if (!record) {
@@ -92,11 +103,34 @@ export async function streamRoutes(fastify: FastifyInstance) {
     }
 
     if (!record.pc.connectAddress) {
+      const fallbackHost = record.pc.connectionHost ?? null;
+      const fallbackPort = record.pc.connectionPort ?? null;
+      if (fallbackHost && fallbackPort) {
+        return reply.send({
+          connectAddress: `${fallbackHost}:${fallbackPort}`,
+          connectHint: record.pc.connectHint,
+          pcName: record.pc.name,
+        });
+      }
+
       fastify.log.warn(
-        { token: body.token, pcId: record.pcId, connectAddress: record.pc.connectAddress ?? null },
+        {
+          token: body.token,
+          pcId: record.pcId,
+          connectAddress: record.pc.connectAddress ?? null,
+          connectionHost: fallbackHost,
+          connectionPort: fallbackPort,
+        },
         'Stream token resolve error: missing address',
       );
-      return reply.status(409).send({ error: 'Endereco de conexao indisponivel' });
+      return reply.status(409).send({
+        error: 'Endereco de conexao indisponivel',
+        missing: {
+          connectAddress: !record.pc.connectAddress,
+          connectionHost: !fallbackHost,
+          connectionPort: !fallbackPort,
+        },
+      });
     }
 
     await fastify.prisma.streamConnectToken.update({

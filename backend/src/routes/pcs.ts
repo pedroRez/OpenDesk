@@ -315,7 +315,15 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Sem permissao' });
     }
 
-    await fastify.prisma.pC.delete({ where: { id: params.id } });
+    await fastify.prisma.$transaction(async (tx) => {
+      await tx.queueEntry.deleteMany({ where: { pcId: params.id } });
+      await tx.reservation.deleteMany({ where: { pcId: params.id } });
+      await tx.favorite.deleteMany({ where: { pcId: params.id } });
+      await tx.pCSoftware.deleteMany({ where: { pcId: params.id } });
+      await tx.streamConnectToken.deleteMany({ where: { pcId: params.id } });
+      await tx.session.deleteMany({ where: { pcId: params.id } });
+      await tx.pC.delete({ where: { id: params.id } });
+    });
     return { ok: true };
   });
 

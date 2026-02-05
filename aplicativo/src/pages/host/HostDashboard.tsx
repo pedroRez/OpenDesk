@@ -350,7 +350,7 @@ export default function HostDashboard() {
       }
       const connectAddress = await resolveConnectAddress();
       console.log('[NET][HOST] publishing connectAddress', { pcId, address: connectAddress });
-      await request(`/pcs/${pcId}/network`, {
+      const response = await request(`/pcs/${pcId}/network`, {
         method: 'POST',
         body: JSON.stringify({
           networkProvider: 'DIRECT',
@@ -358,7 +358,7 @@ export default function HostDashboard() {
           connectHint: DEFAULT_CONNECT_HINT,
         }),
       });
-      console.log('[NET][HOST] publish ok', { pcId, connectHint: DEFAULT_CONNECT_HINT });
+      console.log('[NET][HOST] publish ok', { pcId, connectHint: DEFAULT_CONNECT_HINT, response });
     } catch (error) {
       console.error('[NET][HOST] publish fail', {
         pcId,
@@ -392,6 +392,33 @@ export default function HostDashboard() {
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? updated : item)));
       setEditingPcId(null);
       toast.show('Dados de conexao atualizados.', 'success');
+
+      const resolvedHost = payload.connectionHost ?? updated.connectionHost ?? '';
+      const resolvedPort = payload.connectionPort ?? updated.connectionPort ?? 47990;
+      if (resolvedHost) {
+        const connectAddress = `${resolvedHost}:${resolvedPort}`;
+        console.log('[NET][HOST] publishing connectAddress', {
+          pcId: pc.id,
+          host: resolvedHost,
+          port: resolvedPort,
+        });
+        try {
+          const response = await request(`/pcs/${pc.id}/network`, {
+            method: 'POST',
+            body: JSON.stringify({
+              networkProvider: 'DIRECT',
+              connectAddress,
+              connectHint: DEFAULT_CONNECT_HINT,
+            }),
+          });
+          console.log('[NET][HOST] publish ok', { pcId: pc.id, response });
+        } catch (error) {
+          console.error('[NET][HOST] publish fail', {
+            pcId: pc.id,
+            error: error instanceof Error ? error.message : error,
+          });
+        }
+      }
     } catch (error) {
       toast.show(error instanceof Error ? error.message : 'Erro ao atualizar conexao.', 'error');
     }
