@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { Command } from '@tauri-apps/plugin-shell';
 
 import { isTauriRuntime } from './hostDaemon';
@@ -78,12 +79,12 @@ export async function launchMoonlight(connectAddress: string): Promise<boolean> 
     const exists = await pathExists(path);
     if (!exists) continue;
     try {
-      const command = Command.create(path, [connectAddress]);
-      await command.spawn();
-      console.log('[STREAM][CLIENT] launch ok', { path });
+      console.log('[LAUNCH] starting moonlight', { path, args: connectAddress });
+      await invoke('start_moonlight', { path, address: connectAddress });
+      console.log('[LAUNCH] moonlight ok', { path });
       return true;
     } catch (error) {
-      console.warn('[STREAM][CLIENT] launch fail', { path, error });
+      console.warn('[LAUNCH] moonlight fail', { path, error });
     }
   }
 

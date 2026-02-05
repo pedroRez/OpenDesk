@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
-import { request } from '../../lib/api';
+import { request, requestWithStatus } from '../../lib/api';
+import { useToast } from '../../components/Toast';
 import { isMoonlightAvailable, launchMoonlight, detectMoonlightPath } from '../../lib/moonlightLauncher';
 import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
@@ -33,6 +34,7 @@ export default function Connection() {
   const [showMoonlightHelp, setShowMoonlightHelp] = useState(false);
   const [moonlightHelpStatus, setMoonlightHelpStatus] = useState('');
   const navigate = useNavigate();
+  const toast = useToast();
 
   useEffect(() => {
     if (!id) return;
@@ -132,9 +134,9 @@ export default function Connection() {
         method: 'POST',
         body: JSON.stringify({ pcId: session.pc.id }),
       });
-      console.log('[STREAM][CLIENT] token ok', { pcId: session.pc.id, expiresAt: tokenResponse.expiresAt });
+      console.log('[STREAM][CLIENT] token created', { pcId: session.pc.id, expiresAt: tokenResponse.expiresAt });
 
-      const resolveResponse = await request<{
+      const resolveResult = await requestWithStatus<{
         connectAddress: string;
         connectHint?: string | null;
         pcName: string;
@@ -142,10 +144,35 @@ export default function Connection() {
         method: 'POST',
         body: JSON.stringify({ token: tokenResponse.token }),
       });
-      console.log('[STREAM][CLIENT] resolve ok', { pcName: resolveResponse.pcName });
-      setConnectHint(resolveResponse.connectHint ?? null);
+      if (!resolveResult.ok || !resolveResult.data) {
+        console.error('[STREAM][CLIENT] resolve fail', {
+          status: resolveResult.status,
+          error: resolveResult.errorMessage,
+        });
+        if (resolveResult.status === 409 && resolveResult.errorMessage?.toLowerCase().includes('endereco')) {
+          setProviderMessage(
+            'PC sem conexao cadastrada (host/porta). Abra o painel do host e salve a conexao.',
+          );
+        } else {
+          setProviderMessage(
+            `Falha ao resolver conexao (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
+          );
+        }
+        toast.show(
+          `Resolve falhou (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
+          'error',
+        );
+        return;
+      }
 
-      const launched = await launchMoonlight(resolveResponse.connectAddress);
+      console.log('[STREAM][CLIENT] resolve ok', {
+        pcName: resolveResult.data.pcName,
+        status: resolveResult.status,
+      });
+      setConnectHint(resolveResult.data.connectHint ?? null);
+
+      console.log('[STREAM][CLIENT] launching moonlight...');
+      const launched = await launchMoonlight(resolveResult.data.connectAddress);
       if (launched) {
         console.log('[STREAM][CLIENT] launch ok');
         setProviderMessage('Abrindo Moonlight para conectar...');

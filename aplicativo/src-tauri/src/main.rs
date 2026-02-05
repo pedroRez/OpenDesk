@@ -70,6 +70,35 @@ fn first_existing(paths: &[PathBuf]) -> Option<String> {
   None
 }
 
+#[tauri::command]
+fn start_sunshine(path: String) -> Result<(), String> {
+  let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+  if trimmed.is_empty() {
+    return Err("path vazio".to_string());
+  }
+  std::process::Command::new(trimmed)
+    .spawn()
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn start_moonlight(path: String, address: String) -> Result<(), String> {
+  let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+  if trimmed.is_empty() {
+    return Err("path vazio".to_string());
+  }
+  let addr = address.trim();
+  if addr.is_empty() {
+    return Err("endereco vazio".to_string());
+  }
+  std::process::Command::new(trimmed)
+    .arg(addr)
+    .spawn()
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
 fn main() {
   tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
@@ -77,7 +106,9 @@ fn main() {
     .invoke_handler(tauri::generate_handler![
       validate_exe_path,
       detect_sunshine_path,
-      detect_moonlight_path
+      detect_moonlight_path,
+      start_sunshine,
+      start_moonlight
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

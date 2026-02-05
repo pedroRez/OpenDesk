@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { Command } from '@tauri-apps/plugin-shell';
 
 import { getSunshinePath, setSunshinePath } from './sunshineSettings';
@@ -36,11 +37,12 @@ async function isSunshineRunning(): Promise<boolean> {
 
 async function tryStart(path: string): Promise<SunshineProcess | null> {
   try {
-    const command = Command.create(path, []);
-    const process = await command.spawn();
-    return process;
+    console.log('[LAUNCH] starting sunshine', { path });
+    await invoke('start_sunshine', { path });
+    console.log('[LAUNCH] sunshine ok', { path });
+    return { kill: async () => {} };
   } catch (error) {
-    console.warn('[STREAM][HOST] sunshine start fail', { path, error });
+    console.warn('[LAUNCH] sunshine fail', { path, error });
     return null;
   }
 }

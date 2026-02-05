@@ -87,3 +87,46 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const fetchJson = request;
+
+export async function requestWithStatus<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ ok: boolean; status: number; data: T | null; errorMessage: string | null }> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      ...init,
+      headers: buildHeaders(init),
+    });
+  } catch (error) {
+    const fallback = 'Falha de conexao. Verifique sua rede e tente novamente.';
+    const message =
+      error instanceof Error && error.message && !error.message.toLowerCase().includes('failed to fetch')
+        ? error.message
+        : fallback;
+    return { ok: false, status: 0, data: null, errorMessage: message };
+  }
+
+  if (response.status === 204) {
+    return { ok: true, status: response.status, data: null, errorMessage: null };
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  let payload: unknown = null;
+  if (contentType.includes('application/json')) {
+    payload = await response.json().catch(() => null);
+  } else {
+    payload = await response.text().catch(() => null);
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      data: null,
+      errorMessage: resolveErrorMessage(payload, response.status),
+    };
+  }
+
+  return { ok: true, status: response.status, data: payload as T, errorMessage: null };
+}
