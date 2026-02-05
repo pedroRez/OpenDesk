@@ -78,6 +78,7 @@ export default function HostDashboard() {
   const [isPublishingNetwork, setIsPublishingNetwork] = useState(false);
   const [showSunshineHelp, setShowSunshineHelp] = useState(false);
   const [sunshineHelpStatus, setSunshineHelpStatus] = useState('');
+  const [disconnectingPcId, setDisconnectingPcId] = useState<string | null>(null);
 
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
@@ -258,6 +259,34 @@ export default function HostDashboard() {
     }
   };
 
+  const handleDisconnect = async (pc: PC) => {
+    if (disconnectingPcId) return;
+    const confirmed = window.confirm('Desconectar o cliente e liberar este PC?');
+    if (!confirmed) return;
+    setDisconnectingPcId(pc.id);
+    try {
+      const response = await request<{ pc: PC | null; sessionEnded: boolean }>(
+        `/host/pcs/${pc.id}/disconnect`,
+        {
+          method: 'POST',
+        },
+      );
+      if (response.pc) {
+        setPcs((prev) => prev.map((item) => (item.id === pc.id ? response.pc! : item)));
+      }
+      toast.show(
+        response.sessionEnded
+          ? 'Sessao encerrada e PC liberado.'
+          : 'PC liberado.',
+        'success',
+      );
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Falha ao desconectar.', 'error');
+    } finally {
+      setDisconnectingPcId(null);
+    }
+  };
+
   const handleSunshineBrowse = async () => {
     try {
       const selected = await open({
@@ -365,6 +394,18 @@ export default function HostDashboard() {
       toast.show('Dados de conexao atualizados.', 'success');
     } catch (error) {
       toast.show(error instanceof Error ? error.message : 'Erro ao atualizar conexao.', 'error');
+    }
+  };
+
+  const handleDeletePc = async (pc: PC) => {
+    const confirmed = window.confirm(`Excluir o PC "${pc.name}"? Esta acao nao pode ser desfeita.`);
+    if (!confirmed) return;
+    try {
+      await request(`/pcs/${pc.id}`, { method: 'DELETE' });
+      setPcs((prev) => prev.filter((item) => item.id !== pc.id));
+      toast.show('PC removido com sucesso.', 'success');
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Erro ao remover PC.', 'error');
     }
   };
 
@@ -560,8 +601,21 @@ export default function HostDashboard() {
                   >
                     {pc.status === 'ONLINE' ? 'Ficar Offline' : 'Ficar Online'}
                   </button>
+                  {pc.status === 'BUSY' && (
+                    <button
+                      type="button"
+                      onClick={() => handleDisconnect(pc)}
+                      disabled={disconnectingPcId === pc.id}
+                      className={disconnectingPcId === pc.id ? styles.disabled : ''}
+                    >
+                      {disconnectingPcId === pc.id ? 'Desconectando...' : 'Desconectar'}
+                    </button>
+                  )}
                   <button type="button" onClick={() => startEditing(pc)}>
                     Editar conexao
+                  </button>
+                  <button type="button" onClick={() => handleDeletePc(pc)} className={styles.dangerButton}>
+                    Excluir PC
                   </button>
                 </div>
 

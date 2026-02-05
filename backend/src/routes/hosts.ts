@@ -2,8 +2,10 @@ import { z } from 'zod';
 
 import { config } from '../config.js';
 import { registerHeartbeat } from '../services/hostHeartbeat.js';
+import { endSession } from '../services/sessionService.js';
 import { getReliabilityBadge, getReliabilityStats, getReliabilityStatsMap } from '../services/hostReliabilityStats.js';
 import { requireUser } from '../utils/auth.js';
+import { PCStatus, SessionStatus } from '@prisma/client';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -213,5 +215,48 @@ export async function hostRoutes(fastify: FastifyInstance) {
     }
 
     return { ok: true };
+  });
+
+  fastify.post('/host/pcs/:pcId/disconnect', async (request, reply) => {
+    const params = z.object({ pcId: z.string() }).parse(request.params);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host) {
+      return reply.status(403).send({ error: 'Usuario nao e host' });
+    }
+
+    const pc = await fastify.prisma.pC.findUnique({ where: { id: params.pcId } });
+    if (!pc) {
+      return reply.status(404).send({ error: 'PC nao encontrado' });
+    }
+    if (pc.hostId !== user.host.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
+
+    const activeSession = await fastify.prisma.session.findFirst({
+      where: {
+        pcId: pc.id,
+        status: { in: [SessionStatus.ACTIVE] },
+      },
+      select: { id: true },
+    });
+
+    if (activeSession) {
+      await endSession({
+        prisma: fastify.prisma,
+        sessionId: activeSession.id,
+        failureReason: 'HOST',
+        hostFault: true,
+        releaseStatus: PCStatus.ONLINE,
+      });
+    } else if (pc.status === PCStatus.BUSY) {
+      await fastify.prisma.pC.update({
+        where: { id: pc.id },
+        data: { status: PCStatus.ONLINE },
+      });
+    }
+
+    const updated = await fastify.prisma.pC.findUnique({ where: { id: pc.id } });
+    return reply.send({ pc: updated, sessionEnded: Boolean(activeSession) });
   });
 }
