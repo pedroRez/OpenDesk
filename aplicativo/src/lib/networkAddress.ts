@@ -46,7 +46,7 @@ export async function resolveConnectAddress(): Promise<string> {
   const ip = await detectLocalIp();
   if (ip) return `${ip}:${DEFAULT_SUNSHINE_PORT}`;
 
-  return `127.0.0.1:${DEFAULT_SUNSHINE_PORT}`;
+  throw new Error('Nao foi possivel detectar o IP local do host.');
 }
 
 export const DEFAULT_CONNECT_HINT = 'Sunshine LAN';

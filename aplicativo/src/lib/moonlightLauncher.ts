@@ -33,7 +33,10 @@ function parseHost(connectAddress: string): string {
   const trimmed = connectAddress.trim();
   if (!trimmed) return '';
   const [host] = trimmed.split(':');
-  return host ?? '';
+  if (!host || host === '127.0.0.1' || host.toLowerCase() === 'localhost') {
+    return '';
+  }
+  return host;
 }
 
 function parseApps(stdout: string): string[] {

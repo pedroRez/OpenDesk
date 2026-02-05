@@ -348,7 +348,17 @@ export default function HostDashboard() {
         console.error('[NET][HOST] sunshine not running; abort publish', { pcId });
         return;
       }
-      const connectAddress = await resolveConnectAddress();
+      let connectAddress: string;
+      try {
+        connectAddress = await resolveConnectAddress();
+      } catch (error) {
+        console.error('[NET][HOST] failed to resolve connectAddress', {
+          pcId,
+          error: error instanceof Error ? error.message : error,
+        });
+        toast.show('Nao foi possivel detectar o IP do host. Salve a conexao manualmente.', 'error');
+        return;
+      }
       console.log('[NET][HOST] publishing connectAddress', { pcId, address: connectAddress });
       const response = await request(`/pcs/${pcId}/network`, {
         method: 'POST',

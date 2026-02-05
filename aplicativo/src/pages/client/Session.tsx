@@ -237,6 +237,12 @@ export default function Session() {
       });
       setConnectHint(resolveResult.data.connectHint ?? null);
 
+      console.log('[STREAM][CLIENT] resolve payload', {
+        pcId: session.pc.id,
+        token: tokenResponse.token,
+        connectAddress: resolveResult.data.connectAddress,
+      });
+
       setConnectStatus('opening');
       console.log('[STREAM][CLIENT] launching moonlight...');
       setLastConnectAddress(resolveResult.data.connectAddress);

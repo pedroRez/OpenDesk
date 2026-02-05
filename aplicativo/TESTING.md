@@ -50,6 +50,9 @@
 - [ ] Campo vazio -> **Localizar automaticamente** encontra e preenche o executavel (quando instalado).
 Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras invertidas e aspas; HOST e CLIENTE nao exigem os dois softwares no mesmo PC durante DEV.
 
+## Streaming - Endereco Real (Host/Cliente em PCs diferentes)
+- [ ] Host em um PC e cliente em outro: confirmar que o Moonlight usa o IP real do host (nao 127.0.0.1).
+
 ## Fluxo Cliente - Agendamento
 - [ ] Abrir **Agendar** em um PC online e ver painel lateral.
 - [ ] Ver horarios indisponiveis (availability) no painel.
