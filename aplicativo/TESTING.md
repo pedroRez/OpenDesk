@@ -47,6 +47,7 @@
 - [ ] HOST com Sunshine instalado e sem Moonlight -> deve funcionar (nao exigir Moonlight).
 - [ ] CLIENTE com Moonlight instalado e sem Sunshine -> deve funcionar (nao exigir Sunshine).
 - [ ] Campo com path errado -> **Verificar** falha -> **Procurar...** seleciona o executavel correto -> **Verificar** sucesso.
+- [ ] Campo vazio -> **Localizar automaticamente** encontra e preenche o executavel (quando instalado).
 Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras invertidas e aspas; HOST e CLIENTE nao exigem os dois softwares no mesmo PC durante DEV.
 
 ## Fluxo Cliente - Agendamento

@@ -3,6 +3,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 import { getSunshinePath, setSunshinePath } from './sunshineSettings';
 import { isTauriRuntime } from './hostDaemon';
 import {
+  detectSunshinePathNative,
   findExistingPath,
   getWindowsEnv,
   normalizeWindowsPath,
@@ -115,14 +116,16 @@ export async function ensureSunshineRunning(): Promise<boolean> {
 }
 
 export async function detectSunshinePath(): Promise<string | null> {
-  const paths = await resolveSunshinePaths();
-  const detected = await findExistingPath(paths);
+  const nativeDetected = await detectSunshinePathNative();
+  const detected = nativeDetected ?? (await findExistingPath(await resolveSunshinePaths()));
   if (detected) {
     const current = getSunshinePath();
     if (current !== detected) {
       setSunshinePath(detected);
       console.log('[PATH] autodetected sunshinePath=', detected);
     }
+  } else {
+    console.log('[PATH] autodetect sunshinePath fail');
   }
   return detected;
 }

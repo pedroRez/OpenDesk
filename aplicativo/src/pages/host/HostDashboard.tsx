@@ -10,7 +10,7 @@ import { detectSunshinePath, ensureSunshineRunning } from '../../lib/sunshineCon
 import { getSunshinePath, setSunshinePath } from '../../lib/sunshineSettings';
 import { isTauriRuntime } from '../../lib/hostDaemon';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
-import { open } from '@tauri-apps/api/dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 
 import styles from './HostDashboard.module.css';
 
@@ -282,16 +282,31 @@ export default function HostDashboard() {
     if (current) {
       const exists = await pathExists(current);
       if (exists) {
+        console.log('[PATH] verify sunshine ok', { path: current });
         setSunshineHelpStatus('Detectado OK');
         return;
       }
+      console.log('[PATH] verify sunshine fail', { path: current });
       setSunshineHelpStatus('Nao encontrado');
     }
     const fallback = await detectSunshinePath();
     if (fallback) {
+      console.log('[PATH] autodetect sunshine ok', { path: fallback });
       setSunshineHelpStatus('Encontrado automaticamente');
     } else {
+      console.log('[PATH] autodetect sunshine fail');
       setSunshineHelpStatus('Nao encontrado. Use "Procurar...".');
+    }
+  };
+
+  const handleSunshineAutoDetect = async () => {
+    const detected = await detectSunshinePath();
+    if (detected) {
+      console.log('[PATH] autodetect sunshine ok', { path: detected });
+      setSunshineHelpStatus('Encontrado automaticamente');
+    } else {
+      console.log('[PATH] autodetect sunshine fail');
+      setSunshineHelpStatus('Nao encontramos o Sunshine nas pastas padrao.');
     }
   };
 
@@ -508,6 +523,9 @@ export default function HostDashboard() {
                 </button>
                 <button type="button" onClick={handleSunshineVerify} className={styles.ghost}>
                   Verificar
+                </button>
+                <button type="button" onClick={handleSunshineAutoDetect} className={styles.ghost}>
+                  Localizar automaticamente
                 </button>
               </div>
               {sunshineHelpStatus && <p className={styles.helperText}>{sunshineHelpStatus}</p>}

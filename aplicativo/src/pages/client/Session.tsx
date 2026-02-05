@@ -8,7 +8,7 @@ import { isMoonlightAvailable, launchMoonlight, detectMoonlightPath } from '../.
 import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
 import { isTauriRuntime } from '../../lib/hostDaemon';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
-import { open } from '@tauri-apps/api/dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 
 import styles from './Session.module.css';
 
@@ -113,18 +113,34 @@ export default function Session() {
     if (current) {
       const exists = await pathExists(current);
       if (exists) {
+        console.log('[PATH] verify moonlight ok', { path: current });
         setMoonlightHelpStatus('Detectado OK');
         setInstalled(true);
         return;
       }
+      console.log('[PATH] verify moonlight fail', { path: current });
       setMoonlightHelpStatus('Nao encontrado');
     }
     const fallback = await detectMoonlightPath();
     if (fallback) {
+      console.log('[PATH] autodetect moonlight ok', { path: fallback });
       setMoonlightHelpStatus('Encontrado automaticamente');
       setInstalled(true);
     } else {
+      console.log('[PATH] autodetect moonlight fail');
       setMoonlightHelpStatus('Nao encontrado. Use "Procurar...".');
+    }
+  };
+
+  const handleMoonlightAutoDetect = async () => {
+    const detected = await detectMoonlightPath();
+    if (detected) {
+      console.log('[PATH] autodetect moonlight ok', { path: detected });
+      setMoonlightHelpStatus('Encontrado automaticamente');
+      setInstalled(true);
+    } else {
+      console.log('[PATH] autodetect moonlight fail');
+      setMoonlightHelpStatus('Nao encontramos o Moonlight nas pastas padrao.');
     }
   };
 
@@ -336,6 +352,9 @@ export default function Session() {
             </button>
             <button type="button" onClick={handleMoonlightVerify} className={styles.ghostButton}>
               Verificar
+            </button>
+            <button type="button" onClick={handleMoonlightAutoDetect} className={styles.ghostButton}>
+              Localizar automaticamente
             </button>
             <button type="button" onClick={() => navigate('/settings')} className={styles.ghostButton}>
               Abrir configuracoes

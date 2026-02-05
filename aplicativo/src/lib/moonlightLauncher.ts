@@ -3,6 +3,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 import { isTauriRuntime } from './hostDaemon';
 import { getMoonlightPath, setMoonlightPath } from './moonlightSettings';
 import {
+  detectMoonlightPathNative,
   findExistingPath,
   getWindowsEnv,
   normalizeWindowsPath,
@@ -91,14 +92,16 @@ export async function launchMoonlight(connectAddress: string): Promise<boolean> 
 }
 
 export async function detectMoonlightPath(): Promise<string | null> {
-  const paths = await resolveMoonlightPaths();
-  const detected = await findExistingPath(paths);
+  const nativeDetected = await detectMoonlightPathNative();
+  const detected = nativeDetected ?? (await findExistingPath(await resolveMoonlightPaths()));
   if (detected) {
     const current = getMoonlightPath();
     if (current !== detected) {
       setMoonlightPath(detected);
       console.log('[PATH] autodetected moonlightPath=', detected);
     }
+  } else {
+    console.log('[PATH] autodetect moonlightPath fail');
   }
   return detected;
 }

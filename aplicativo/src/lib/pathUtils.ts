@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { Command } from '@tauri-apps/plugin-shell';
 
 import { isTauriRuntime } from './hostDaemon';
@@ -11,8 +12,7 @@ export function normalizeWindowsPath(value: string): string {
   return unquoted.replace(/\//g, '\\');
 }
 
-export async function pathExists(path: string): Promise<boolean> {
-  if (!path || !isTauriRuntime()) return false;
+async function fallbackPathExists(path: string): Promise<boolean> {
   try {
     const command = Command.create('powershell', [
       '-NoProfile',
@@ -25,6 +25,19 @@ export async function pathExists(path: string): Promise<boolean> {
   } catch (error) {
     console.warn('[PATH] check fail', { path, error });
     return false;
+  }
+}
+
+export async function pathExists(path: string): Promise<boolean> {
+  if (!path || !isTauriRuntime()) return false;
+  const normalized = normalizeWindowsPath(path);
+  if (!normalized) return false;
+  try {
+    const result = await invoke<boolean>('validate_exe_path', { path: normalized });
+    return Boolean(result);
+  } catch (error) {
+    console.warn('[PATH] validate fail', { path: normalized, error });
+    return fallbackPathExists(normalized);
   }
 }
 
@@ -72,6 +85,28 @@ export async function getWindowsEnv(name: string): Promise<string | null> {
   } catch (error) {
     console.warn('[PATH] env fail', { name, error });
     envCache[name] = null;
+    return null;
+  }
+}
+
+export async function detectSunshinePathNative(): Promise<string | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    const detected = await invoke<string | null>('detect_sunshine_path');
+    return detected ? normalizeWindowsPath(detected) : null;
+  } catch (error) {
+    console.warn('[PATH] detect sunshine fail', { error });
+    return null;
+  }
+}
+
+export async function detectMoonlightPathNative(): Promise<string | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    const detected = await invoke<string | null>('detect_moonlight_path');
+    return detected ? normalizeWindowsPath(detected) : null;
+  } catch (error) {
+    console.warn('[PATH] detect moonlight fail', { error });
     return null;
   }
 }

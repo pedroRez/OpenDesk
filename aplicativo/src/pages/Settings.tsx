@@ -11,7 +11,7 @@ import { detectSunshinePath } from '../lib/sunshineController';
 import { detectMoonlightPath } from '../lib/moonlightLauncher';
 import { normalizeWindowsPath, pathExists } from '../lib/pathUtils';
 import { isTauriRuntime } from '../lib/hostDaemon';
-import { open } from '@tauri-apps/api/dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 
 import styles from './Settings.module.css';
 
@@ -135,13 +135,15 @@ export default function Settings() {
                 if (detected) {
                   setSunshinePathValue(detected);
                   setSunshinePath(detected);
+                  console.log('[PATH] autodetect sunshine ok', { path: detected });
                   setSunshineStatus('Sunshine detectado com sucesso.');
                 } else {
+                  console.log('[PATH] autodetect sunshine fail');
                   setSunshineStatus('Nao encontramos o Sunshine nas pastas padrao.');
                 }
               }}
             >
-              Procurar
+              Localizar automaticamente
             </button>
             <button
               type="button"
@@ -151,19 +153,23 @@ export default function Settings() {
                 if (normalized) {
                   const exists = await pathExists(normalized);
                   if (exists) {
+                    console.log('[PATH] verify sunshine ok', { path: normalized });
                     setSunshineStatus('Detectado OK');
                     setSunshinePathValue(normalized);
                     setSunshinePath(normalized);
                     return;
                   }
+                  console.log('[PATH] verify sunshine fail', { path: normalized });
                   setSunshineStatus('Nao encontrado');
                 }
                 const fallback = await detectSunshinePath();
                 if (fallback) {
                   setSunshinePathValue(fallback);
                   setSunshinePath(fallback);
+                  console.log('[PATH] autodetect sunshine ok', { path: fallback });
                   setSunshineStatus('Encontrado automaticamente');
                 } else {
+                  console.log('[PATH] autodetect sunshine fail');
                   setSunshineStatus('Nao encontrado. Use "Procurar...".');
                 }
               }}
@@ -223,13 +229,15 @@ export default function Settings() {
                 if (detected) {
                   setMoonlightPathValue(detected);
                   setMoonlightPath(detected);
+                  console.log('[PATH] autodetect moonlight ok', { path: detected });
                   setMoonlightStatus('Moonlight detectado com sucesso.');
                 } else {
+                  console.log('[PATH] autodetect moonlight fail');
                   setMoonlightStatus('Nao encontramos o Moonlight nas pastas padrao.');
                 }
               }}
             >
-              Procurar
+              Localizar automaticamente
             </button>
             <button
               type="button"
@@ -239,19 +247,23 @@ export default function Settings() {
                 if (normalized) {
                   const exists = await pathExists(normalized);
                   if (exists) {
+                    console.log('[PATH] verify moonlight ok', { path: normalized });
                     setMoonlightStatus('Detectado OK');
                     setMoonlightPathValue(normalized);
                     setMoonlightPath(normalized);
                     return;
                   }
+                  console.log('[PATH] verify moonlight fail', { path: normalized });
                   setMoonlightStatus('Nao encontrado');
                 }
                 const fallback = await detectMoonlightPath();
                 if (fallback) {
                   setMoonlightPathValue(fallback);
                   setMoonlightPath(fallback);
+                  console.log('[PATH] autodetect moonlight ok', { path: fallback });
                   setMoonlightStatus('Encontrado automaticamente');
                 } else {
+                  console.log('[PATH] autodetect moonlight fail');
                   setMoonlightStatus('Nao encontrado. Use "Procurar...".');
                 }
               }}
