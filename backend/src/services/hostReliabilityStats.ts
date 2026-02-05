@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 export type ReliabilityBadge = 'CONFIAVEL' | 'NOVO' | 'INSTAVEL';
 
@@ -87,19 +87,19 @@ export async function recordHostOnlineMinute(
   const minute = new Date(seenAt);
   minute.setSeconds(0, 0);
 
-  await prisma.hostOnlineMinute.upsert({
-    where: {
-      hostId_minute: {
+  try {
+    await prisma.hostOnlineMinute.create({
+      data: {
         hostId,
         minute,
       },
-    },
-    update: {},
-    create: {
-      hostId,
-      minute,
-    },
-  });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function getReliabilityStats(
