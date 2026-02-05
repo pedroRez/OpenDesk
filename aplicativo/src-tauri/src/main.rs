@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::{Path, PathBuf};
+use serde::Serialize;
 
 #[tauri::command]
 fn validate_exe_path(path: String) -> bool {
@@ -99,6 +100,88 @@ fn start_moonlight(path: String, address: String) -> Result<(), String> {
     .map_err(|error| error.to_string())
 }
 
+#[derive(Serialize)]
+struct CommandOutput {
+  code: i32,
+  stdout: String,
+  stderr: String,
+}
+
+#[tauri::command]
+fn moonlight_list(path: String, host: String) -> Result<CommandOutput, String> {
+  let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+  if trimmed.is_empty() {
+    return Err("path vazio".to_string());
+  }
+  let target = host.trim();
+  if target.is_empty() {
+    return Err("host vazio".to_string());
+  }
+  let output = std::process::Command::new(trimmed)
+    .arg("list")
+    .arg(target)
+    .output()
+    .map_err(|error| error.to_string())?;
+
+  Ok(CommandOutput {
+    code: output.status.code().unwrap_or(-1),
+    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+  })
+}
+
+#[tauri::command]
+fn moonlight_pair(path: String, host: String) -> Result<CommandOutput, String> {
+  let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+  if trimmed.is_empty() {
+    return Err("path vazio".to_string());
+  }
+  let target = host.trim();
+  if target.is_empty() {
+    return Err("host vazio".to_string());
+  }
+  let output = std::process::Command::new(trimmed)
+    .arg("pair")
+    .arg(target)
+    .output()
+    .map_err(|error| error.to_string())?;
+
+  Ok(CommandOutput {
+    code: output.status.code().unwrap_or(-1),
+    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+  })
+}
+
+#[tauri::command]
+fn moonlight_stream(path: String, host: String, app: String) -> Result<CommandOutput, String> {
+  let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+  if trimmed.is_empty() {
+    return Err("path vazio".to_string());
+  }
+  let target = host.trim();
+  if target.is_empty() {
+    return Err("host vazio".to_string());
+  }
+  let app_name = app.trim();
+  if app_name.is_empty() {
+    return Err("app vazio".to_string());
+  }
+
+  let child = std::process::Command::new(trimmed)
+    .arg("stream")
+    .arg(target)
+    .arg(app_name)
+    .spawn()
+    .map_err(|error| error.to_string())?;
+
+  Ok(CommandOutput {
+    code: child.id() as i32,
+    stdout: "".to_string(),
+    stderr: "".to_string(),
+  })
+}
+
 fn main() {
   tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
@@ -108,7 +191,10 @@ fn main() {
       detect_sunshine_path,
       detect_moonlight_path,
       start_sunshine,
-      start_moonlight
+      start_moonlight,
+      moonlight_list,
+      moonlight_pair,
+      moonlight_stream
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

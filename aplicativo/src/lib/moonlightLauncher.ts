@@ -17,6 +17,46 @@ const FALLBACK_PATHS = [
   'C:\\Program Files (x86)\\Moonlight Game Streaming\\Moonlight.exe',
 ];
 
+type MoonlightCommandOutput = {
+  code: number;
+  stdout: string;
+  stderr: string;
+};
+
+type MoonlightLaunchResult = {
+  ok: boolean;
+  needsPair: boolean;
+  message?: string;
+};
+
+function parseHost(connectAddress: string): string {
+  const trimmed = connectAddress.trim();
+  if (!trimmed) return '';
+  const [host] = trimmed.split(':');
+  return host ?? '';
+}
+
+function parseApps(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.toLowerCase().startsWith('list'))
+    .map((line) => line.replace(/^\d+[\)\.\-]\s*/, '').trim())
+    .filter(Boolean);
+}
+
+function pickPreferredApp(apps: string[]): string | null {
+  if (apps.length === 0) return null;
+  const preferred = apps.find((app) => app.toLowerCase() === 'desktop')
+    ?? apps.find((app) => app.toLowerCase() === 'steam');
+  return preferred ?? apps[0];
+}
+
+function needsPairingFromOutput(output: MoonlightCommandOutput): boolean {
+  const combined = `${output.stdout}\n${output.stderr}`.toLowerCase();
+  return combined.includes('pair') || combined.includes('not paired') || combined.includes('not paired with');
+}
+
 async function isMoonlightRunning(): Promise<boolean> {
   if (!isTauriRuntime()) return false;
   try {
@@ -63,10 +103,10 @@ export async function isMoonlightAvailable(): Promise<boolean> {
   return Boolean(existing);
 }
 
-export async function launchMoonlight(connectAddress: string): Promise<boolean> {
+export async function launchMoonlight(connectAddress: string): Promise<MoonlightLaunchResult> {
   if (!isTauriRuntime()) {
     console.warn('[STREAM][CLIENT] moonlight skip (not tauri runtime)');
-    return false;
+    return { ok: false, needsPair: false, message: 'Nao esta no app desktop.' };
   }
 
   const alreadyRunning = await isMoonlightRunning();
@@ -79,17 +119,84 @@ export async function launchMoonlight(connectAddress: string): Promise<boolean> 
     const exists = await pathExists(path);
     if (!exists) continue;
     try {
-      console.log('[LAUNCH] starting moonlight', { path, args: connectAddress });
-      await invoke('start_moonlight', { path, address: connectAddress });
-      console.log('[LAUNCH] moonlight ok', { path });
-      return true;
+      const host = parseHost(connectAddress);
+      if (!host) {
+        console.warn('[MOONLIGHT] invalid connectAddress', { connectAddress });
+        return { ok: false, needsPair: false, message: 'Endereco invalido.' };
+      }
+
+      const listOutput = await invoke<MoonlightCommandOutput>('moonlight_list', { path, host });
+      console.log('[MOONLIGHT] list', {
+        host,
+        stdout: listOutput.stdout,
+        stderr: listOutput.stderr,
+        code: listOutput.code,
+      });
+
+      const apps = parseApps(listOutput.stdout);
+      const app = pickPreferredApp(apps);
+      if (!app) {
+        const needsPair = needsPairingFromOutput(listOutput);
+        console.warn('[MOONLIGHT] list fail (no apps)', { host, needsPair });
+        return {
+          ok: false,
+          needsPair,
+          message: listOutput.stderr || listOutput.stdout || 'Nao foi possivel listar apps.',
+        };
+      }
+
+      const streamOutput = await invoke<MoonlightCommandOutput>('moonlight_stream', { path, host, app });
+      console.log('[MOONLIGHT] stream', {
+        host,
+        app,
+        ok: true,
+        stderr: streamOutput.stderr,
+      });
+      return { ok: true, needsPair: false };
     } catch (error) {
-      console.warn('[LAUNCH] moonlight fail', { path, error });
+      console.warn('[MOONLIGHT] stream', { ok: false, error });
     }
   }
 
   console.error('[STREAM][CLIENT] launch fail (no valid path)');
-  return alreadyRunning;
+  return {
+    ok: alreadyRunning,
+    needsPair: false,
+    message: alreadyRunning ? undefined : 'Moonlight nao encontrado.',
+  };
+}
+
+export async function pairMoonlight(connectAddress: string): Promise<MoonlightLaunchResult> {
+  if (!isTauriRuntime()) {
+    return { ok: false, needsPair: false, message: 'Nao esta no app desktop.' };
+  }
+  const host = parseHost(connectAddress);
+  if (!host) {
+    return { ok: false, needsPair: false, message: 'Endereco invalido.' };
+  }
+
+  const paths = await resolveMoonlightPaths();
+  for (const path of paths) {
+    const exists = await pathExists(path);
+    if (!exists) continue;
+    try {
+      const output = await invoke<MoonlightCommandOutput>('moonlight_pair', { path, host });
+      if (output.code === 0) {
+        console.log('[MOONLIGHT] pair', { host, ok: true, stderr: output.stderr });
+        return { ok: true, needsPair: false };
+      }
+      console.warn('[MOONLIGHT] pair', { host, ok: false, stderr: output.stderr, code: output.code });
+      return {
+        ok: false,
+        needsPair: false,
+        message: output.stderr || output.stdout || 'Falha ao parear.',
+      };
+    } catch (error) {
+      return { ok: false, needsPair: false, message: error instanceof Error ? error.message : 'Falha ao parear.' };
+    }
+  }
+
+  return { ok: false, needsPair: false, message: 'Moonlight nao encontrado.' };
 }
 
 export async function detectMoonlightPath(): Promise<string | null> {

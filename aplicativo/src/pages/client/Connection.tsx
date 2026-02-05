@@ -3,7 +3,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { request, requestWithStatus } from '../../lib/api';
 import { useToast } from '../../components/Toast';
-import { isMoonlightAvailable, launchMoonlight, detectMoonlightPath } from '../../lib/moonlightLauncher';
+import {
+  isMoonlightAvailable,
+  launchMoonlight,
+  detectMoonlightPath,
+  pairMoonlight,
+} from '../../lib/moonlightLauncher';
 import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -31,6 +36,9 @@ export default function Connection() {
   const [providerMessage, setProviderMessage] = useState('');
   const [installed, setInstalled] = useState<boolean | null>(null);
   const [connectHint, setConnectHint] = useState<string | null>(null);
+  const [pairAvailable, setPairAvailable] = useState(false);
+  const [pairing, setPairing] = useState(false);
+  const [lastConnectAddress, setLastConnectAddress] = useState<string | null>(null);
   const [showMoonlightHelp, setShowMoonlightHelp] = useState(false);
   const [moonlightHelpStatus, setMoonlightHelpStatus] = useState('');
   const navigate = useNavigate();
@@ -172,13 +180,20 @@ export default function Connection() {
       setConnectHint(resolveResult.data.connectHint ?? null);
 
       console.log('[STREAM][CLIENT] launching moonlight...');
-      const launched = await launchMoonlight(resolveResult.data.connectAddress);
-      if (launched) {
+      setLastConnectAddress(resolveResult.data.connectAddress);
+      const launchResult = await launchMoonlight(resolveResult.data.connectAddress);
+      if (launchResult.ok) {
         console.log('[STREAM][CLIENT] launch ok');
         setProviderMessage('Abrindo Moonlight para conectar...');
+        setPairAvailable(false);
       } else {
         console.error('[STREAM][CLIENT] launch fail');
-        setProviderMessage('Nao foi possivel abrir o Moonlight automaticamente.');
+        setPairAvailable(launchResult.needsPair);
+        setProviderMessage(
+          launchResult.needsPair
+            ? 'Nao foi possivel listar apps. Tente parear o Moonlight.'
+            : launchResult.message ?? 'Nao foi possivel abrir o Moonlight automaticamente.',
+        );
       }
     } catch (err) {
       console.error('[STREAM][CLIENT] token/resolve fail', err);
@@ -186,6 +201,20 @@ export default function Connection() {
     } finally {
       setConnecting(false);
     }
+  };
+
+  const handlePairMoonlight = async () => {
+    if (!lastConnectAddress || pairing) return;
+    setPairing(true);
+    setProviderMessage('Pareando...');
+    const result = await pairMoonlight(lastConnectAddress);
+    if (result.ok) {
+      setProviderMessage('Pareamento iniciado. Siga as instrucoes no Moonlight.');
+      setPairAvailable(false);
+    } else {
+      setProviderMessage(result.message ?? 'Falha ao parear.');
+    }
+    setPairing(false);
   };
 
   if (loading) {
@@ -224,6 +253,11 @@ export default function Connection() {
         )}
         {connectHint && <p className={styles.muted}>{connectHint}</p>}
         {providerMessage && <p className={styles.muted}>{providerMessage}</p>}
+        {pairAvailable && (
+          <button type="button" onClick={handlePairMoonlight} disabled={pairing}>
+            {pairing ? 'Pareando...' : 'Parear'}
+          </button>
+        )}
       </div>
 
       {showMoonlightHelp && (
