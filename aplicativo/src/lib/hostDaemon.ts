@@ -18,7 +18,12 @@ export type HostDaemonConfig = {
 
 export function isTauriRuntime(): boolean {
   if (typeof window === 'undefined') return false;
-  return Boolean((window as unknown as { __TAURI__?: unknown }).__TAURI__);
+  const w = window as unknown as {
+    __TAURI__?: unknown;
+    __TAURI_INTERNALS__?: unknown;
+    __TAURI_INVOKE__?: unknown;
+  };
+  return Boolean(w.__TAURI__ || w.__TAURI_INTERNALS__ || w.__TAURI_INVOKE__);
 }
 
 async function resolveEntryPath(): Promise<string> {
