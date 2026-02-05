@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { config } from '../config.js';
 import { registerHeartbeat } from '../services/hostHeartbeat.js';
 import { getReliabilityBadge, getReliabilityStats, getReliabilityStatsMap } from '../services/hostReliabilityStats.js';
 import { requireUser } from '../utils/auth.js';
@@ -160,11 +161,15 @@ export async function hostRoutes(fastify: FastifyInstance) {
     });
     const body = bodySchema.parse(request.body ?? {});
     const logTimestamp = body.timestamp ?? new Date().toISOString();
-    console.log('[HB][BACKEND] recebido', {
-      hostId: params.id,
-      pcId: body.pcId ?? null,
-      timestamp: logTimestamp,
-    });
+    const logLevel = (config.logHeartbeat ?? 'sampled').toLowerCase();
+    const isDebug = logLevel === 'debug' || logLevel === 'full' || logLevel === 'true';
+    if (isDebug) {
+      console.log('[HB][BACKEND] recebido', {
+        hostId: params.id,
+        pcId: body.pcId ?? null,
+        timestamp: logTimestamp,
+      });
+    }
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) {
       console.error('[HB][BACKEND] 401', {
@@ -190,11 +195,13 @@ export async function hostRoutes(fastify: FastifyInstance) {
         hostId: params.id,
         status: body.status,
       });
-      console.log('[HB][BACKEND] atualizado', {
-        hostId: params.id,
-        pcId: body.pcId ?? null,
-        timestamp: logTimestamp,
-      });
+      if (isDebug) {
+        console.log('[HB][BACKEND] atualizado', {
+          hostId: params.id,
+          pcId: body.pcId ?? null,
+          timestamp: logTimestamp,
+        });
+      }
     } catch (error) {
       console.error('[HB][BACKEND] erro ao atualizar', {
         hostId: params.id,

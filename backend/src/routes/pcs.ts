@@ -146,6 +146,15 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Sem permissao' });
     }
 
+    fastify.log.info(
+      {
+        pcId: params.pcId,
+        networkProvider: body.networkProvider,
+        connectAddress: body.connectAddress,
+      },
+      'PC network update request',
+    );
+
     const updated = await fastify.prisma.pC.update({
       where: { id: params.pcId },
       data: {
@@ -154,6 +163,15 @@ export async function pcRoutes(fastify: FastifyInstance) {
         connectHint: body.connectHint ?? null,
       },
     });
+
+    fastify.log.info(
+      {
+        pcId: params.pcId,
+        networkProvider: updated.networkProvider,
+        connectAddress: updated.connectAddress,
+      },
+      'PC network updated',
+    );
 
     return reply.send({ pc: updated });
   });

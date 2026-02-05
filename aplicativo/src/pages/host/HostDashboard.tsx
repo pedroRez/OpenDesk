@@ -313,7 +313,6 @@ export default function HostDashboard() {
   const publishNetwork = async (pcId: string) => {
     if (isPublishingNetwork) return;
     setIsPublishingNetwork(true);
-    console.log('[NET][HOST] publishing connectAddress', { pcId });
     try {
       const running = await ensureSunshineRunning();
       if (!running) {
@@ -321,6 +320,7 @@ export default function HostDashboard() {
         return;
       }
       const connectAddress = await resolveConnectAddress();
+      console.log('[NET][HOST] publishing connectAddress', { pcId, address: connectAddress });
       await request(`/pcs/${pcId}/network`, {
         method: 'POST',
         body: JSON.stringify({

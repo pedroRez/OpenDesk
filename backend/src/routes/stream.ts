@@ -92,7 +92,10 @@ export async function streamRoutes(fastify: FastifyInstance) {
     }
 
     if (!record.pc.connectAddress) {
-      fastify.log.warn({ token: body.token, pcId: record.pcId }, 'Stream token resolve error: missing address');
+      fastify.log.warn(
+        { token: body.token, pcId: record.pcId, connectAddress: record.pc.connectAddress ?? null },
+        'Stream token resolve error: missing address',
+      );
       return reply.status(409).send({ error: 'Endereco de conexao indisponivel' });
     }
 
