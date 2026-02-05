@@ -40,8 +40,14 @@
 - [ ] Ver mensagem de sucesso/erro no modal.
 
 ## Streaming - Robustez (Already Running)
-- [ ] Cenário A: Sunshine ja aberto -> colocar PC ONLINE -> nao duplicar processo e logar "[STREAM][HOST] sunshine already running".
-- [ ] Cenário B: Moonlight ja aberto -> clicar "Conectar agora" -> nao quebrar e logar "[STREAM][CLIENT] moonlight already running, attempting reuse".
+- [ ] Cenario A: Sunshine ja aberto -> colocar PC ONLINE -> nao duplicar processo e logar "[STREAM][HOST] sunshine already running".
+- [ ] Cenario B: Moonlight ja aberto -> clicar "Conectar agora" -> nao quebrar e logar "[STREAM][CLIENT] moonlight already running, attempting reuse".
+
+## Streaming - Paths e UX (DEV)
+- [ ] HOST com Sunshine instalado e sem Moonlight -> deve funcionar (nao exigir Moonlight).
+- [ ] CLIENTE com Moonlight instalado e sem Sunshine -> deve funcionar (nao exigir Sunshine).
+- [ ] Campo com path errado -> **Verificar** falha -> **Procurar...** seleciona o executavel correto -> **Verificar** sucesso.
+Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras invertidas e aspas; HOST e CLIENTE nao exigem os dois softwares no mesmo PC durante DEV.
 
 ## Fluxo Cliente - Agendamento
 - [ ] Abrir **Agendar** em um PC online e ver painel lateral.
@@ -71,3 +77,4 @@
 ## Navegacao e Estado
 - [ ] Botao **Trocar modo** limpa o modo e volta para a home.
 - [ ] Botao **Sair** limpa auth + modo e volta para a home.
+
