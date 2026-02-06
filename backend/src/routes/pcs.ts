@@ -21,8 +21,8 @@ const hardwareProfileSchema = z.object({
   ramGb: z.number().int().min(1),
   gpuName: z.string().min(1),
   storageSummary: z.string().min(1),
-  osName: z.string().optional(),
-  screenResolution: z.string().optional(),
+  osName: z.string().nullable().optional(),
+  screenResolution: z.string().nullable().optional(),
 });
 const categoriesQuerySchema = z.preprocess((value) => {
   if (value === undefined || value === null) return undefined;
@@ -331,8 +331,9 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(201).send(created);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error ?? '');
+      const errorMessage = detail ? `Falha ao cadastrar PC. ${detail}` : 'Falha ao cadastrar PC.';
       fastify.log.error({ error: detail }, '[PC_CREATE] fail');
-      return reply.status(500).send({ error: 'Falha ao cadastrar PC.', detail });
+      return reply.status(500).send({ error: errorMessage, detail });
     }
   });
 

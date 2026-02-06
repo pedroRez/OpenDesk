@@ -9,6 +9,7 @@ type ApiErrorPayload = {
   error?: string;
   message?: string;
   code?: string;
+  detail?: string;
 };
 
 function buildHeaders(init?: RequestInit): Headers {
@@ -33,9 +34,15 @@ function buildHeaders(init?: RequestInit): Headers {
 
 function resolveErrorMessage(payload: unknown, status: number): string {
   if (payload && typeof payload === 'object') {
-    const { error, message } = payload as ApiErrorPayload;
-    if (error) return error;
+    const { error, message, detail } = payload as ApiErrorPayload;
+    if (error) {
+      if (detail && import.meta.env.DEV) {
+        return `${error} (${detail})`;
+      }
+      return error;
+    }
     if (message) return message;
+    if (detail && import.meta.env.DEV) return detail;
   }
   if (typeof payload === 'string' && payload.trim()) {
     return payload;
