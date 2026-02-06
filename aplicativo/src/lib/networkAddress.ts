@@ -59,7 +59,8 @@ export async function resolveConnectAddress(): Promise<string> {
   const override = import.meta.env.VITE_HOST_CONNECT_ADDRESS;
   if (override) return override;
 
-  const ip = await detectLocalIp();
+  // Prefer native detection (Tauri) so we can pick the best local interface (ex: Tailscale 100.x).
+  const ip = (await detectHostIp()) ?? (await detectLocalIp());
   if (ip) return `${ip}:${DEFAULT_SUNSHINE_PORT}`;
 
   throw new Error('Nao foi possivel detectar o IP local do host.');
