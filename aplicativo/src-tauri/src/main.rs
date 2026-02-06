@@ -56,6 +56,19 @@ fn launch_exe(path: String, args: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn launch_moonlight(path: String, args: Vec<String>) -> Result<(), String> {
+  let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+  if trimmed.is_empty() {
+    return Err("path vazio".to_string());
+  }
+  std::process::Command::new(trimmed)
+    .args(args)
+    .spawn()
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn detect_sunshine_path() -> Option<String> {
   detect_path("sunshine", "Sunshine", "sunshine.exe")
 }
@@ -541,6 +554,7 @@ fn main() {
       validate_exe_path,
       is_process_running,
       launch_exe,
+      launch_moonlight,
       get_local_pc_id,
       detect_local_ip,
       get_hardware_profile,

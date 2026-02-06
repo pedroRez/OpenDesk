@@ -63,6 +63,13 @@ Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras
 ## Streaming - Endereco Real (Host/Cliente em PCs diferentes)
 - [ ] Host em um PC e cliente em outro: confirmar que o Moonlight usa o IP real do host (nao 127.0.0.1).
 
+## Streaming - Cliente pronto (Moonlight + Pareamento)
+- [ ] Moonlight ja aberto -> clicar Conectar -> conecta normalmente.
+- [ ] Moonlight fechado -> clicar Conectar -> inicia Moonlight e conecta.
+- [ ] Moonlight nao instalado -> fluxo de procurar/auto-detect aparece.
+- [ ] Host nao pareado -> modal pede PIN e permite tentar novamente.
+- [ ] Host offline -> erro claro "Nao foi possivel conectar. Verifique se o host esta ONLINE."
+
 ## Fluxo Cliente - Agendamento
 - [ ] Abrir **Agendar** em um PC online e ver painel lateral.
 - [ ] Ver horarios indisponiveis (availability) no painel.

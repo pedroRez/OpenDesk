@@ -5,6 +5,7 @@ import { request, requestWithStatus } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import {
   isMoonlightAvailable,
+  ensureMoonlightReady,
   launchMoonlight,
   detectMoonlightPath,
   pairMoonlight,
@@ -36,11 +37,17 @@ export default function Connection() {
   const [providerMessage, setProviderMessage] = useState('');
   const [installed, setInstalled] = useState<boolean | null>(null);
   const [connectHint, setConnectHint] = useState<string | null>(null);
+  const [connectStage, setConnectStage] = useState<'idle' | 'checking' | 'pairing' | 'opening'>('idle');
+  const [connectFailed, setConnectFailed] = useState(false);
+  const [connectError, setConnectError] = useState('');
+  const [connectErrorDetails, setConnectErrorDetails] = useState('');
+  const [showConnectDetails, setShowConnectDetails] = useState(false);
   const [pairAvailable, setPairAvailable] = useState(false);
   const [pairing, setPairing] = useState(false);
   const [lastConnectAddress, setLastConnectAddress] = useState<string | null>(null);
   const [showMoonlightHelp, setShowMoonlightHelp] = useState(false);
   const [moonlightHelpStatus, setMoonlightHelpStatus] = useState('');
+  const [showPairingModal, setShowPairingModal] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -82,6 +89,7 @@ export default function Connection() {
         console.log('[PATH] selected moonlightPath=', normalized);
         setMoonlightHelpStatus('Moonlight selecionado.');
         setInstalled(true);
+        setShowMoonlightHelp(false);
       }
     } catch (error) {
       console.warn('[PATH] moonlight picker fail', error);
@@ -97,6 +105,7 @@ export default function Connection() {
         console.log('[PATH] verify moonlight ok', { path: current });
         setMoonlightHelpStatus('Detectado OK');
         setInstalled(true);
+        setShowMoonlightHelp(false);
         return;
       }
       console.log('[PATH] verify moonlight fail', { path: current });
@@ -107,9 +116,11 @@ export default function Connection() {
       console.log('[PATH] autodetect moonlight ok', { path: fallback });
       setMoonlightHelpStatus('Encontrado automaticamente');
       setInstalled(true);
+      setShowMoonlightHelp(false);
     } else {
       console.log('[PATH] autodetect moonlight fail');
       setMoonlightHelpStatus('Nao encontrado. Use "Procurar...".');
+      setShowMoonlightHelp(true);
     }
   };
 
@@ -119,26 +130,48 @@ export default function Connection() {
       console.log('[PATH] autodetect moonlight ok', { path: detected });
       setMoonlightHelpStatus('Encontrado automaticamente');
       setInstalled(true);
+      setShowMoonlightHelp(false);
     } else {
       console.log('[PATH] autodetect moonlight fail');
       setMoonlightHelpStatus('Nao encontramos o Moonlight nas pastas padrao.');
+      setShowMoonlightHelp(true);
     }
   };
 
   const handleConnect = async () => {
     if (!id || !session?.pc?.id) return;
-    if (installed === false) {
-      setProviderMessage('Moonlight nao encontrado. Configure o caminho em Configuracoes.');
-      setShowMoonlightHelp(true);
-      return;
-    }
     if (connecting) {
       console.log('[STREAM][CLIENT] connect lock active');
       return;
     }
     setConnecting(true);
-    setProviderMessage('Preparando conexao...');
+    setConnectFailed(false);
+    setConnectError('');
+    setConnectErrorDetails('');
+    setShowConnectDetails(false);
+    setPairAvailable(false);
+    setShowPairingModal(false);
+    setProviderMessage('Verificando Moonlight...');
+    setConnectStage('checking');
     try {
+      const moonlightReady = await ensureMoonlightReady();
+      if (!moonlightReady.ok) {
+        setInstalled(false);
+        if (moonlightReady.reason === 'path_missing') {
+          setProviderMessage('Moonlight nao encontrado. Configure o caminho em Configuracoes.');
+          setConnectError('Moonlight nao encontrado. Configure o caminho.');
+          setShowMoonlightHelp(true);
+        } else {
+          setProviderMessage('Nao foi possivel iniciar o Moonlight.');
+          setConnectError('Nao foi possivel iniciar o Moonlight.');
+        }
+        setConnectFailed(true);
+        return;
+      }
+      setInstalled(true);
+      setShowMoonlightHelp(false);
+
+      setProviderMessage('Preparando conexao...');
       const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
         method: 'POST',
         body: JSON.stringify({ pcId: session.pc.id }),
@@ -162,15 +195,21 @@ export default function Connection() {
           setProviderMessage(
             'PC sem conexao cadastrada (host/porta). Abra o painel do host e salve a conexao.',
           );
+          setConnectError('PC sem conexao cadastrada (host/porta).');
         } else {
           setProviderMessage(
             `Falha ao resolver conexao (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
           );
+          setConnectError('Nao foi possivel conectar. Verifique se o host esta ONLINE.');
         }
+        setConnectErrorDetails(
+          `Resolve falhou (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
+        );
         toast.show(
           `Resolve falhou (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
           'error',
         );
+        setConnectFailed(true);
         return;
       }
 
@@ -186,26 +225,44 @@ export default function Connection() {
         connectAddress: resolveResult.data.connectAddress,
       });
 
+      if (!resolveResult.data.connectAddress) {
+        setProviderMessage('Endereco de conexao invalido.');
+        setConnectError('Endereco de conexao invalido.');
+        setConnectErrorDetails('connectAddress vazio/invalid.');
+        setConnectFailed(true);
+        return;
+      }
+
+      setConnectStage('pairing');
+      setProviderMessage('Verificando pareamento...');
       console.log('[STREAM][CLIENT] launching moonlight...');
-      setProviderMessage('Abrindo Moonlight...');
       setLastConnectAddress(resolveResult.data.connectAddress);
       const launchResult = await launchMoonlight(resolveResult.data.connectAddress);
       if (launchResult.ok) {
         console.log('[STREAM][CLIENT] launch ok');
-        setProviderMessage('Abrindo Moonlight para conectar...');
+        setProviderMessage('Abrindo conexao...');
+        setConnectStage('opening');
         setPairAvailable(false);
       } else {
         console.error('[STREAM][CLIENT] launch fail');
         setPairAvailable(launchResult.needsPair);
-        setProviderMessage(
-          launchResult.needsPair
-            ? 'Nao foi possivel listar apps. Tente parear o Moonlight.'
-            : launchResult.message ?? 'Nao foi possivel abrir o Moonlight automaticamente.',
-        );
+        if (launchResult.needsPair) {
+          setProviderMessage('Este host ainda nao esta pareado. Siga as instrucoes.');
+          setConnectError('Host nao pareado. Digite o PIN exibido no host.');
+          setShowPairingModal(true);
+        } else {
+          setProviderMessage(launchResult.message ?? 'Nao foi possivel abrir o Moonlight automaticamente.');
+          setConnectError('Nao foi possivel conectar. Verifique se o host esta ONLINE.');
+        }
+        setConnectErrorDetails(launchResult.message ?? '');
+        setConnectFailed(true);
       }
     } catch (err) {
       console.error('[STREAM][CLIENT] token/resolve fail', err);
       setProviderMessage(err instanceof Error ? err.message : 'Nao foi possivel iniciar a conexao.');
+      setConnectError('Nao foi possivel conectar. Verifique se o host esta ONLINE.');
+      setConnectErrorDetails(err instanceof Error ? err.message : String(err ?? ''));
+      setConnectFailed(true);
     } finally {
       setConnecting(false);
     }
@@ -219,10 +276,26 @@ export default function Connection() {
     if (result.ok) {
       setProviderMessage('Pareamento iniciado. Siga as instrucoes no Moonlight.');
       setPairAvailable(false);
+      setShowPairingModal(false);
     } else {
       setProviderMessage(result.message ?? 'Falha ao parear.');
     }
     setPairing(false);
+  };
+
+  const handleRetryConnect = () => {
+    setShowPairingModal(false);
+    handleConnect();
+  };
+
+  const connectStepIndex =
+    connectStage === 'checking' ? 0 : connectStage === 'pairing' ? 1 : connectStage === 'opening' ? 2 : -1;
+
+  const stepClass = (index: number) => {
+    if (connectStepIndex < 0) return styles.stepPending;
+    if (index < connectStepIndex) return styles.stepDone;
+    if (index === connectStepIndex) return styles.stepActive;
+    return styles.stepPending;
   };
 
   if (loading) {
@@ -259,12 +332,40 @@ export default function Connection() {
         {installed === false && (
           <p className={styles.muted}>Moonlight nao detectado. Instale antes de conectar.</p>
         )}
+        {connectStage !== 'idle' && (
+          <ul className={styles.stepList}>
+            <li className={`${styles.stepItem} ${stepClass(0)}`}>
+              <span className={styles.stepDot} />
+              Verificando Moonlight
+            </li>
+            <li className={`${styles.stepItem} ${stepClass(1)}`}>
+              <span className={styles.stepDot} />
+              Verificando pareamento
+            </li>
+            <li className={`${styles.stepItem} ${stepClass(2)}`}>
+              <span className={styles.stepDot} />
+              Abrindo conexao
+            </li>
+          </ul>
+        )}
         {connectHint && <p className={styles.muted}>{connectHint}</p>}
         {providerMessage && <p className={styles.muted}>{providerMessage}</p>}
-        {pairAvailable && (
-          <button type="button" onClick={handlePairMoonlight} disabled={pairing}>
-            {pairing ? 'Pareando...' : 'Parear'}
-          </button>
+        {connectFailed && connectError && (
+          <div className={styles.errorBox}>
+            <p>{connectError}</p>
+            {import.meta.env.DEV && connectErrorDetails && (
+              <>
+                <button
+                  type="button"
+                  className={styles.ghost}
+                  onClick={() => setShowConnectDetails((prev) => !prev)}
+                >
+                  {showConnectDetails ? 'Ocultar detalhes' : 'Ver detalhes'}
+                </button>
+                {showConnectDetails && <pre className={styles.errorDetails}>{connectErrorDetails}</pre>}
+              </>
+            )}
+          </div>
         )}
       </div>
 
@@ -289,6 +390,32 @@ export default function Connection() {
             </button>
           </div>
           {moonlightHelpStatus && <p className={styles.muted}>{moonlightHelpStatus}</p>}
+        </div>
+      )}
+
+      {showPairingModal && (
+        <div className={styles.modalOverlay} role="dialog" aria-modal="true">
+          <div className={styles.modal}>
+            <div>
+              <h3>Pareamento necessario</h3>
+              <p className={styles.muted}>
+                Este host ainda nao esta pareado. Um PIN sera solicitado pelo Sunshine. Digite o PIN exibido no host.
+              </p>
+            </div>
+            <div className={styles.modalActions}>
+              {pairAvailable && (
+                <button type="button" onClick={handlePairMoonlight} disabled={pairing}>
+                  {pairing ? 'Pareando...' : 'Parear'}
+                </button>
+              )}
+              <button type="button" onClick={handleRetryConnect} className={styles.ghost}>
+                Tentar novamente
+              </button>
+              <button type="button" onClick={() => setShowPairingModal(false)} className={styles.ghost}>
+                Fechar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

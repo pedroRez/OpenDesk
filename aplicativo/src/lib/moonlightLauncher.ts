@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import { Command } from '@tauri-apps/plugin-shell';
 
 import { isTauriRuntime } from './hostDaemon';
 import { getMoonlightPath, setMoonlightPath } from './moonlightSettings';
@@ -27,6 +26,13 @@ type MoonlightLaunchResult = {
   ok: boolean;
   needsPair: boolean;
   message?: string;
+};
+
+export type MoonlightEnsureResult = {
+  ok: boolean;
+  reason?: 'path_missing' | 'launch_failed';
+  alreadyRunning?: boolean;
+  path?: string | null;
 };
 
 function parseHost(connectAddress: string): string {
@@ -63,10 +69,8 @@ function needsPairingFromOutput(output: MoonlightCommandOutput): boolean {
 async function isMoonlightRunning(): Promise<boolean> {
   if (!isTauriRuntime()) return false;
   try {
-    const command = Command.create('cmd', ['/c', 'tasklist', '/FI', 'IMAGENAME eq Moonlight.exe']);
-    const output = await command.execute();
-    const stdout = (output.stdout ?? '').toString().toLowerCase();
-    return stdout.includes('moonlight.exe');
+    const result = await invoke<boolean>('is_process_running', { processName: 'moonlight.exe' });
+    return Boolean(result);
   } catch (error) {
     console.warn('[STREAM][CLIENT] moonlight check fail', { error });
     return false;
@@ -104,6 +108,41 @@ export async function isMoonlightAvailable(): Promise<boolean> {
   const paths = await resolveMoonlightPaths();
   const existing = await findExistingPath(paths);
   return Boolean(existing);
+}
+
+export async function ensureMoonlightReady(): Promise<MoonlightEnsureResult> {
+  if (!isTauriRuntime()) {
+    return { ok: false, reason: 'launch_failed', alreadyRunning: false, path: null };
+  }
+
+  const detected = await detectMoonlightPath();
+  if (!detected) {
+    console.warn('[MOONLIGHT] launch fail', { error: 'path missing' });
+    return { ok: false, reason: 'path_missing', alreadyRunning: false, path: null };
+  }
+
+  const running = await isMoonlightRunning();
+  if (running) {
+    console.log('[MOONLIGHT] already running');
+    return { ok: true, alreadyRunning: true, path: detected };
+  }
+
+  try {
+    console.log('[MOONLIGHT] launching path=', detected);
+    await invoke('launch_moonlight', { path: detected, args: [] });
+  } catch (error) {
+    console.warn('[MOONLIGHT] launch fail', { error });
+    return { ok: false, reason: 'launch_failed', alreadyRunning: false, path: detected };
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  const nowRunning = await isMoonlightRunning();
+  if (nowRunning) {
+    console.log('[MOONLIGHT] launch ok');
+    return { ok: true, alreadyRunning: false, path: detected };
+  }
+  console.warn('[MOONLIGHT] launch fail', { error: 'process not detected' });
+  return { ok: false, reason: 'launch_failed', alreadyRunning: false, path: detected };
 }
 
 export async function launchMoonlight(connectAddress: string): Promise<MoonlightLaunchResult> {
@@ -148,16 +187,17 @@ export async function launchMoonlight(connectAddress: string): Promise<Moonlight
         };
       }
 
+      console.log('[MOONLIGHT] launching stream', { host, app });
       const streamOutput = await invoke<MoonlightCommandOutput>('moonlight_stream', { path, host, app });
-      console.log('[MOONLIGHT] stream', {
+      console.log('[MOONLIGHT] launched ok', {
         host,
         app,
-        ok: true,
+        code: streamOutput.code,
         stderr: streamOutput.stderr,
       });
       return { ok: true, needsPair: false };
     } catch (error) {
-      console.warn('[MOONLIGHT] stream', { ok: false, error });
+      console.warn('[MOONLIGHT] failed', { error });
     }
   }
 

@@ -54,3 +54,89 @@ button {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+.stepList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.stepItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.stepDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(92, 92, 102, 0.35);
+}
+
+.stepActive {
+  color: var(--ink);
+}
+
+.stepActive .stepDot {
+  background: var(--accent);
+}
+
+.stepDone {
+  color: #1a7f5a;
+}
+
+.stepDone .stepDot {
+  background: rgba(26, 127, 90, 0.8);
+}
+
+.stepPending {
+  color: rgba(92, 92, 102, 0.8);
+}
+
+.errorBox {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(184, 29, 29, 0.4);
+  background: rgba(184, 29, 29, 0.08);
+  display: grid;
+  gap: 8px;
+}
+
+.errorDetails {
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.modal {
+  width: min(420px, 92vw);
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
