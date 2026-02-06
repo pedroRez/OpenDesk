@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
-use tauri::Manager;
-use sysinfo::{CpuExt, System, SystemExt};
+use sysinfo::System;
 
 #[tauri::command]
 fn validate_exe_path(path: String) -> bool {
@@ -153,7 +152,7 @@ fn is_cancelled(request_id: &str) -> bool {
 }
 
 fn emit_progress(app: &tauri::AppHandle, request_id: &str, status: &str) {
-  let _ = app.emit_all(
+  let _ = app.emit(
     "hardware-progress",
     HardwareProgress {
       requestId: request_id.to_string(),
