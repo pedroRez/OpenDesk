@@ -142,7 +142,15 @@ export async function pcRoutes(fastify: FastifyInstance) {
       connectionHost: z.string().min(1).optional(),
       connectionPort: z.number().int().min(1).max(65535).optional(),
     });
-    const body = schema.parse(request.body);
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) {
+      fastify.log.warn(
+        { error: parsed.error.flatten() },
+        '[PC_CREATE] invalid payload',
+      );
+      return reply.status(400).send({ error: 'Payload invalido.' });
+    }
+    const body = parsed.data;
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
     if (!user.host) {
@@ -244,81 +252,86 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Host invalido' });
     }
 
-    if (body.localPcId) {
-      fastify.log.info(
-        { hostId: user.host.id, localPcId: body.localPcId },
-        '[PC_CREATE] request',
-      );
-      const existingLocal = await fastify.prisma.pC.findFirst({
-        where: { hostId: user.host.id, localPcId: body.localPcId },
-      });
-      if (existingLocal) {
-        fastify.log.info({ pcId: existingLocal.id }, '[PC_CREATE] exists returning existing');
-        return reply.status(200).send(existingLocal);
+    try {
+      if (body.localPcId) {
+        fastify.log.info(
+          { hostId: user.host.id, localPcId: body.localPcId },
+          '[PC_CREATE] request',
+        );
+        const existingLocal = await fastify.prisma.pC.findFirst({
+          where: { hostId: user.host.id, localPcId: body.localPcId },
+        });
+        if (existingLocal) {
+          fastify.log.info({ pcId: existingLocal.id }, '[PC_CREATE] exists returning existing');
+          return reply.status(200).send(existingLocal);
+        }
       }
+
+      const hardwareProfile = body.hardwareProfile;
+      const resolvedCpu = body.cpu ?? hardwareProfile?.cpuName;
+      const resolvedRam = body.ramGb ?? hardwareProfile?.ramGb;
+      const resolvedGpu = body.gpu ?? hardwareProfile?.gpuName;
+      const resolvedStorage = body.storageType ?? hardwareProfile?.storageSummary;
+      if (!resolvedCpu || !resolvedRam || !resolvedGpu || !resolvedStorage) {
+        return reply.status(400).send({ error: 'Hardware incompleto. Informe CPU, RAM, GPU e armazenamento.' });
+      }
+
+      const resolvedVram = body.vramGb ?? 0;
+      const resolvedInternet = body.internetUploadMbps ?? 200;
+      const resolvedPrice = body.pricePerHour ?? 10;
+      const resolvedName =
+        body.nickname?.trim() ||
+        body.name?.trim() ||
+        `PC ${user.username ?? user.email.split('@')[0] ?? 'Host'}`;
+
+      const {
+        hostId: _hostId,
+        categories,
+        softwareTags,
+        specSummary,
+        description,
+        connectionPort,
+        localPcId,
+        nickname: _nickname,
+        hardwareProfile: _hardwareProfile,
+        name: _name,
+        ...payload
+      } = body;
+
+      const resolvedSpecSummary =
+        specSummary ??
+        ({
+          cpu: resolvedCpu,
+          gpu: resolvedGpu,
+          ram: `${resolvedRam} GB`,
+        } satisfies z.infer<typeof specSummarySchema>);
+
+      const created = await fastify.prisma.pC.create({
+        data: {
+          ...payload,
+          name: resolvedName,
+          cpu: resolvedCpu,
+          ramGb: resolvedRam,
+          gpu: resolvedGpu,
+          vramGb: resolvedVram,
+          storageType: resolvedStorage,
+          internetUploadMbps: resolvedInternet,
+          pricePerHour: resolvedPrice,
+          hostId: user.host.id,
+          connectionPort: connectionPort ?? 47990,
+          categories: categories ?? [],
+          softwareTags: softwareTags ?? [],
+          description: description ?? '',
+          specSummary: resolvedSpecSummary,
+          localPcId: localPcId ?? null,
+        },
+      });
+      fastify.log.info({ pcId: created.id }, '[PC_CREATE] created');
+      return reply.status(201).send(created);
+    } catch (error) {
+      fastify.log.error({ error }, '[PC_CREATE] fail');
+      return reply.status(500).send({ error: 'Falha ao cadastrar PC.' });
     }
-
-    const hardwareProfile = body.hardwareProfile;
-    const resolvedCpu = body.cpu ?? hardwareProfile?.cpuName;
-    const resolvedRam = body.ramGb ?? hardwareProfile?.ramGb;
-    const resolvedGpu = body.gpu ?? hardwareProfile?.gpuName;
-    const resolvedStorage = body.storageType ?? hardwareProfile?.storageSummary;
-    if (!resolvedCpu || !resolvedRam || !resolvedGpu || !resolvedStorage) {
-      return reply.status(400).send({ error: 'Hardware incompleto. Informe CPU, RAM, GPU e armazenamento.' });
-    }
-
-    const resolvedVram = body.vramGb ?? 0;
-    const resolvedInternet = body.internetUploadMbps ?? 200;
-    const resolvedPrice = body.pricePerHour ?? 10;
-    const resolvedName =
-      body.nickname?.trim() ||
-      body.name?.trim() ||
-      `PC ${user.username ?? user.email.split('@')[0] ?? 'Host'}`;
-
-    const {
-      hostId: _hostId,
-      categories,
-      softwareTags,
-      specSummary,
-      description,
-      connectionPort,
-      localPcId,
-      nickname: _nickname,
-      hardwareProfile: _hardwareProfile,
-      name: _name,
-      ...payload
-    } = body;
-
-    const resolvedSpecSummary =
-      specSummary ??
-      ({
-        cpu: resolvedCpu,
-        gpu: resolvedGpu,
-        ram: `${resolvedRam} GB`,
-      } satisfies z.infer<typeof specSummarySchema>);
-
-    const created = await fastify.prisma.pC.create({
-      data: {
-        ...payload,
-        name: resolvedName,
-        cpu: resolvedCpu,
-        ramGb: resolvedRam,
-        gpu: resolvedGpu,
-        vramGb: resolvedVram,
-        storageType: resolvedStorage,
-        internetUploadMbps: resolvedInternet,
-        pricePerHour: resolvedPrice,
-        hostId: user.host.id,
-        connectionPort: connectionPort ?? 47990,
-        categories: categories ?? [],
-        softwareTags: softwareTags ?? [],
-        description: description ?? '',
-        specSummary: resolvedSpecSummary,
-        localPcId: localPcId ?? null,
-      },
-    });
-    fastify.log.info({ pcId: created.id }, '[PC_CREATE] created');
-    return reply.status(201).send(created);
   });
 
   fastify.put('/pcs/:id', async (request, reply) => {
