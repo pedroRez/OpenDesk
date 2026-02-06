@@ -1,3 +1,7 @@
+import { invoke } from '@tauri-apps/api/core';
+
+import { isTauriRuntime } from './hostDaemon';
+
 const DEFAULT_SUNSHINE_PORT = 47990;
 
 async function detectLocalIp(): Promise<string | null> {
@@ -37,6 +41,18 @@ async function detectLocalIp(): Promise<string | null> {
         resolve(null);
       });
   });
+}
+
+export async function detectHostIp(): Promise<string | null> {
+  if (isTauriRuntime()) {
+    try {
+      const detected = await invoke<string | null>('detect_local_ip');
+      if (detected) return detected;
+    } catch (error) {
+      console.warn('[NET] detect local ip fail', error);
+    }
+  }
+  return detectLocalIp();
 }
 
 export async function resolveConnectAddress(): Promise<string> {

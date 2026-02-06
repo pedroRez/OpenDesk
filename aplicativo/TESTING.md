@@ -86,6 +86,11 @@ Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras
 - [ ] Host cadastra 2 PCs (rodando o app em cada maquina) -> aparecem como PCs separados.
 - [ ] Tentar criar PC duplicado -> bloqueado corretamente.
 
+## Host ONLINE 1 clique
+- [ ] Cadastrar PC (T1–T3), preencher conexao e clicar “Ficar ONLINE”.
+- [ ] Confirmar no backend que connectAddress nao esta null.
+- [ ] Cliente clica conectar e /stream/resolve retorna 200.
+
 ## Fluxo Host
 - [ ] Abrir o app e escolher modo **Host**.
 - [ ] Criar conta ou fazer login.

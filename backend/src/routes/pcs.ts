@@ -137,8 +137,10 @@ export async function pcRoutes(fastify: FastifyInstance) {
     const params = z.object({ pcId: z.string() }).parse(request.params);
     const schema = z.object({
       networkProvider: z.enum(['DIRECT', 'RELAY']).default('DIRECT'),
-      connectAddress: z.string().min(1),
+      connectAddress: z.string().min(1).optional(),
       connectHint: z.string().max(200).optional(),
+      connectionHost: z.string().min(1).optional(),
+      connectionPort: z.number().int().min(1).max(65535).optional(),
     });
     const body = schema.parse(request.body);
     const user = await requireUser(request, reply, fastify.prisma);
@@ -155,11 +157,31 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Sem permissao' });
     }
 
+    let resolvedHost = body.connectionHost ?? pc.connectionHost ?? null;
+    let resolvedPort = body.connectionPort ?? pc.connectionPort ?? 47990;
+    let resolvedAddress = body.connectAddress;
+    if (!resolvedHost && resolvedAddress) {
+      const [hostPart, portPart] = resolvedAddress.split(':');
+      if (hostPart) {
+        resolvedHost = hostPart;
+        const parsedPort = Number(portPart);
+        if (Number.isFinite(parsedPort) && parsedPort > 0) {
+          resolvedPort = parsedPort;
+        }
+      }
+    }
+    if (!resolvedAddress && resolvedHost) {
+      resolvedAddress = `${resolvedHost}:${resolvedPort}`;
+    }
+    if (!resolvedAddress) {
+      return reply.status(400).send({ error: 'Endereco de conexao invalido' });
+    }
+
     fastify.log.info(
       {
         pcId: params.pcId,
         networkProvider: body.networkProvider,
-        connectAddress: body.connectAddress,
+        connectAddress: resolvedAddress,
       },
       'PC network update request',
     );
@@ -168,8 +190,10 @@ export async function pcRoutes(fastify: FastifyInstance) {
       where: { id: params.pcId },
       data: {
         networkProvider: body.networkProvider as NetworkProvider,
-        connectAddress: body.connectAddress,
+        connectAddress: resolvedAddress,
         connectHint: body.connectHint ?? null,
+        connectionHost: resolvedHost,
+        connectionPort: resolvedPort,
       },
     });
 
@@ -179,7 +203,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
         networkProvider: updated.networkProvider,
         connectAddress: updated.connectAddress,
       },
-      'PC network updated',
+      '[NET] pc network updated',
     );
 
     return reply.send({ pc: updated });
@@ -793,6 +817,10 @@ export async function pcRoutes(fastify: FastifyInstance) {
       where: { id: params.id },
       data: { status: body.status },
     });
+
+    if (body.status === 'ONLINE') {
+      fastify.log.info({ pcId: params.id }, '[PC] online');
+    }
 
     await fastify.prisma.hostProfile.update({
       where: { id: pc.hostId },

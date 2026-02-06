@@ -7,14 +7,16 @@ import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import {
   getLocalMachineId as getStoredMachineId,
+  getHostConnection,
   getLocalPcId,
   getPrimaryPcId,
+  setHostConnection,
   setLocalMachineId,
   setLocalPcId,
   setPrimaryPcId,
 } from '../../lib/hostState';
 import { cancelHardwareProfile, getHardwareProfile, getLocalMachineId, type HardwareProfile } from '../../lib/hardwareProfile';
-import { DEFAULT_CONNECT_HINT, resolveConnectAddress } from '../../lib/networkAddress';
+import { DEFAULT_CONNECT_HINT, detectHostIp, resolveConnectAddress } from '../../lib/networkAddress';
 import { detectSunshinePath, ensureSunshineRunning } from '../../lib/sunshineController';
 import { getSunshinePath, setSunshinePath } from '../../lib/sunshineSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
@@ -107,6 +109,14 @@ export default function HostDashboard() {
   const [autoError, setAutoError] = useState('');
   const [autoErrorDetails, setAutoErrorDetails] = useState('');
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [onlineModalPc, setOnlineModalPc] = useState<PC | null>(null);
+  const [onlineStep, setOnlineStep] = useState<
+    'idle' | 'checking' | 'needs_sunshine' | 'needs_connection' | 'publishing' | 'activating' | 'done' | 'error'
+  >('idle');
+  const [onlineStatus, setOnlineStatus] = useState('');
+  const [onlineError, setOnlineError] = useState('');
+  const [onlineConnection, setOnlineConnection] = useState({ host: '', port: 47990 });
+  const [onlineBusy, setOnlineBusy] = useState(false);
   const manualEnabled = false;
 
   const hostProfileId = user?.hostProfileId ?? null;
@@ -114,6 +124,7 @@ export default function HostDashboard() {
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastHeartbeatLogRef = useRef<number>(0);
   const autoAbortRef = useRef<AbortController | null>(null);
+  const onlineAbortRef = useRef<{ cancelled: boolean }>({ cancelled: false });
   const heartbeatPcId = useMemo(() => {
     const localId = getLocalPcId();
     if (localId) {
@@ -324,17 +335,12 @@ export default function HostDashboard() {
       toast.show('PC ocupado. Nao e possivel ficar offline agora.', 'info');
       return;
     }
-    const nextStatus = pc.status === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
-    if (nextStatus === 'ONLINE') {
-      const detected = await detectSunshinePath();
-      if (!detected) {
-        setShowSunshineHelp(true);
-        setSunshineHelpStatus('Sunshine nao detectado.');
-        toast.show('Sunshine nao detectado. Configure o caminho para ficar ONLINE.', 'error');
-        return;
-      }
+    if (pc.status === 'OFFLINE') {
+      await startOnlineFlow(pc);
+      return;
     }
-    setOperationMessage(nextStatus === 'ONLINE' ? 'Colocando PC online...' : 'Colocando PC offline...');
+    const nextStatus = 'OFFLINE';
+    setOperationMessage('Colocando PC offline...');
     setPcs((prev) => prev.map((item) => (item.id === pc.id ? { ...item, status: nextStatus } : item)));
     try {
       const data = await request<{ pc: PC }>(`/pcs/${pc.id}/status`, {
@@ -342,10 +348,7 @@ export default function HostDashboard() {
         body: JSON.stringify({ status: nextStatus }),
       });
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? data.pc : item)));
-      toast.show(nextStatus === 'ONLINE' ? 'PC ficou online' : 'PC ficou offline', 'success');
-      if (nextStatus === 'ONLINE') {
-        await publishNetwork(pc.id);
-      }
+      toast.show('PC ficou offline', 'success');
     } catch (error) {
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? pc : item)));
       toast.show(error instanceof Error ? error.message : 'Falha ao atualizar status', 'error');
@@ -606,6 +609,134 @@ export default function HostDashboard() {
     }
   };
 
+  const publishConnection = async (pcId: string, host: string, port: number) => {
+    try {
+      const response = await request<{ pc: PC }>(`/pcs/${pcId}/network`, {
+        method: 'POST',
+        body: JSON.stringify({
+          networkProvider: 'DIRECT',
+          connectionHost: host,
+          connectionPort: port,
+          connectHint: DEFAULT_CONNECT_HINT,
+        }),
+      });
+      if (response?.pc) {
+        setPcs((prev) => prev.map((item) => (item.id === pcId ? response.pc : item)));
+      }
+      setHostConnection(host, port);
+      return response?.pc ?? null;
+    } catch (error) {
+      console.error('[NET][HOST] publish fail', {
+        pcId,
+        error: error instanceof Error ? error.message : error,
+      });
+      return null;
+    }
+  };
+
+  const closeOnlineModal = () => {
+    setOnlineModalPc(null);
+    setOnlineStep('idle');
+    setOnlineStatus('');
+    setOnlineError('');
+    setOnlineBusy(false);
+  };
+
+  const startOnlineFlow = async (pc: PC, override?: { host: string; port: number }) => {
+    onlineAbortRef.current.cancelled = false;
+    const stored = getHostConnection();
+    const host =
+      override?.host ?? onlineConnection.host ?? pc.connectionHost ?? stored?.host ?? '';
+    const port =
+      override?.port ?? onlineConnection.port ?? pc.connectionPort ?? stored?.port ?? 47990;
+    setOnlineConnection({ host, port });
+    setOnlineModalPc(pc);
+    setOnlineError('');
+    setOnlineStatus('Verificando Sunshine...');
+    setOnlineStep('checking');
+
+    const detected = await detectSunshinePath();
+    if (onlineAbortRef.current.cancelled) return;
+    if (!detected) {
+      setOnlineStep('needs_sunshine');
+      setOnlineStatus('Sunshine nao detectado.');
+      return;
+    }
+    const running = await ensureSunshineRunning();
+    if (onlineAbortRef.current.cancelled) return;
+    if (!running) {
+      setOnlineStep('needs_sunshine');
+      setOnlineStatus('Sunshine nao detectado.');
+      return;
+    }
+
+    if (!host) {
+      setOnlineStep('needs_connection');
+      setOnlineStatus('Informe o host/porta da conexao.');
+      return;
+    }
+
+    setOnlineStep('publishing');
+    setOnlineStatus('Publicando conexao...');
+    setOnlineBusy(true);
+    const published = await publishConnection(pc.id, host, port);
+    if (!published) {
+      setOnlineBusy(false);
+      setOnlineStep('error');
+      setOnlineError('Nao foi possivel publicar a conexao.');
+      return;
+    }
+
+    setOnlineStep('activating');
+    setOnlineStatus('Ativando modo ONLINE...');
+    try {
+      const data = await request<{ pc: PC }>(`/pcs/${pc.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'ONLINE' }),
+      });
+      setPcs((prev) => prev.map((item) => (item.id === pc.id ? data.pc : item)));
+      console.log('[PC] online', { pcId: pc.id });
+      setOnlineStep('done');
+      setOnlineStatus('ONLINE ✅');
+      setTimeout(() => closeOnlineModal(), 900);
+    } catch (error) {
+      setOnlineStep('error');
+      setOnlineError(error instanceof Error ? error.message : 'Falha ao ficar ONLINE.');
+    } finally {
+      setOnlineBusy(false);
+    }
+  };
+
+  const handleOnlineCancel = () => {
+    if (onlineBusy) return;
+    onlineAbortRef.current.cancelled = true;
+    closeOnlineModal();
+  };
+
+  const handleOnlineRetry = () => {
+    if (!onlineModalPc) return;
+    const normalizedPort = Number(onlineConnection.port) || 47990;
+    const nextConnection = { host: onlineConnection.host, port: normalizedPort };
+    setOnlineConnection(nextConnection);
+    if (nextConnection.host) {
+      setHostConnection(nextConnection.host, nextConnection.port);
+    }
+    startOnlineFlow(onlineModalPc, nextConnection);
+  };
+
+  const handleAutoFillConnection = async () => {
+    const detected = await detectHostIp();
+    if (detected) {
+      setOnlineConnection((prev) => ({
+        host: detected,
+        port: Number(prev.port) || 47990,
+      }));
+      setOnlineStatus(`Detectado automaticamente: ${detected}`);
+    } else {
+      setOnlineStatus('Nao foi possivel detectar o IP automaticamente.');
+    }
+  };
+
   const startEditing = (pc: PC) => {
     setEditingPcId(pc.id);
     setEditForm({
@@ -634,23 +765,9 @@ export default function HostDashboard() {
       const resolvedHost = payload.connectionHost ?? updated.connectionHost ?? '';
       const resolvedPort = payload.connectionPort ?? updated.connectionPort ?? 47990;
       if (resolvedHost) {
-        const connectAddress = `${resolvedHost}:${resolvedPort}`;
-        console.log('[NET][HOST] publishing connectAddress', {
-          pcId: pc.id,
-          host: resolvedHost,
-          port: resolvedPort,
-        });
         try {
           setOperationMessage('Publicando conexao...');
-          const response = await request(`/pcs/${pc.id}/network`, {
-            method: 'POST',
-            body: JSON.stringify({
-              networkProvider: 'DIRECT',
-              connectAddress,
-              connectHint: DEFAULT_CONNECT_HINT,
-            }),
-          });
-          console.log('[NET][HOST] publish ok', { pcId: pc.id, response });
+          await publishConnection(pc.id, resolvedHost, resolvedPort);
         } catch (error) {
           console.error('[NET][HOST] publish fail', {
             pcId: pc.id,
@@ -676,6 +793,15 @@ export default function HostDashboard() {
       toast.show(error instanceof Error ? error.message : 'Erro ao remover PC.', 'error');
     }
   };
+
+  const onlineStepIndex =
+    onlineStep === 'publishing'
+      ? 1
+      : onlineStep === 'activating'
+        ? 2
+        : onlineStep === 'done'
+          ? 3
+          : 0;
 
   return (
     <section className={styles.container}>
@@ -917,7 +1043,7 @@ export default function HostDashboard() {
                     className={pc.status === 'BUSY' ? styles.disabled : ''}
                     disabled={pc.status === 'BUSY' || Boolean(operationMessage)}
                   >
-                    {pc.status === 'ONLINE' ? 'Ficar Offline' : 'Ficar Online'}
+                    {pc.status === 'ONLINE' ? 'Ficar OFFLINE' : 'Ficar ONLINE'}
                   </button>
                   {pc.status === 'BUSY' && (
                     <button
@@ -1057,6 +1183,131 @@ export default function HostDashboard() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {onlineModalPc && (
+            <div className={styles.overlay} role="dialog" aria-modal="true">
+              <div className={styles.modal}>
+                <div className={styles.modalBody}>
+                  <h3>Ficar ONLINE</h3>
+                  <ul className={styles.stepList}>
+                    <li
+                      className={`${styles.stepItem} ${
+                        onlineStepIndex > 0 || onlineStep === 'publishing' || onlineStep === 'activating' || onlineStep === 'done'
+                          ? styles.stepDone
+                          : styles.stepActive
+                      }`}
+                    >
+                      <span className={styles.stepDot} />
+                      Verificando Sunshine
+                    </li>
+                    <li
+                      className={`${styles.stepItem} ${
+                        onlineStepIndex > 1 || onlineStep === 'activating' || onlineStep === 'done'
+                          ? styles.stepDone
+                          : onlineStepIndex === 1
+                            ? styles.stepActive
+                            : styles.stepPending
+                      }`}
+                    >
+                      <span className={styles.stepDot} />
+                      Publicando conexao
+                    </li>
+                    <li
+                      className={`${styles.stepItem} ${
+                        onlineStepIndex > 2 || onlineStep === 'done'
+                          ? styles.stepDone
+                          : onlineStepIndex === 2
+                            ? styles.stepActive
+                            : styles.stepPending
+                      }`}
+                    >
+                      <span className={styles.stepDot} />
+                      Ativando modo ONLINE
+                    </li>
+                  </ul>
+                  {onlineStatus && <p className={styles.helperText}>{onlineStatus}</p>}
+
+                  {onlineStep === 'needs_sunshine' && (
+                    <div className={styles.connectionPanel}>
+                      <p>Sunshine nao detectado.</p>
+                      <div className={styles.modalActions}>
+                        <button type="button" onClick={handleSunshineBrowse}>
+                          Procurar Sunshine...
+                        </button>
+                        <button type="button" onClick={handleSunshineAutoDetect} className={styles.ghost}>
+                          Localizar automaticamente
+                        </button>
+                        <button type="button" onClick={handleOnlineRetry} className={styles.ghost}>
+                          Tentar novamente
+                        </button>
+                      </div>
+                      {sunshineHelpStatus && <p className={styles.helperText}>{sunshineHelpStatus}</p>}
+                    </div>
+                  )}
+
+                  {onlineStep === 'needs_connection' && (
+                    <div className={styles.connectionPanel}>
+                      <label>
+                        Connection Host (IP/DNS)
+                        <input
+                          value={onlineConnection.host}
+                          onChange={(event) =>
+                            setOnlineConnection((prev) => ({ ...prev, host: event.target.value }))
+                          }
+                          placeholder="100.103.x.x ou 192.168.x.x"
+                        />
+                      </label>
+                      <label>
+                        Connection Port
+                        <input
+                          type="number"
+                          value={onlineConnection.port}
+                          onChange={(event) =>
+                            setOnlineConnection((prev) => ({
+                              ...prev,
+                              port: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </label>
+                      <div className={styles.modalActions}>
+                        <button type="button" onClick={handleAutoFillConnection} className={styles.ghost}>
+                          Preencher automaticamente
+                        </button>
+                        <button type="button" onClick={handleOnlineRetry}>
+                          Continuar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {onlineStep === 'error' && (
+                    <div className={styles.errorBox}>
+                      <p>{onlineError || 'Nao foi possivel ficar ONLINE.'}</p>
+                    </div>
+                  )}
+
+                  {onlineStep === 'done' && (
+                    <div className={styles.modalRow}>
+                      <span className={styles.spinner} />
+                      <span>ONLINE ✅</span>
+                    </div>
+                  )}
+
+                  <div className={styles.modalActions}>
+                    <button
+                      type="button"
+                      onClick={handleOnlineCancel}
+                      className={styles.ghost}
+                      disabled={onlineBusy}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

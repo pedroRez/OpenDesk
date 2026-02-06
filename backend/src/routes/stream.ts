@@ -124,7 +124,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
         'Stream token resolve error: missing address',
       );
       return reply.status(409).send({
-        error: 'Endereco de conexao indisponivel',
+        error: 'PC sem conexao publicada (connectAddress). Host deve ficar ONLINE e publicar conexao.',
         missing: {
           connectAddress: !record.pc.connectAddress,
           connectionHost: !fallbackHost,

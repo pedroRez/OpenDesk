@@ -232,6 +232,94 @@ fn detect_storage_summary() -> String {
   }
 }
 
+fn extract_ipv4s(text: &str) -> Vec<String> {
+  let mut ips: Vec<String> = Vec::new();
+  let mut buffer = String::new();
+  let mut push_candidate = |candidate: &str, ips: &mut Vec<String>| {
+    let parts: Vec<&str> = candidate.split('.').collect();
+    if parts.len() != 4 {
+      return;
+    }
+    let mut octets: [u8; 4] = [0, 0, 0, 0];
+    for (idx, part) in parts.iter().enumerate() {
+      if part.is_empty() || part.len() > 3 {
+        return;
+      }
+      if let Ok(value) = part.parse::<u8>() {
+        octets[idx] = value;
+      } else {
+        return;
+      }
+    }
+    let ip = format!("{}.{}.{}.{}", octets[0], octets[1], octets[2], octets[3]);
+    ips.push(ip);
+  };
+
+  for ch in text.chars() {
+    if ch.is_ascii_digit() || ch == '.' {
+      buffer.push(ch);
+    } else if !buffer.is_empty() {
+      push_candidate(&buffer, &mut ips);
+      buffer.clear();
+    }
+  }
+  if !buffer.is_empty() {
+    push_candidate(&buffer, &mut ips);
+  }
+
+  ips
+}
+
+fn score_ip(ip: &str) -> i32 {
+  if ip.starts_with("127.") {
+    return -1;
+  }
+  if ip.starts_with("100.") {
+    return 3;
+  }
+  if ip.starts_with("192.168.") {
+    return 2;
+  }
+  if ip.starts_with("10.") {
+    return 2;
+  }
+  if ip.starts_with("172.") {
+    if let Some(second) = ip.split('.').nth(1).and_then(|v| v.parse::<u8>().ok()) {
+      if (16..=31).contains(&second) {
+        return 1;
+      }
+    }
+  }
+  0
+}
+
+#[tauri::command]
+fn detect_local_ip() -> Option<String> {
+  if !cfg!(windows) {
+    return None;
+  }
+  let output = std::process::Command::new("ipconfig").output().ok()?;
+  let text = String::from_utf8_lossy(&output.stdout);
+  let ips = extract_ipv4s(&text);
+  if ips.is_empty() {
+    return None;
+  }
+  let mut best = ips[0].clone();
+  let mut best_score = score_ip(&best);
+  for ip in ips.into_iter() {
+    let score = score_ip(&ip);
+    if score > best_score {
+      best_score = score;
+      best = ip;
+    }
+  }
+  if best_score < 0 {
+    None
+  } else {
+    Some(best)
+  }
+}
+
 #[tauri::command]
 fn get_local_pc_id() -> Result<String, String> {
   if !cfg!(windows) {
@@ -419,6 +507,7 @@ fn main() {
     .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
       get_local_pc_id,
+      detect_local_ip,
       get_hardware_profile,
       cancel_hardware_profile,
       validate_exe_path,
