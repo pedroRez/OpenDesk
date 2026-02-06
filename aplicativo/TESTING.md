@@ -26,13 +26,13 @@
 - [ ] Tentar favoritar o mesmo PC duas vezes e confirmar que nao duplica.
 - [ ] Abrir a area **Favoritos** e ver a lista de PCs/Hosts.
 - [ ] Texto de protecao sobre jogos/softwares visivel no marketplace.
-## Fluxo Cliente - Autenticacao (Senha + Google)
-- [ ] Criar conta com **senha** (email + senha + username opcional) e entrar.
+## Fluxo Cliente - Autenticacao (Senha)
+- [ ] Criar conta com **senha** (email + senha + username obrigatorio) e entrar.
 - [ ] Fazer login com **senha** (email + senha) e validar sucesso.
-- [ ] Fazer login com **Google** via navegador e validar retorno ao app.
+- [ ] Reset de senha (DEV): gerar token em **Esqueci minha senha**, redefinir e logar novamente.
 - [ ] Se a conta estiver sem username, abrir automaticamente **Escolha seu username**.
 - [ ] Definir username e ver refletido no marketplace (nome do host).
-Resultado esperado: login forte, Google + senha funcionando, marketplace nao expõe email/nome real.
+Resultado esperado: login forte, marketplace nao expoe email/nome real, username e a identidade publica.
 
 
 ## Fluxo Cliente - Confiabilidade
@@ -89,4 +89,5 @@ Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras
 ## Navegacao e Estado
 - [ ] Botao **Trocar modo** limpa o modo e volta para a home.
 - [ ] Botao **Sair** limpa auth + modo e volta para a home.
+
 

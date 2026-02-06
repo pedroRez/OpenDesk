@@ -14,6 +14,7 @@ export default function Register() {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState('CLIENT');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,10 +24,17 @@ export default function Register() {
     setLoading(true);
     setMessage('');
     try {
+      const normalizedUsername = username.trim();
+      if (!normalizedUsername || normalizedUsername.length < 3) {
+        throw new Error('Informe um username valido (min. 3 caracteres).');
+      }
+      if (password !== confirmPassword) {
+        throw new Error('As senhas nao conferem.');
+      }
       const user = await register({
         email,
         password,
-        username,
+        username: normalizedUsername,
         displayName: displayName || undefined,
         role,
       });
@@ -45,11 +53,13 @@ export default function Register() {
       <h1>Criar conta</h1>
       <form onSubmit={handleSubmit} className={styles.form}>
         <label>
-          Username publico (opcional)
+          Username publico
           <input
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             placeholder="ex: rapha_dev"
+            minLength={3}
+            required
           />
         </label>
         <label>
@@ -75,6 +85,16 @@ export default function Register() {
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            minLength={6}
+            required
+          />
+        </label>
+        <label>
+          Confirmar senha
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
             minLength={6}
             required
           />

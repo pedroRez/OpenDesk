@@ -1,5 +1,4 @@
 import bcrypt from 'bcryptjs';
-import { OAuth2Client } from 'google-auth-library';
 import type { PrismaClient } from '@prisma/client';
 
 const USERNAME_MAX_LENGTH = 20;
@@ -44,13 +43,4 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
-}
-
-export async function verifyGoogleToken(idToken: string, clientId: string) {
-  const client = new OAuth2Client(clientId);
-  const ticket = await client.verifyIdToken({
-    idToken,
-    audience: clientId,
-  });
-  return ticket.getPayload();
 }

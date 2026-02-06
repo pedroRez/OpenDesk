@@ -23,10 +23,7 @@ export function loadUser(): StoredUser | null {
   try {
     const parsed = JSON.parse(raw) as Partial<StoredUser> & { name?: string };
     if (!parsed?.id || !parsed?.email) return null;
-    const fallbackUsername =
-      parsed.username ??
-      parsed.name ??
-      (parsed.email.includes('@') ? parsed.email.split('@')[0] : parsed.email);
+    const fallbackUsername = parsed.username ?? parsed.name ?? 'usuario';
     return {
       id: parsed.id,
       username: fallbackUsername ?? 'usuario',

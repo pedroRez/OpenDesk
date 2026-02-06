@@ -10,12 +10,10 @@ type AuthContextValue = {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (params: { email: string; password: string }) => Promise<StoredUser>;
-  loginWithGoogle: (idToken: string) => Promise<StoredUser>;
-  loginWithGoogleOAuth: (params: { code: string; codeVerifier: string; state?: string }) => Promise<StoredUser>;
   register: (params: {
     email: string;
     password: string;
-    username?: string;
+    username: string;
     displayName?: string;
     role?: string;
   }) => Promise<StoredUser>;
@@ -34,11 +32,7 @@ function normalizeUser(data: any): StoredUser {
     throw new Error('Resposta de autenticacao invalida');
   }
   const email = user.email ?? data?.email ?? '';
-  const username =
-    user.username ??
-    user.name ??
-    (email && email.includes('@') ? email.split('@')[0] : email) ??
-    'usuario';
+  const username = user.username ?? user.name ?? 'usuario';
   return {
     id,
     username,
@@ -118,50 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({
           email,
           password,
-          username: username?.trim() || undefined,
+          username: username.trim(),
           displayName,
           role,
         }),
-      });
-      const nextUser = normalizeUser(data);
-      saveUser(nextUser);
-      setUser(nextUser);
-      return nextUser;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loginWithGoogle = async (idToken: string) => {
-    setIsLoading(true);
-    try {
-      const data = await request<any>('/auth/google', {
-        method: 'POST',
-        body: JSON.stringify({ idToken }),
-      });
-      const nextUser = normalizeUser(data);
-      saveUser(nextUser);
-      setUser(nextUser);
-      return nextUser;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loginWithGoogleOAuth = async ({
-    code,
-    codeVerifier,
-    state,
-  }: {
-    code: string;
-    codeVerifier: string;
-    state?: string;
-  }) => {
-    setIsLoading(true);
-    try {
-      const data = await request<any>('/auth/google/finish', {
-        method: 'POST',
-        body: JSON.stringify({ code, codeVerifier, state }),
       });
       const nextUser = normalizeUser(data);
       saveUser(nextUser);
@@ -209,8 +163,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       isAuthenticated: Boolean(user),
       login,
-      loginWithGoogle,
-      loginWithGoogleOAuth,
       register,
       setUsername,
       logout,

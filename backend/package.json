@@ -16,7 +16,6 @@
     "@prisma/client": "^5.20.0",
     "@fastify/cors": "^8.5.0",
     "bcryptjs": "^2.4.3",
-    "google-auth-library": "^9.11.0",
     "jsonwebtoken": "^9.0.2",
     "fastify": "^4.28.1",
     "fastify-plugin": "^4.5.1",

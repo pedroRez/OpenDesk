@@ -1,26 +1,26 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { open } from '@tauri-apps/plugin-shell';
-import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../lib/auth';
 import { request } from '../lib/api';
-import { isTauriRuntime } from '../lib/hostDaemon';
 
 import styles from './Login.module.css';
 
 export default function Login() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { login, loginWithGoogleOAuth } = useAuth();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const googleEnabled = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetStatus, setResetStatus] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -38,84 +38,55 @@ export default function Login() {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    if (!isTauriRuntime()) {
-      setMessage('Login com Google disponivel apenas no app desktop.');
+  const handleRequestReset = async () => {
+    const target = resetEmail.trim() || email.trim();
+    if (!target) {
+      setResetStatus('Informe um email.');
       return;
     }
-    setGoogleLoading(true);
-    setMessage('');
+    setResetLoading(true);
+    setResetStatus('');
     try {
-      const start = await request<{
-        url: string;
-        state?: string;
-        codeVerifier: string;
-        redirectUri?: string;
-      }>('/auth/google/start');
-
-      let port = 43110;
-      if (start.redirectUri) {
-        try {
-          const parsed = new URL(start.redirectUri);
-          const parsedPort = Number(parsed.port);
-          if (parsedPort) port = parsedPort;
-        } catch {
-          // ignore
-        }
-      }
-
-      await invoke('start_oauth_listener', { port });
-
-      const callbackPromise = new Promise<{ code?: string; state?: string; error?: string }>(
-        (resolve, reject) => {
-          let unlisten: (() => void) | null = null;
-          const timeout = setTimeout(() => {
-            if (unlisten) {
-              unlisten();
-            }
-            reject(new Error('Tempo esgotado aguardando o Google.'));
-          }, 5 * 60 * 1000);
-
-          listen<{ code?: string; state?: string; error?: string }>('oauth-callback', (event) => {
-            clearTimeout(timeout);
-            if (unlisten) {
-              unlisten();
-            }
-            resolve(event.payload);
-          })
-            .then((fn) => {
-              unlisten = fn;
-            })
-            .catch((error) => {
-              clearTimeout(timeout);
-              reject(error);
-            });
+      const response = await request<{ ok: boolean; token?: string; expiresAt?: string }>(
+        '/auth/forgot-password',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email: target }),
         },
       );
-
-      await open(start.url);
-      const payload = await callbackPromise;
-
-      if (payload.error) {
-        throw new Error(payload.error);
+      if (response?.token) {
+        setResetToken(response.token);
+        setResetStatus('Token gerado em DEV. Cole abaixo para redefinir a senha.');
+      } else {
+        setResetStatus('Se o email existir, um token foi gerado.');
       }
-      if (!payload.code) {
-        throw new Error('Codigo OAuth nao recebido.');
-      }
-
-      const user = await loginWithGoogleOAuth({
-        code: payload.code,
-        codeVerifier: start.codeVerifier,
-        state: payload.state ?? start.state,
-      });
-
-      setMessage(`Bem-vindo, ${user.displayName ?? user.username}!`);
-      const next = searchParams.get('next') ?? '/';
-      navigate(next);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Erro ao entrar com Google');
+      setResetStatus(error instanceof Error ? error.message : 'Falha ao gerar token.');
     } finally {
-      setGoogleLoading(false);
+      setResetLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetToken || !resetPassword) {
+      setResetStatus('Informe o token e a nova senha.');
+      return;
+    }
+    setResetLoading(true);
+    setResetStatus('');
+    try {
+      await request('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: resetToken, newPassword: resetPassword }),
+      });
+      setResetStatus('Senha atualizada. Voce pode fazer login.');
+      setShowReset(false);
+      setResetPassword('');
+      setResetToken('');
+    } catch (error) {
+      setResetStatus(error instanceof Error ? error.message : 'Falha ao redefinir senha.');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -145,17 +116,58 @@ export default function Login() {
         <button type="submit" disabled={loading}>
           {loading ? 'Entrando...' : 'Entrar'}
         </button>
-        {googleEnabled && (
-          <div className={styles.googleBlock}>
-            <span className={styles.divider}>ou</span>
-            <button type="button" onClick={handleGoogleLogin} disabled={googleLoading}>
-              {googleLoading ? 'Abrindo Google...' : 'Entrar com Google'}
-            </button>
-            {googleLoading && <span className={styles.helper}>Aguardando o Google...</span>}
-          </div>
-        )}
+        <div className={styles.linksRow}>
+          <Link to="/register">Criar conta</Link>
+          <button type="button" className={styles.linkButton} onClick={() => setShowReset(true)}>
+            Esqueci minha senha
+          </button>
+        </div>
         {message && <p>{message}</p>}
       </form>
+
+      {showReset && (
+        <div className={styles.resetOverlay} role="dialog" aria-modal="true">
+          <div className={styles.resetPanel}>
+            <div className={styles.resetHeader}>
+              <strong>Reset de senha (DEV)</strong>
+              <button type="button" className={styles.linkButton} onClick={() => setShowReset(false)}>
+                Fechar
+              </button>
+            </div>
+            <label>
+              Email
+              <input
+                type="email"
+                value={resetEmail}
+                onChange={(event) => setResetEmail(event.target.value)}
+              />
+            </label>
+            <button type="button" onClick={handleRequestReset} disabled={resetLoading}>
+              {resetLoading ? 'Gerando...' : 'Gerar token'}
+            </button>
+            <label>
+              Token
+              <input
+                value={resetToken}
+                onChange={(event) => setResetToken(event.target.value)}
+              />
+            </label>
+            <label>
+              Nova senha
+              <input
+                type="password"
+                value={resetPassword}
+                onChange={(event) => setResetPassword(event.target.value)}
+                minLength={6}
+              />
+            </label>
+            <button type="button" onClick={handleResetPassword} disabled={resetLoading}>
+              {resetLoading ? 'Salvando...' : 'Redefinir senha'}
+            </button>
+            {resetStatus && <p className={styles.helper}>{resetStatus}</p>}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
