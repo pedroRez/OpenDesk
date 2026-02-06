@@ -11,6 +11,27 @@ import { PCStatus, SessionStatus } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 export async function hostRoutes(fastify: FastifyInstance) {
+  const listHostPcs = async (hostId: string) => {
+    const pcs = await fastify.prisma.pC.findMany({
+      where: { hostId },
+    });
+
+    const host = await fastify.prisma.hostProfile.findUnique({
+      where: { id: hostId },
+      select: { sessionsTotal: true, sessionsCompleted: true },
+    });
+
+    const badge = getReliabilityBadge({
+      sessionsTotal: host?.sessionsTotal ?? 0,
+      sessionsCompleted: host?.sessionsCompleted ?? 0,
+    });
+
+    return pcs.map((pc) => ({
+      ...pc,
+      reliabilityBadge: badge,
+    }));
+  };
+
   fastify.get('/hosts', async () => {
     const hosts = await fastify.prisma.hostProfile.findMany({
       include: { pcs: true, user: { select: { username: true } } },
@@ -52,19 +73,21 @@ export async function hostRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Usuario nao e host' });
     }
 
-    const pcs = await fastify.prisma.pC.findMany({
-      where: { hostId: user.host.id },
-    });
+    return listHostPcs(user.host.id);
+  });
 
-    const badge = getReliabilityBadge({
-      sessionsTotal: user.host?.sessionsTotal ?? 0,
-      sessionsCompleted: user.host?.sessionsCompleted ?? 0,
-    });
+  fastify.get('/hosts/:id/pcs', async (request, reply) => {
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
+    if (!user.host) {
+      return reply.status(403).send({ error: 'Usuario nao e host' });
+    }
+    if (user.host.id !== params.id) {
+      return reply.status(403).send({ error: 'Sem permissao' });
+    }
 
-    return pcs.map((pc) => ({
-      ...pc,
-      reliabilityBadge: badge,
-    }));
+    return listHostPcs(params.id);
   });
 
   fastify.post('/host/profile', async (request, reply) => {

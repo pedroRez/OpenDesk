@@ -137,6 +137,7 @@ export default function Connection() {
       return;
     }
     setConnecting(true);
+    setProviderMessage('Preparando conexao...');
     try {
       const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
         method: 'POST',
@@ -186,6 +187,7 @@ export default function Connection() {
       });
 
       console.log('[STREAM][CLIENT] launching moonlight...');
+      setProviderMessage('Abrindo Moonlight...');
       setLastConnectAddress(resolveResult.data.connectAddress);
       const launchResult = await launchMoonlight(resolveResult.data.connectAddress);
       if (launchResult.ok) {
@@ -251,8 +253,8 @@ export default function Connection() {
           <li>Complete o pareamento se necessario.</li>
           <li>Inicie a conexao.</li>
         </ol>
-        <button type="button" onClick={handleConnect}>
-          Tentar conectar
+        <button type="button" onClick={handleConnect} disabled={connecting}>
+          {connecting ? 'Conectando...' : 'Tentar conectar'}
         </button>
         {installed === false && (
           <p className={styles.muted}>Moonlight nao detectado. Instale antes de conectar.</p>

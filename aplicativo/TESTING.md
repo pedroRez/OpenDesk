@@ -76,6 +76,12 @@ Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras
 - [ ] Com `VITE_DEV_BYPASS_CREDITS=true`, a reserva deve funcionar mesmo com saldo 0.
 - [ ] Com a flag desativada, bloquear e mostrar "Saldo insuficiente".
 
+## Cadastro automatico de PC (Host)
+- [ ] Primeiro uso em um PC -> detecta hardware e cadastra automaticamente.
+- [ ] Reabrir o app no mesmo PC -> reconhece localPcId e nao duplica.
+- [ ] Cancelar durante a deteccao -> nao cria PC.
+- [ ] Host cadastra 2 PCs (rodando o app em cada maquina) -> aparecem como PCs separados.
+
 ## Fluxo Host
 - [ ] Abrir o app e escolher modo **Host**.
 - [ ] Criar conta ou fazer login.
@@ -89,5 +95,6 @@ Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras
 ## Navegacao e Estado
 - [ ] Botao **Trocar modo** limpa o modo e volta para a home.
 - [ ] Botao **Sair** limpa auth + modo e volta para a home.
+
 
 

@@ -16,6 +16,14 @@ const specSummarySchema = z.object({
   gpu: z.string().min(1),
   ram: z.string().min(1),
 });
+const hardwareProfileSchema = z.object({
+  cpuName: z.string().min(1),
+  ramGb: z.number().int().min(1),
+  gpuName: z.string().min(1),
+  storageSummary: z.string().min(1),
+  osName: z.string().optional(),
+  screenResolution: z.string().optional(),
+});
 const categoriesQuerySchema = z.preprocess((value) => {
   if (value === undefined || value === null) return undefined;
   if (Array.isArray(value)) return value;
@@ -68,7 +76,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
 
     const queueCountMap = new Map(queueCounts.map((item) => [item.pcId, item._count._all]));
 
-    const enriched = pcs.map(({ sessions, host, connectAddress: _connectAddress, ...pc }) => ({
+    const enriched = pcs.map(({ sessions, host, connectAddress: _connectAddress, localPcId: _localPcId, ...pc }) => ({
       ...pc,
       host: host ? sanitizeHost(host) : host,
       status: sessions.length > 0 ? PCStatus.BUSY : pc.status,
@@ -110,7 +118,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
       where: { pcId: pc.id, status: QueueEntryStatus.WAITING },
     });
 
-    const { sessions, host, connectAddress: _connectAddress, ...rest } = pc;
+    const { sessions, host, connectAddress: _connectAddress, localPcId: _localPcId, ...rest } = pc;
     return {
       ...rest,
       host: host ? sanitizeHost(host) : host,
@@ -180,22 +188,25 @@ export async function pcRoutes(fastify: FastifyInstance) {
   fastify.post('/pcs', async (request, reply) => {
     const schema = z.object({
       hostId: z.string().optional(),
-      name: z.string(),
-      level: z.enum(['A', 'B', 'C']),
+      localPcId: z.string().min(6).optional(),
+      nickname: z.string().min(1).max(60).optional(),
+      hardwareProfile: hardwareProfileSchema.optional(),
+      name: z.string().min(1).optional(),
+      level: z.enum(['A', 'B', 'C']).default('B'),
       categories: z.array(pcCategorySchema).optional(),
       softwareTags: z.array(z.string().min(1)).optional(),
       specSummary: specSummarySchema.optional(),
       description: z.string().max(280).optional(),
-      cpu: z.string(),
-      ramGb: z.number(),
-      gpu: z.string(),
-      vramGb: z.number(),
-      storageType: z.string(),
-      internetUploadMbps: z.number(),
+      cpu: z.string().optional(),
+      ramGb: z.number().optional(),
+      gpu: z.string().optional(),
+      vramGb: z.number().optional(),
+      storageType: z.string().optional(),
+      internetUploadMbps: z.number().optional(),
       connectionHost: z.string().min(1).optional(),
       connectionPort: z.number().int().min(1).max(65535).optional(),
       connectionNotes: z.string().max(200).optional(),
-      pricePerHour: z.number(),
+      pricePerHour: z.number().optional(),
     });
 
     const body = schema.parse(request.body);
@@ -209,6 +220,33 @@ export async function pcRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Host invalido' });
     }
 
+    if (body.localPcId) {
+      const existingLocal = await fastify.prisma.pC.findFirst({
+        where: { hostId: user.host.id, localPcId: body.localPcId },
+        select: { id: true },
+      });
+      if (existingLocal) {
+        return reply.status(409).send({ error: 'PC ja cadastrado neste host', pcId: existingLocal.id });
+      }
+    }
+
+    const hardwareProfile = body.hardwareProfile;
+    const resolvedCpu = body.cpu ?? hardwareProfile?.cpuName;
+    const resolvedRam = body.ramGb ?? hardwareProfile?.ramGb;
+    const resolvedGpu = body.gpu ?? hardwareProfile?.gpuName;
+    const resolvedStorage = body.storageType ?? hardwareProfile?.storageSummary;
+    if (!resolvedCpu || !resolvedRam || !resolvedGpu || !resolvedStorage) {
+      return reply.status(400).send({ error: 'Hardware incompleto. Informe CPU, RAM, GPU e armazenamento.' });
+    }
+
+    const resolvedVram = body.vramGb ?? 0;
+    const resolvedInternet = body.internetUploadMbps ?? 200;
+    const resolvedPrice = body.pricePerHour ?? 10;
+    const resolvedName =
+      body.nickname?.trim() ||
+      body.name?.trim() ||
+      `PC ${user.username ?? user.email.split('@')[0] ?? 'Host'}`;
+
     const {
       hostId: _hostId,
       categories,
@@ -216,25 +254,39 @@ export async function pcRoutes(fastify: FastifyInstance) {
       specSummary,
       description,
       connectionPort,
+      localPcId,
+      nickname: _nickname,
+      hardwareProfile: _hardwareProfile,
+      name: _name,
       ...payload
     } = body;
+
     const resolvedSpecSummary =
       specSummary ??
       ({
-        cpu: payload.cpu,
-        gpu: payload.gpu,
-        ram: `${payload.ramGb} GB`,
+        cpu: resolvedCpu,
+        gpu: resolvedGpu,
+        ram: `${resolvedRam} GB`,
       } satisfies z.infer<typeof specSummarySchema>);
 
     return fastify.prisma.pC.create({
       data: {
         ...payload,
+        name: resolvedName,
+        cpu: resolvedCpu,
+        ramGb: resolvedRam,
+        gpu: resolvedGpu,
+        vramGb: resolvedVram,
+        storageType: resolvedStorage,
+        internetUploadMbps: resolvedInternet,
+        pricePerHour: resolvedPrice,
         hostId: user.host.id,
         connectionPort: connectionPort ?? 47990,
         categories: categories ?? [],
         softwareTags: softwareTags ?? [],
         description: description ?? '',
         specSummary: resolvedSpecSummary,
+        localPcId: localPcId ?? null,
       },
     });
   });

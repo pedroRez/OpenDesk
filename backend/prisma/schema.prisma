@@ -113,6 +113,7 @@ model HostProfile {
 model PC {
   id                  String        @id @default(uuid())
   hostId              String
+  localPcId           String?
   name                String
   level               PCLevel
   networkProvider     NetworkProvider @default(DIRECT)
@@ -141,6 +142,8 @@ model PC {
   reservations        Reservation[]
   favorites          Favorite[]
   streamConnectTokens StreamConnectToken[]
+
+  @@unique([hostId, localPcId])
 }
 
 model Software {

@@ -75,6 +75,19 @@ select {
   gap: 16px;
 }
 
+.operationBar {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 184, 102, 0.18);
+  border: 1px solid rgba(255, 184, 102, 0.4);
+  color: var(--ink);
+  font-weight: 600;
+  width: fit-content;
+}
+
 .listHeader {
   display: flex;
   align-items: center;
@@ -109,6 +122,22 @@ select {
 
 .toggleIcon {
   font-weight: 700;
+}
+
+.localPcPanel {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.92);
+  display: grid;
+  gap: 10px;
+}
+
+.localPcActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .pcCard {
@@ -241,4 +270,87 @@ select {
 .helperText {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 14, 12, 0.55);
+  z-index: 50;
+}
+
+.modal {
+  width: min(520px, 92vw);
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid var(--stroke);
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.modalBody {
+  display: grid;
+  gap: 12px;
+}
+
+.modalRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.summaryBox {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--stroke);
+  display: grid;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.categoryGroup {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.categoryList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.categoryItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(244, 93, 18, 0.3);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

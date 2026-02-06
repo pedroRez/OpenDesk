@@ -1,10 +1,19 @@
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 
 import { useToast } from '../../components/Toast';
 import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { getLocalPcId, getPrimaryPcId, setLocalPcId, setPrimaryPcId } from '../../lib/hostState';
+import {
+  getLocalMachineId as getStoredMachineId,
+  getLocalPcId,
+  getPrimaryPcId,
+  setLocalMachineId,
+  setLocalPcId,
+  setPrimaryPcId,
+} from '../../lib/hostState';
+import { cancelHardwareProfile, getHardwareProfile, getLocalMachineId, type HardwareProfile } from '../../lib/hardwareProfile';
 import { DEFAULT_CONNECT_HINT, resolveConnectAddress } from '../../lib/networkAddress';
 import { detectSunshinePath, ensureSunshineRunning } from '../../lib/sunshineController';
 import { getSunshinePath, setSunshinePath } from '../../lib/sunshineSettings';
@@ -16,6 +25,7 @@ import styles from './HostDashboard.module.css';
 type PC = {
   id: string;
   hostId: string;
+  localPcId?: string | null;
   name: string;
   level: string;
   status: 'ONLINE' | 'OFFLINE' | 'BUSY';
@@ -30,6 +40,21 @@ type PC = {
   storageType?: string;
   internetUploadMbps?: number;
 };
+
+type AutoForm = {
+  nickname: string;
+  categories: string[];
+  softwareTags: string;
+  pricePerHour: number;
+};
+
+const CATEGORY_OPTIONS = [
+  { value: 'GAMES', label: 'Jogos' },
+  { value: 'DESIGN', label: 'Design' },
+  { value: 'VIDEO', label: 'Video' },
+  { value: 'DEV', label: 'Dev' },
+  { value: 'OFFICE', label: 'Office' },
+];
 
 type PCInput = {
   name: string;
@@ -76,14 +101,29 @@ export default function HostDashboard() {
   });
   const [form, setForm] = useState<PCInput>(createDefaultForm);
   const [isPublishingNetwork, setIsPublishingNetwork] = useState(false);
+  const [operationMessage, setOperationMessage] = useState('');
   const [showSunshineHelp, setShowSunshineHelp] = useState(false);
   const [sunshineHelpStatus, setSunshineHelpStatus] = useState('');
   const [disconnectingPcId, setDisconnectingPcId] = useState<string | null>(null);
+  const [localMachineId, setLocalMachineIdState] = useState<string | null>(getStoredMachineId());
+  const [localPcRecord, setLocalPcRecord] = useState<PC | null>(null);
+  const [autoModalOpen, setAutoModalOpen] = useState(false);
+  const [autoStep, setAutoStep] = useState<'idle' | 'detecting' | 'review' | 'creating'>('idle');
+  const [autoStatus, setAutoStatus] = useState('');
+  const [autoRequestId, setAutoRequestId] = useState<string | null>(null);
+  const [hardwareProfile, setHardwareProfile] = useState<HardwareProfile | null>(null);
+  const [autoForm, setAutoForm] = useState<AutoForm>({
+    nickname: '',
+    categories: [],
+    softwareTags: '',
+    pricePerHour: 10,
+  });
 
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastHeartbeatLogRef = useRef<number>(0);
+  const autoAbortRef = useRef<AbortController | null>(null);
   const heartbeatPcId = useMemo(() => {
     const localId = getLocalPcId();
     if (localId) {
@@ -105,8 +145,59 @@ export default function HostDashboard() {
 
   useEffect(() => {
     if (!hostProfileId) return;
+    if (localMachineId) return;
+    getLocalMachineId()
+      .then((id) => {
+        if (id) {
+          setLocalMachineIdState(id);
+          setLocalMachineId(id);
+        }
+      })
+      .catch((error) => console.warn('[HARDWARE] local pc id fail', error));
+  }, [hostProfileId, localMachineId]);
+
+  useEffect(() => {
+    if (!localMachineId) {
+      setLocalPcRecord(null);
+      return;
+    }
+    const found = pcs.find((pc) => pc.localPcId === localMachineId) ?? null;
+    setLocalPcRecord(found);
+    if (found) {
+      setLocalPcId(found.id);
+      setPrimaryPcId(found.id);
+    }
+  }, [pcs, localMachineId]);
+
+  useEffect(() => {
+    if (!autoRequestId) return;
+    let isActive = true;
+    const setup = async () => {
+      const unlisten = await listen<{
+        requestId: string;
+        status: string;
+      }>('hardware-progress', (event) => {
+        if (!isActive) return;
+        if (event.payload?.requestId === autoRequestId) {
+          setAutoStatus(event.payload.status);
+        }
+      });
+      return unlisten;
+    };
+    let cleanup: (() => void) | null = null;
+    setup().then((unlisten) => {
+      cleanup = unlisten;
+    });
+    return () => {
+      isActive = false;
+      if (cleanup) cleanup();
+    };
+  }, [autoRequestId]);
+
+  useEffect(() => {
+    if (!hostProfileId) return;
     setIsLoadingPcs(true);
-    request<PC[]>('/host/pcs')
+    request<PC[]>(`/hosts/${hostProfileId}/pcs`)
       .then((data) => {
         setPcs(data);
         if (data.length > 0) {
@@ -198,6 +289,7 @@ export default function HostDashboard() {
   const handleCreatePC = async (event: FormEvent) => {
     event.preventDefault();
 
+    setOperationMessage('Criando PC...');
     try {
       const payload = {
         ...form,
@@ -208,6 +300,7 @@ export default function HostDashboard() {
         vramGb: Number(form.vramGb),
         internetUploadMbps: Number(form.internetUploadMbps),
         pricePerHour: Number(form.pricePerHour),
+        localPcId: localMachineId ?? undefined,
       };
       const created = await request<PC>('/pcs', {
         method: 'POST',
@@ -216,6 +309,7 @@ export default function HostDashboard() {
       setPcs((prev) => [created, ...prev]);
       setPrimaryPcId(created.id);
       setLocalPcId(created.id);
+      setLocalPcRecord(created);
       toast.show('PC cadastrado com sucesso!', 'success');
       setForm(createDefaultForm());
       setIsFormOpen(false);
@@ -224,6 +318,8 @@ export default function HostDashboard() {
       }
     } catch (error) {
       toast.show(error instanceof Error ? error.message : 'Erro ao cadastrar PC', 'error');
+    } finally {
+      setOperationMessage('');
     }
   };
 
@@ -242,6 +338,7 @@ export default function HostDashboard() {
         return;
       }
     }
+    setOperationMessage(nextStatus === 'ONLINE' ? 'Colocando PC online...' : 'Colocando PC offline...');
     setPcs((prev) => prev.map((item) => (item.id === pc.id ? { ...item, status: nextStatus } : item)));
     try {
       const data = await request<{ pc: PC }>(`/pcs/${pc.id}/status`, {
@@ -256,6 +353,105 @@ export default function HostDashboard() {
     } catch (error) {
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? pc : item)));
       toast.show(error instanceof Error ? error.message : 'Falha ao atualizar status', 'error');
+    } finally {
+      setOperationMessage('');
+    }
+  };
+
+  const resetAutoFlow = () => {
+    setAutoModalOpen(false);
+    setAutoStep('idle');
+    setAutoStatus('');
+    setAutoRequestId(null);
+    setHardwareProfile(null);
+  };
+
+  const handleAutoDetect = async () => {
+    if (!localMachineId) {
+      toast.show('Nao foi possivel identificar este PC.', 'error');
+      return;
+    }
+    if (autoStep === 'detecting') return;
+    autoAbortRef.current?.abort();
+    autoAbortRef.current = new AbortController();
+    const { signal } = autoAbortRef.current;
+    const requestId = crypto.randomUUID();
+    setAutoRequestId(requestId);
+    setAutoStatus('Detectando hardware...');
+    setAutoModalOpen(true);
+    setAutoStep('detecting');
+    try {
+      const profile = await getHardwareProfile(requestId);
+      if (signal.aborted) {
+        resetAutoFlow();
+        return;
+      }
+      setHardwareProfile(profile);
+      setAutoForm({
+        nickname: '',
+        categories: [],
+        softwareTags: '',
+        pricePerHour: 10,
+      });
+      setAutoStep('review');
+      setAutoStatus('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? '');
+      if (message.includes('cancelled')) {
+        setAutoStatus('Deteccao cancelada.');
+      } else {
+        toast.show(message || 'Falha ao detectar hardware', 'error');
+      }
+      resetAutoFlow();
+    } finally {
+      setAutoRequestId(null);
+    }
+  };
+
+  const handleCancelAuto = async () => {
+    autoAbortRef.current?.abort();
+    if (autoRequestId) {
+      await cancelHardwareProfile(autoRequestId);
+    }
+    resetAutoFlow();
+  };
+
+  const handleConfirmAuto = async () => {
+    if (!hardwareProfile || !localMachineId) return;
+    if (autoStep === 'creating') return;
+    setAutoStep('creating');
+    setOperationMessage('Criando PC...');
+    try {
+      const tags = autoForm.softwareTags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+      const payload = {
+        localPcId: localMachineId,
+        nickname: autoForm.nickname.trim() || undefined,
+        hardwareProfile,
+        categories: autoForm.categories.length ? autoForm.categories : undefined,
+        softwareTags: tags.length ? tags : undefined,
+        pricePerHour: autoForm.pricePerHour || undefined,
+      };
+      const created = await request<PC>('/pcs', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setPcs((prev) => [created, ...prev]);
+      setLocalPcId(created.id);
+      setPrimaryPcId(created.id);
+      setLocalPcRecord(created);
+      toast.show('PC cadastrado com sucesso!', 'success');
+      resetAutoFlow();
+      if (created.status === 'ONLINE') {
+        await publishNetwork(created.id);
+      }
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Erro ao cadastrar PC', 'error');
+      setAutoStep('review');
+    } finally {
+      setOperationMessage('');
     }
   };
 
@@ -342,6 +538,7 @@ export default function HostDashboard() {
   const publishNetwork = async (pcId: string) => {
     if (isPublishingNetwork) return;
     setIsPublishingNetwork(true);
+    setOperationMessage('Publicando conexao...');
     try {
       const running = await ensureSunshineRunning();
       if (!running) {
@@ -376,6 +573,7 @@ export default function HostDashboard() {
       });
     } finally {
       setIsPublishingNetwork(false);
+      setOperationMessage('');
     }
   };
 
@@ -389,6 +587,7 @@ export default function HostDashboard() {
   };
 
   const handleSaveConnection = async (pc: PC) => {
+    setOperationMessage('Salvando conexao...');
     try {
       const payload = {
         connectionHost: editForm.connectionHost.trim() || undefined,
@@ -413,6 +612,7 @@ export default function HostDashboard() {
           port: resolvedPort,
         });
         try {
+          setOperationMessage('Publicando conexao...');
           const response = await request(`/pcs/${pc.id}/network`, {
             method: 'POST',
             body: JSON.stringify({
@@ -431,6 +631,8 @@ export default function HostDashboard() {
       }
     } catch (error) {
       toast.show(error instanceof Error ? error.message : 'Erro ao atualizar conexao.', 'error');
+    } finally {
+      setOperationMessage('');
     }
   };
 
@@ -467,6 +669,12 @@ export default function HostDashboard() {
 
       {isHost && (
         <section className={styles.list}>
+          {operationMessage && (
+            <div className={styles.operationBar}>
+              <span className={styles.spinner} />
+              <span>{operationMessage}</span>
+            </div>
+          )}
           <div className={styles.listHeader}>
             <div>
               <h3>Seus PCs</h3>
@@ -482,6 +690,44 @@ export default function HostDashboard() {
               <span>{isFormOpen ? 'Fechar cadastro' : 'Cadastrar PC'}</span>
               <span className={styles.toggleIcon}>{isFormOpen ? 'v' : '>'}</span>
             </button>
+          </div>
+
+          <div className={styles.localPcPanel}>
+            <div>
+              <strong>Cadastro rapido deste PC</strong>
+              <p className={styles.listHint}>
+                Detecte o hardware automaticamente e cadastre este PC com 1 clique.
+              </p>
+            </div>
+            {localPcRecord ? (
+              <div className={styles.localPcActions}>
+                <span>
+                  Este PC ja esta cadastrado como <strong>{localPcRecord.name}</strong>.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById(`pc-card-${localPcRecord.id}`);
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }}
+                  className={styles.ghost}
+                >
+                  Ver no painel
+                </button>
+              </div>
+            ) : (
+              <div className={styles.localPcActions}>
+                <button
+                  type="button"
+                  onClick={handleAutoDetect}
+                  disabled={!localMachineId || Boolean(operationMessage)}
+                >
+                  {localMachineId ? 'Cadastrar este PC' : 'Detectando identificador...'}
+                </button>
+              </div>
+            )}
           </div>
 
           {isFormOpen && (
@@ -581,7 +827,9 @@ export default function HostDashboard() {
                 </label>
               </div>
               <div className={styles.formActions}>
-                <button type="submit">Cadastrar PC</button>
+                <button type="submit" disabled={Boolean(operationMessage)}>
+                  Cadastrar PC
+                </button>
                 <button type="button" onClick={() => setIsFormOpen(false)} className={styles.ghost}>
                   Cancelar
                 </button>
@@ -618,7 +866,7 @@ export default function HostDashboard() {
                   : styles.statusBusy;
 
             return (
-              <div key={pc.id} className={styles.pcCard}>
+              <div key={pc.id} id={`pc-card-${pc.id}`} className={styles.pcCard}>
                 <div className={styles.pcInfo}>
                   <div className={styles.pcHeader}>
                     <strong>{pc.name}</strong>
@@ -634,7 +882,7 @@ export default function HostDashboard() {
                     type="button"
                     onClick={() => handleToggleStatus(pc)}
                     className={pc.status === 'BUSY' ? styles.disabled : ''}
-                    disabled={pc.status === 'BUSY'}
+                    disabled={pc.status === 'BUSY' || Boolean(operationMessage)}
                   >
                     {pc.status === 'ONLINE' ? 'Ficar Offline' : 'Ficar Online'}
                   </button>
@@ -648,10 +896,15 @@ export default function HostDashboard() {
                       {disconnectingPcId === pc.id ? 'Desconectando...' : 'Desconectar'}
                     </button>
                   )}
-                  <button type="button" onClick={() => startEditing(pc)}>
+                  <button type="button" onClick={() => startEditing(pc)} disabled={Boolean(operationMessage)}>
                     Editar conexao
                   </button>
-                  <button type="button" onClick={() => handleDeletePc(pc)} className={styles.dangerButton}>
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePc(pc)}
+                    className={styles.dangerButton}
+                    disabled={Boolean(operationMessage)}
+                  >
                     Excluir PC
                   </button>
                 </div>
@@ -688,7 +941,7 @@ export default function HostDashboard() {
                       />
                     </label>
                     <div className={styles.editActions}>
-                      <button type="button" onClick={() => handleSaveConnection(pc)}>
+                      <button type="button" onClick={() => handleSaveConnection(pc)} disabled={Boolean(operationMessage)}>
                         Salvar conexao
                       </button>
                       <button type="button" onClick={() => setEditingPcId(null)} className={styles.ghost}>
@@ -700,6 +953,104 @@ export default function HostDashboard() {
               </div>
             );
           })}
+
+          {autoModalOpen && (
+            <div className={styles.overlay} role="dialog" aria-modal="true">
+              <div className={styles.modal}>
+                {autoStep === 'detecting' && (
+                  <div className={styles.modalBody}>
+                    <h3>Detectando hardware...</h3>
+                    <div className={styles.modalRow}>
+                      <span className={styles.spinner} />
+                      <span>{autoStatus || 'Detectando hardware...'}</span>
+                    </div>
+                    <div className={styles.modalActions}>
+                      <button type="button" onClick={handleCancelAuto} className={styles.ghost}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {autoStep === 'review' && hardwareProfile && (
+                  <div className={styles.modalBody}>
+                    <h3>Resumo detectado</h3>
+                    <div className={styles.summaryBox}>
+                      <div><strong>CPU:</strong> {hardwareProfile.cpuName}</div>
+                      <div><strong>RAM:</strong> {hardwareProfile.ramGb} GB</div>
+                      <div><strong>GPU:</strong> {hardwareProfile.gpuName}</div>
+                      <div><strong>Storage:</strong> {hardwareProfile.storageSummary}</div>
+                    </div>
+                    <label>
+                      Apelido do PC
+                      <input
+                        value={autoForm.nickname}
+                        onChange={(event) => setAutoForm({ ...autoForm, nickname: event.target.value })}
+                        placeholder="Ex.: PC Sala"
+                      />
+                    </label>
+                    <div className={styles.categoryGroup}>
+                      <span>Categorias (opcional)</span>
+                      <div className={styles.categoryList}>
+                        {CATEGORY_OPTIONS.map((option) => {
+                          const checked = autoForm.categories.includes(option.value);
+                          return (
+                            <label key={option.value} className={styles.categoryItem}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  const next = checked
+                                    ? autoForm.categories.filter((item) => item !== option.value)
+                                    : [...autoForm.categories, option.value];
+                                  setAutoForm({ ...autoForm, categories: next });
+                                }}
+                              />
+                              {option.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <label>
+                      Software/Tags (opcional, separadas por virgula)
+                      <input
+                        value={autoForm.softwareTags}
+                        onChange={(event) => setAutoForm({ ...autoForm, softwareTags: event.target.value })}
+                        placeholder="Steam, Photoshop"
+                      />
+                    </label>
+                    <label>
+                      Preco por hora (opcional)
+                      <input
+                        type="number"
+                        value={autoForm.pricePerHour}
+                        onChange={(event) =>
+                          setAutoForm({ ...autoForm, pricePerHour: Number(event.target.value) })
+                        }
+                      />
+                    </label>
+                    <div className={styles.modalActions}>
+                      <button type="button" onClick={handleConfirmAuto} disabled={autoStep === 'creating'}>
+                        Confirmar cadastro
+                      </button>
+                      <button type="button" onClick={handleCancelAuto} className={styles.ghost}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {autoStep === 'creating' && (
+                  <div className={styles.modalBody}>
+                    <h3>Criando PC...</h3>
+                    <div className={styles.modalRow}>
+                      <span className={styles.spinner} />
+                      <span>Finalizando...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </section>
       )}
     </section>

@@ -1,7 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::{Path, PathBuf};
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
+use tauri::Manager;
+use sysinfo::{CpuExt, System, SystemExt};
 
 #[tauri::command]
 fn validate_exe_path(path: String) -> bool {
@@ -107,6 +111,233 @@ struct CommandOutput {
   stderr: String,
 }
 
+#[derive(Serialize, Clone)]
+struct HardwareProfile {
+  cpuName: String,
+  ramGb: u64,
+  gpuName: String,
+  storageSummary: String,
+  osName: Option<String>,
+  screenResolution: Option<String>,
+}
+
+#[derive(Serialize)]
+struct HardwareProgress {
+  requestId: String,
+  status: String,
+}
+
+static HARDWARE_CANCEL: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn cancel_set() -> &'static Mutex<HashSet<String>> {
+  HARDWARE_CANCEL.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn set_cancel(request_id: &str) {
+  if let Ok(mut guard) = cancel_set().lock() {
+    guard.insert(request_id.to_string());
+  }
+}
+
+fn clear_cancel(request_id: &str) {
+  if let Ok(mut guard) = cancel_set().lock() {
+    guard.remove(request_id);
+  }
+}
+
+fn is_cancelled(request_id: &str) -> bool {
+  if let Ok(guard) = cancel_set().lock() {
+    return guard.contains(request_id);
+  }
+  false
+}
+
+fn emit_progress(app: &tauri::AppHandle, request_id: &str, status: &str) {
+  let _ = app.emit_all(
+    "hardware-progress",
+    HardwareProgress {
+      requestId: request_id.to_string(),
+      status: status.to_string(),
+    },
+  );
+}
+
+fn fnv1a_hash(input: &str) -> String {
+  let mut hash: u64 = 0xcbf29ce484222325;
+  for byte in input.as_bytes() {
+    hash ^= *byte as u64;
+    hash = hash.wrapping_mul(0x100000001b3);
+  }
+  format!("{:016x}", hash)
+}
+
+fn parse_wmic_lines(args: &[&str]) -> Vec<String> {
+  if let Ok(output) = std::process::Command::new("wmic").args(args).output() {
+    if output.status.success() {
+      let stdout = String::from_utf8_lossy(&output.stdout);
+      return stdout
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect();
+    }
+  }
+  Vec::new()
+}
+
+fn detect_gpu_name() -> String {
+  let lines = parse_wmic_lines(&["path", "win32_VideoController", "get", "name"]);
+  for line in lines {
+    if line.to_lowercase().contains("name") {
+      continue;
+    }
+    if !line.is_empty() {
+      return line;
+    }
+  }
+  "GPU desconhecida".to_string()
+}
+
+fn detect_storage_summary() -> String {
+  let lines = parse_wmic_lines(&["diskdrive", "get", "MediaType,Size"]);
+  let mut total_bytes: u64 = 0;
+  let mut has_ssd = false;
+  for line in lines {
+    let lower = line.to_lowercase();
+    if lower.contains("mediatype") || lower.contains("size") {
+      continue;
+    }
+    if lower.contains("ssd") || lower.contains("solid state") {
+      has_ssd = true;
+    }
+    let size = line
+      .split_whitespace()
+      .rev()
+      .find_map(|part| part.parse::<u64>().ok());
+    if let Some(bytes) = size {
+      total_bytes = total_bytes.saturating_add(bytes);
+    }
+  }
+
+  if total_bytes == 0 {
+    return "Disco".to_string();
+  }
+  let total_gb = (total_bytes as f64 / 1024.0 / 1024.0 / 1024.0).round() as u64;
+  let label = if has_ssd { "SSD" } else { "HDD" };
+  if total_gb >= 1024 {
+    let tb = (total_gb as f64 / 1024.0).round() as u64;
+    format!("{} {}TB", label, tb)
+  } else {
+    format!("{} {}GB", label, total_gb.max(1))
+  }
+}
+
+#[tauri::command]
+fn get_local_pc_id() -> Result<String, String> {
+  if !cfg!(windows) {
+    return Err("Plataforma nao suportada.".to_string());
+  }
+  let mut parts: Vec<String> = Vec::new();
+  let uuid_lines = parse_wmic_lines(&["csproduct", "get", "UUID"]);
+  for line in uuid_lines {
+    if line.to_lowercase().contains("uuid") {
+      continue;
+    }
+    if !line.is_empty() {
+      parts.push(line);
+      break;
+    }
+  }
+  let bios_lines = parse_wmic_lines(&["bios", "get", "serialnumber"]);
+  for line in bios_lines {
+    if line.to_lowercase().contains("serial") {
+      continue;
+    }
+    if !line.is_empty() {
+      parts.push(line);
+      break;
+    }
+  }
+  let mut system = System::new();
+  system.refresh_cpu();
+  if let Some(cpu) = system.cpus().first() {
+    parts.push(cpu.brand().to_string());
+  }
+
+  let base = parts.join("|");
+  if base.trim().is_empty() {
+    return Err("Nao foi possivel identificar este PC.".to_string());
+  }
+  Ok(fnv1a_hash(&base))
+}
+
+#[tauri::command]
+fn cancel_hardware_profile(request_id: String) -> bool {
+  if request_id.trim().is_empty() {
+    return false;
+  }
+  set_cancel(&request_id);
+  true
+}
+
+#[tauri::command]
+fn get_hardware_profile(app: tauri::AppHandle, request_id: String) -> Result<HardwareProfile, String> {
+  if request_id.trim().is_empty() {
+    return Err("requestId invalido".to_string());
+  }
+  if !cfg!(windows) {
+    return Err("Plataforma nao suportada.".to_string());
+  }
+
+  emit_progress(&app, &request_id, "Detectando CPU...");
+  if is_cancelled(&request_id) {
+    clear_cancel(&request_id);
+    return Err("cancelled".to_string());
+  }
+  let mut system = System::new_all();
+  system.refresh_cpu();
+  let cpu_name = system
+    .cpus()
+    .first()
+    .map(|cpu| cpu.brand().to_string())
+    .unwrap_or_else(|| "CPU desconhecida".to_string());
+
+  emit_progress(&app, &request_id, "Detectando RAM...");
+  if is_cancelled(&request_id) {
+    clear_cancel(&request_id);
+    return Err("cancelled".to_string());
+  }
+  system.refresh_memory();
+  let total_kb = system.total_memory();
+  let ram_gb = ((total_kb as f64 / 1024.0 / 1024.0).round() as u64).max(1);
+
+  emit_progress(&app, &request_id, "Detectando GPU...");
+  if is_cancelled(&request_id) {
+    clear_cancel(&request_id);
+    return Err("cancelled".to_string());
+  }
+  let gpu_name = detect_gpu_name();
+
+  emit_progress(&app, &request_id, "Detectando armazenamento...");
+  if is_cancelled(&request_id) {
+    clear_cancel(&request_id);
+    return Err("cancelled".to_string());
+  }
+  let storage_summary = detect_storage_summary();
+
+  emit_progress(&app, &request_id, "Finalizando...");
+  clear_cancel(&request_id);
+
+  Ok(HardwareProfile {
+    cpuName: cpu_name,
+    ramGb: ram_gb,
+    gpuName: gpu_name,
+    storageSummary: storage_summary,
+    osName: Some("Windows".to_string()),
+    screenResolution: None,
+  })
+}
+
 #[tauri::command]
 fn moonlight_list(path: String, host: String) -> Result<CommandOutput, String> {
   let trimmed = path.trim().trim_matches('"').trim_matches('\'');
@@ -187,6 +418,9 @@ fn main() {
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
+      get_local_pc_id,
+      get_hardware_profile,
+      cancel_hardware_profile,
       validate_exe_path,
       detect_sunshine_path,
       detect_moonlight_path,
