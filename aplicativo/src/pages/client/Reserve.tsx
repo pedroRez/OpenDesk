@@ -76,7 +76,7 @@ export default function Reserve() {
       <form onSubmit={handleSubmit} className={styles.form}>
         {user ? (
           <p>
-            Conectando como <strong>{user.displayName ?? user.username}</strong> ({user.email}).
+            Conectando como <strong>{user.displayName ?? user.username}</strong>.
           </p>
         ) : (
           <p>

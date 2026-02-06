@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { createAndStartSession, SessionError } from '../services/sessionService.js';
 import { getReliabilityBadge } from '../services/hostReliabilityStats.js';
+import { sanitizeHost } from '../utils/hostPublic.js';
 import { requireUser } from '../utils/auth.js';
 
 const DEFAULT_MINUTES_PURCHASED = 60;
@@ -45,7 +46,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
       where,
       include: {
         softwareLinks: { include: { software: true } },
-        host: true,
+        host: { include: { user: { select: { username: true } } } },
         sessions: {
           where: { status: { in: [SessionStatus.ACTIVE, SessionStatus.PENDING] } },
           select: { id: true },
@@ -69,14 +70,14 @@ export async function pcRoutes(fastify: FastifyInstance) {
 
     const enriched = pcs.map(({ sessions, host, connectAddress: _connectAddress, ...pc }) => ({
       ...pc,
-      host,
+      host: host ? sanitizeHost(host) : host,
       status: sessions.length > 0 ? PCStatus.BUSY : pc.status,
       queueCount: queueCountMap.get(pc.id) ?? 0,
       reliabilityBadge: host
         ? getReliabilityBadge({
-            sessionsTotal: host.sessionsTotal ?? 0,
-            sessionsCompleted: host.sessionsCompleted ?? 0,
-          })
+          sessionsTotal: host.sessionsTotal ?? 0,
+          sessionsCompleted: host.sessionsCompleted ?? 0,
+        })
         : 'NOVO',
     }));
 
@@ -93,7 +94,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
       where: { id: params.id },
       include: {
         softwareLinks: { include: { software: true } },
-        host: true,
+        host: { include: { user: { select: { username: true } } } },
         sessions: {
           where: { status: { in: [SessionStatus.ACTIVE, SessionStatus.PENDING] } },
           select: { id: true },
@@ -112,7 +113,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
     const { sessions, host, connectAddress: _connectAddress, ...rest } = pc;
     return {
       ...rest,
-      host,
+      host: host ? sanitizeHost(host) : host,
       status: sessions.length > 0 ? PCStatus.BUSY : pc.status,
       queueCount,
       reliabilityBadge: host

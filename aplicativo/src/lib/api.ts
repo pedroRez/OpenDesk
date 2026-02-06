@@ -1,4 +1,4 @@
-import { getStoredUserId } from './session';
+import { getStoredToken, getStoredUserId } from './session';
 
 export const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3333';
 export const devBypassCredits =
@@ -13,6 +13,10 @@ type ApiErrorPayload = {
 
 function buildHeaders(init?: RequestInit): Headers {
   const headers = new Headers(init?.headers ?? {});
+  const token = getStoredToken();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
   const userId = getStoredUserId();
   if (userId && !headers.has('x-user-id')) {
     headers.set('x-user-id', userId);

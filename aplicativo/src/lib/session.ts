@@ -5,6 +5,8 @@ export type StoredUser = {
   email: string;
   role: string;
   hostProfileId?: string | null;
+  token?: string | null;
+  needsUsername?: boolean;
 };
 
 const STORAGE_KEY = 'opendesk_user';
@@ -32,6 +34,8 @@ export function loadUser(): StoredUser | null {
       email: parsed.email,
       role: parsed.role ?? 'CLIENT',
       hostProfileId: parsed.hostProfileId ?? null,
+      token: parsed.token ?? null,
+      needsUsername: parsed.needsUsername ?? false,
     };
   } catch {
     return null;
@@ -45,4 +49,8 @@ export function clearUser(): void {
 
 export function getStoredUserId(): string | null {
   return loadUser()?.id ?? null;
+}
+
+export function getStoredToken(): string | null {
+  return loadUser()?.token ?? null;
 }

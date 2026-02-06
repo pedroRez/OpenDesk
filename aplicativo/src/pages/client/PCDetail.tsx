@@ -8,6 +8,7 @@ import styles from './PCDetail.module.css';
 type PCDetail = {
   id: string;
   name: string;
+  host?: { id: string; displayName?: string | null } | null;
   level: string;
   cpu: string;
   ramGb: number;
@@ -21,6 +22,15 @@ type PCDetail = {
   connectionPort?: number | null;
   connectionNotes?: string | null;
   softwareLinks: { software: { name: string } }[];
+};
+
+const formatHostName = (host?: { id?: string; displayName?: string | null } | null) => {
+  if (host?.displayName) return host.displayName;
+  if (host?.id) {
+    const suffix = host.id.replace(/-/g, '').slice(0, 4).toUpperCase();
+    return `Host #${suffix}`;
+  }
+  return 'Host';
 };
 
 export default function PCDetail() {
@@ -53,6 +63,7 @@ export default function PCDetail() {
       <Link to="/client/marketplace">Voltar</Link>
       <h1>{pc.name}</h1>
       <p>Status: {pc.status}</p>
+      <p>Host: {formatHostName(pc.host)}</p>
       <div className={styles.specs}>
         <div>
           <strong>CPU:</strong> {pc.cpu}

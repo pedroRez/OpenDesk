@@ -4,6 +4,7 @@ import { PCStatus, QueueEntryStatus, SessionStatus } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 import { requireUser } from '../utils/auth.js';
+import { sanitizeHost } from '../utils/hostPublic.js';
 
 const favoriteTargetSchema = z.object({
   pcId: z.string().optional(),
@@ -33,6 +34,7 @@ export async function favoriteRoutes(fastify: FastifyInstance) {
           select: {
             id: true,
             displayName: true,
+            user: { select: { username: true } },
           },
         },
       },
@@ -60,12 +62,7 @@ export async function favoriteRoutes(fastify: FastifyInstance) {
           }
         : null;
 
-      const host = favorite.host
-        ? {
-            id: favorite.host.id,
-            displayName: favorite.host.displayName,
-          }
-        : null;
+      const host = favorite.host ? sanitizeHost(favorite.host) : null;
 
       return {
         id: favorite.id,

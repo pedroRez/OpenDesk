@@ -73,7 +73,7 @@ enum WalletTxType {
 model User {
   id           String        @id @default(uuid())
   email        String        @unique
-  username     String        @unique
+  username     String?       @unique
   displayName  String?
   passwordHash String?
   authProvider AuthProvider  @default(PASSWORD)
@@ -87,6 +87,7 @@ model User {
   reservations Reservation[]
   favorites Favorite[]
   streamConnectTokens StreamConnectToken[]
+  passwordResetTokens PasswordResetToken[]
   wallet    Wallet?
   walletTxs WalletTx[]
 }
@@ -269,4 +270,23 @@ model StreamConnectToken {
 
   @@index([pcId, expiresAt])
   @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  tokenHash String @id
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt])
+}
+
+model OAuthState {
+  state        String @id
+  provider     String
+  codeVerifier String
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
 }

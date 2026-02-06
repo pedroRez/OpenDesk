@@ -75,7 +75,7 @@ export default function Settings() {
         <h3>Conta</h3>
         {user ? (
           <p>
-            Logado como <strong>{user.displayName ?? user.username}</strong> ({user.email})
+            Logado como <strong>{user.displayName ?? user.username}</strong>
           </p>
         ) : (
           <p>Nenhum usuario logado.</p>

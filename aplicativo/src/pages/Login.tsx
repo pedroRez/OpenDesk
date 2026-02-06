@@ -1,16 +1,20 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
+import { open } from '@tauri-apps/plugin-shell';
+import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 
 import { useAuth } from '../lib/auth';
+import { request } from '../lib/api';
+import { isTauriRuntime } from '../lib/hostDaemon';
 
 import styles from './Login.module.css';
 
 export default function Login() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogleOAuth } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -34,16 +38,77 @@ export default function Login() {
     }
   };
 
-  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
-    const idToken = credentialResponse.credential;
-    if (!idToken) {
-      setMessage('Falha ao obter token do Google.');
+  const handleGoogleLogin = async () => {
+    if (!isTauriRuntime()) {
+      setMessage('Login com Google disponivel apenas no app desktop.');
       return;
     }
     setGoogleLoading(true);
     setMessage('');
     try {
-      const user = await loginWithGoogle(idToken);
+      const start = await request<{
+        url: string;
+        state?: string;
+        codeVerifier: string;
+        redirectUri?: string;
+      }>('/auth/google/start');
+
+      let port = 43110;
+      if (start.redirectUri) {
+        try {
+          const parsed = new URL(start.redirectUri);
+          const parsedPort = Number(parsed.port);
+          if (parsedPort) port = parsedPort;
+        } catch {
+          // ignore
+        }
+      }
+
+      await invoke('start_oauth_listener', { port });
+
+      const callbackPromise = new Promise<{ code?: string; state?: string; error?: string }>(
+        (resolve, reject) => {
+          let unlisten: (() => void) | null = null;
+          const timeout = setTimeout(() => {
+            if (unlisten) {
+              unlisten();
+            }
+            reject(new Error('Tempo esgotado aguardando o Google.'));
+          }, 5 * 60 * 1000);
+
+          listen<{ code?: string; state?: string; error?: string }>('oauth-callback', (event) => {
+            clearTimeout(timeout);
+            if (unlisten) {
+              unlisten();
+            }
+            resolve(event.payload);
+          })
+            .then((fn) => {
+              unlisten = fn;
+            })
+            .catch((error) => {
+              clearTimeout(timeout);
+              reject(error);
+            });
+        },
+      );
+
+      await open(start.url);
+      const payload = await callbackPromise;
+
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+      if (!payload.code) {
+        throw new Error('Codigo OAuth nao recebido.');
+      }
+
+      const user = await loginWithGoogleOAuth({
+        code: payload.code,
+        codeVerifier: start.codeVerifier,
+        state: payload.state ?? start.state,
+      });
+
       setMessage(`Bem-vindo, ${user.displayName ?? user.username}!`);
       const next = searchParams.get('next') ?? '/';
       navigate(next);
@@ -83,14 +148,10 @@ export default function Login() {
         {googleEnabled && (
           <div className={styles.googleBlock}>
             <span className={styles.divider}>ou</span>
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() => setMessage('Erro ao entrar com Google')}
-              useOneTap={false}
-              theme="outline"
-              size="large"
-            />
-            {googleLoading && <span className={styles.helper}>Validando Google...</span>}
+            <button type="button" onClick={handleGoogleLogin} disabled={googleLoading}>
+              {googleLoading ? 'Abrindo Google...' : 'Entrar com Google'}
+            </button>
+            {googleLoading && <span className={styles.helper}>Aguardando o Google...</span>}
           </div>
         )}
         {message && <p>{message}</p>}

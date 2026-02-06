@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { registerHeartbeat } from '../services/hostHeartbeat.js';
 import { endSession } from '../services/sessionService.js';
 import { getReliabilityBadge, getReliabilityStats, getReliabilityStatsMap } from '../services/hostReliabilityStats.js';
+import { sanitizeHost } from '../utils/hostPublic.js';
 import { requireUser } from '../utils/auth.js';
 import { PCStatus, SessionStatus } from '@prisma/client';
 
@@ -12,7 +13,7 @@ import type { FastifyInstance } from 'fastify';
 export async function hostRoutes(fastify: FastifyInstance) {
   fastify.get('/hosts', async () => {
     const hosts = await fastify.prisma.hostProfile.findMany({
-      include: { pcs: true, user: true },
+      include: { pcs: true, user: { select: { username: true } } },
     });
 
     const reliabilityMap = await getReliabilityStatsMap(
@@ -32,8 +33,9 @@ export async function hostRoutes(fastify: FastifyInstance) {
         };
       const badge = reliability?.badge ?? getReliabilityBadge(stats);
 
+      const safeHost = sanitizeHost(host);
       return {
-        ...host,
+        ...safeHost,
         reliabilityStats: stats,
         reliabilityBadge: badge,
       };
@@ -43,6 +45,9 @@ export async function hostRoutes(fastify: FastifyInstance) {
   fastify.get('/host/pcs', async (request, reply) => {
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
+    if (!user.username) {
+      return reply.status(400).send({ error: 'Defina um username antes de virar host' });
+    }
     if (!user.host) {
       return reply.status(403).send({ error: 'Usuario nao e host' });
     }
@@ -115,6 +120,9 @@ export async function hostRoutes(fastify: FastifyInstance) {
     schema.parse(request.body);
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
+    if (!user.username) {
+      return reply.status(400).send({ error: 'Defina um username antes de virar host' });
+    }
 
     const hostProfile = await fastify.prisma.hostProfile.upsert({
       where: { userId: user.id },

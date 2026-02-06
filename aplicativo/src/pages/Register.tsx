@@ -45,12 +45,11 @@ export default function Register() {
       <h1>Criar conta</h1>
       <form onSubmit={handleSubmit} className={styles.form}>
         <label>
-          Username publico
+          Username publico (opcional)
           <input
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             placeholder="ex: rapha_dev"
-            required
           />
         </label>
         <label>

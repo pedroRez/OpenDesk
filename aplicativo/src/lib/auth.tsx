@@ -11,13 +11,15 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   login: (params: { email: string; password: string }) => Promise<StoredUser>;
   loginWithGoogle: (idToken: string) => Promise<StoredUser>;
+  loginWithGoogleOAuth: (params: { code: string; codeVerifier: string; state?: string }) => Promise<StoredUser>;
   register: (params: {
     email: string;
     password: string;
-    username: string;
+    username?: string;
     displayName?: string;
     role?: string;
   }) => Promise<StoredUser>;
+  setUsername: (username: string) => Promise<StoredUser>;
   logout: () => void;
   refreshFromStorage: () => void;
   updateUser: (patch: Partial<StoredUser>) => void;
@@ -44,6 +46,8 @@ function normalizeUser(data: any): StoredUser {
     email,
     role: user.role ?? data?.role ?? 'CLIENT',
     hostProfileId: user.host?.id ?? user.hostProfileId ?? data?.hostProfileId ?? null,
+    token: data?.token ?? user.token ?? null,
+    needsUsername: data?.needsUsername ?? !user.username,
   };
 }
 
@@ -61,6 +65,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshFromStorage();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!user?.id) return;
+    request<any>('/auth/me')
+      .then((data) => {
+        if (!active) return;
+        const nextUser = normalizeUser(data);
+        saveUser(nextUser);
+        setUser(nextUser);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   const login = async ({ email, password }: { email: string; password: string }) => {
     setIsLoading(true);
@@ -87,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }: {
     email: string;
     password: string;
-    username: string;
+    username?: string;
     displayName?: string;
     role?: string;
   }) => {
@@ -95,7 +115,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await request<any>('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ email, password, username, displayName, role }),
+        body: JSON.stringify({
+          email,
+          password,
+          username: username?.trim() || undefined,
+          displayName,
+          role,
+        }),
       });
       const nextUser = normalizeUser(data);
       saveUser(nextUser);
@@ -112,6 +138,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await request<any>('/auth/google', {
         method: 'POST',
         body: JSON.stringify({ idToken }),
+      });
+      const nextUser = normalizeUser(data);
+      saveUser(nextUser);
+      setUser(nextUser);
+      return nextUser;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loginWithGoogleOAuth = async ({
+    code,
+    codeVerifier,
+    state,
+  }: {
+    code: string;
+    codeVerifier: string;
+    state?: string;
+  }) => {
+    setIsLoading(true);
+    try {
+      const data = await request<any>('/auth/google/finish', {
+        method: 'POST',
+        body: JSON.stringify({ code, codeVerifier, state }),
+      });
+      const nextUser = normalizeUser(data);
+      saveUser(nextUser);
+      setUser(nextUser);
+      return nextUser;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const setUsername = async (username: string) => {
+    setIsLoading(true);
+    try {
+      const data = await request<any>('/auth/set-username', {
+        method: 'POST',
+        body: JSON.stringify({ username }),
       });
       const nextUser = normalizeUser(data);
       saveUser(nextUser);
@@ -144,7 +210,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(user),
       login,
       loginWithGoogle,
+      loginWithGoogleOAuth,
       register,
+      setUsername,
       logout,
       refreshFromStorage,
       updateUser,

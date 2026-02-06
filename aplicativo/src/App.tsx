@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import styles from './App.module.css';
 import Header from './components/Header';
@@ -8,6 +8,7 @@ import RequireAuth from './components/RequireAuth';
 import { ToastProvider } from './components/Toast';
 import { AuthProvider } from './lib/auth';
 import { ModeProvider, useMode } from './lib/mode';
+import { useAuth } from './lib/auth';
 
 import ModeSelect from './pages/ModeSelect';
 import Login from './pages/Login';
@@ -22,6 +23,7 @@ import Reservations from './pages/client/Reservations';
 import Session from './pages/client/Session';
 import Connection from './pages/client/Connection';
 import HostDashboard from './pages/host/HostDashboard';
+import SetupUsername from './pages/SetupUsername';
 
 function HomeRedirect() {
   const { mode } = useMode();
@@ -46,12 +48,27 @@ function RequireMode({ mode, children }: { mode: 'CLIENT' | 'HOST'; children: Re
 }
 
 function AppRoutes() {
+  const location = useLocation();
+  const { user } = useAuth();
+
+  if (user?.needsUsername && location.pathname !== '/setup-username') {
+    return <Navigate to="/setup-username" replace />;
+  }
+
   return (
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route
+        path="/setup-username"
+        element={
+          <RequireAuth>
+            <SetupUsername />
+          </RequireAuth>
+        }
+      />
       <Route path="/docs" element={<Docs />} />
       <Route
         path="/client/marketplace"

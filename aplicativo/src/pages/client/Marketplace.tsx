@@ -123,6 +123,15 @@ const truncate = (value: string | null | undefined, max = 120) => {
   return `${trimmed.slice(0, max - 1).trim()}...`;
 };
 
+const formatHostName = (host?: { id?: string; displayName?: string | null } | null) => {
+  if (host?.displayName) return host.displayName;
+  if (host?.id) {
+    const suffix = host.id.replace(/-/g, '').slice(0, 4).toUpperCase();
+    return `Host #${suffix}`;
+  }
+  return 'Host';
+};
+
 export default function Marketplace() {
   const [pcs, setPcs] = useState<PC[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -601,7 +610,7 @@ export default function Marketplace() {
                         return (
                           <li key={favorite.id} className={styles.sideItem}>
                             <div className={styles.sideItemMain}>
-                              <span className={styles.sideItemName}>{favorite.host.displayName}</span>
+                              <span className={styles.sideItemName}>{formatHostName(favorite.host)}</span>
                             </div>
                             <div className={styles.sideItemActions}>
                               <button
@@ -729,7 +738,7 @@ export default function Marketplace() {
                     : styles.statusOffline;
               const specLine = formatCompactSpecs(pc);
               const isFavoritePc = favoritePcIds.has(pc.id);
-              const hostName = pc.host?.displayName ?? 'N/A';
+              const hostName = formatHostName(pc.host ?? null);
               const hostId = pc.host?.id ?? null;
               const isFavoriteHost = hostId ? favoriteHostIds.has(hostId) : false;
               return (
@@ -886,7 +895,7 @@ export default function Marketplace() {
             <div className={styles.detailsHeader}>
               <div>
                 <h2>{detailsPc.name}</h2>
-                <p className={styles.muted}>Host: {detailsPc.host?.displayName ?? 'N/A'}</p>
+                <p className={styles.muted}>Host: {formatHostName(detailsPc.host ?? null)}</p>
               </div>
               <button type="button" onClick={() => setDetailsPc(null)} className={styles.closeButton}>
                 Fechar

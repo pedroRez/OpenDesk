@@ -26,6 +26,14 @@
 - [ ] Tentar favoritar o mesmo PC duas vezes e confirmar que nao duplica.
 - [ ] Abrir a area **Favoritos** e ver a lista de PCs/Hosts.
 - [ ] Texto de protecao sobre jogos/softwares visivel no marketplace.
+## Fluxo Cliente - Autenticacao (Senha + Google)
+- [ ] Criar conta com **senha** (email + senha + username opcional) e entrar.
+- [ ] Fazer login com **senha** (email + senha) e validar sucesso.
+- [ ] Fazer login com **Google** via navegador e validar retorno ao app.
+- [ ] Se a conta estiver sem username, abrir automaticamente **Escolha seu username**.
+- [ ] Definir username e ver refletido no marketplace (nome do host).
+Resultado esperado: login forte, Google + senha funcionando, marketplace nao expõe email/nome real.
+
 
 ## Fluxo Cliente - Confiabilidade
 - [ ] Host novo aparece com badge **Novo** no card do PC.
