@@ -55,7 +55,7 @@ export default function ReservaPage() {
       <p>Escolha a quantidade de horas (1 a 4) para a sessão.</p>
       <form onSubmit={handleSubmit} className={styles.form}>
         {user ? (
-          <p>Reservando como {user.name} ({user.email}).</p>
+          <p>Reservando como {user.displayName ?? user.username} ({user.email}).</p>
         ) : (
           <p>
             Faca login para reservar.{' '}

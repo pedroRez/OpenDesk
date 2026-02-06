@@ -1,6 +1,7 @@
 export type StoredUser = {
   id: string;
-  name: string;
+  username: string;
+  displayName?: string | null;
   email: string;
   role: string;
   hostProfileId?: string | null;
@@ -18,11 +19,16 @@ export function loadUser(): StoredUser | null {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<StoredUser>;
+    const parsed = JSON.parse(raw) as Partial<StoredUser> & { name?: string };
     if (!parsed?.id || !parsed?.email) return null;
+    const fallbackUsername =
+      parsed.username ??
+      parsed.name ??
+      (parsed.email.includes('@') ? parsed.email.split('@')[0] : parsed.email);
     return {
       id: parsed.id,
-      name: parsed.name ?? parsed.email,
+      username: fallbackUsername ?? 'usuario',
+      displayName: parsed.displayName ?? parsed.name ?? null,
       email: parsed.email,
       role: parsed.role ?? 'CLIENT',
       hostProfileId: parsed.hostProfileId ?? null,

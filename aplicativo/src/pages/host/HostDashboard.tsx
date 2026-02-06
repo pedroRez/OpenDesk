@@ -183,7 +183,7 @@ export default function HostDashboard() {
     try {
       const data = await request<{ hostProfileId?: string; hostProfile?: { id: string } }>('/host/profile', {
         method: 'POST',
-        body: JSON.stringify({ displayName: user.name ?? 'Novo Host' }),
+        body: JSON.stringify({ displayName: user.displayName ?? user.username }),
       });
       const hostId = data.hostProfileId ?? data.hostProfile?.id ?? null;
       updateUser({ role: 'HOST', hostProfileId: hostId });

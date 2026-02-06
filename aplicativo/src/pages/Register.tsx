@@ -10,8 +10,10 @@ export default function Register() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { register } = useAuth();
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState('CLIENT');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,8 +23,14 @@ export default function Register() {
     setLoading(true);
     setMessage('');
     try {
-      const user = await register({ name, email, role });
-      setMessage(`Conta criada! Bem-vindo, ${user.name}.`);
+      const user = await register({
+        email,
+        password,
+        username,
+        displayName: displayName || undefined,
+        role,
+      });
+      setMessage(`Conta criada! Bem-vindo, ${user.displayName ?? user.username}.`);
       const next = searchParams.get('next') ?? '/';
       navigate(next);
     } catch (error) {
@@ -37,11 +45,20 @@ export default function Register() {
       <h1>Criar conta</h1>
       <form onSubmit={handleSubmit} className={styles.form}>
         <label>
-          Nome
+          Username publico
           <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="ex: rapha_dev"
             required
+          />
+        </label>
+        <label>
+          Nome exibido (opcional)
+          <input
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            placeholder="Ex.: Rafa"
           />
         </label>
         <label>
@@ -50,6 +67,16 @@ export default function Register() {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Senha
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            minLength={6}
             required
           />
         </label>

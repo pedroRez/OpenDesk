@@ -110,7 +110,7 @@ export default function HostDashboardPage() {
         '/hosts',
         {
           method: 'POST',
-          body: JSON.stringify({ displayName: user.name ?? 'Novo Host' }),
+          body: JSON.stringify({ displayName: user.displayName ?? user.username }),
         },
       );
       const hostId = data.hostProfileId ?? data.hostProfile?.id ?? null;

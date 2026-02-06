@@ -11,6 +11,7 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const { login } = useAuth();
 
@@ -18,8 +19,8 @@ export default function LoginPage() {
     event.preventDefault();
     setMessage('');
     try {
-      const user = await login({ email });
-      setMessage(`Bem-vindo, ${user.name}!`);
+      const user = await login({ email, password });
+      setMessage(`Bem-vindo, ${user.displayName ?? user.username}!`);
       const next = searchParams.get('next') ?? '/';
       router.push(next);
     } catch (error) {
@@ -40,6 +41,16 @@ export default function LoginPage() {
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+        <label>
+          Senha
+          <input
+            type="password"
+            required
+            minLength={6}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
           />
         </label>
         <button type="submit">Entrar</button>

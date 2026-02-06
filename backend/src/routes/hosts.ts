@@ -64,17 +64,17 @@ export async function hostRoutes(fastify: FastifyInstance) {
 
   fastify.post('/host/profile', async (request, reply) => {
     const schema = z.object({
-      displayName: z.string(),
+      displayName: z.string().optional(),
     });
 
-    const body = schema.parse(request.body);
+    schema.parse(request.body);
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
 
     const hostProfile = await fastify.prisma.hostProfile.upsert({
       where: { userId: user.id },
-      update: { displayName: body.displayName },
-      create: { userId: user.id, displayName: body.displayName },
+      update: { displayName: user.username },
+      create: { userId: user.id, displayName: user.username },
     });
 
     if (user.role !== 'HOST') {
@@ -109,17 +109,17 @@ export async function hostRoutes(fastify: FastifyInstance) {
 
   fastify.post('/hosts', async (request, reply) => {
     const schema = z.object({
-      displayName: z.string(),
+      displayName: z.string().optional(),
     });
 
-    const body = schema.parse(request.body);
+    schema.parse(request.body);
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
 
     const hostProfile = await fastify.prisma.hostProfile.upsert({
       where: { userId: user.id },
-      update: { displayName: body.displayName },
-      create: { userId: user.id, displayName: body.displayName },
+      update: { displayName: user.username },
+      create: { userId: user.id, displayName: user.username },
     });
 
     if (user.role !== 'HOST') {

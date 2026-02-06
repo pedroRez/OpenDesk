@@ -16,10 +16,15 @@ describe.skipIf(!hasDatabase)('session expiration', () => {
   beforeAll(async () => {
     await prisma.$connect();
 
+    const timestamp = Date.now();
+
     const client = await prisma.user.create({
       data: {
-        name: 'Cliente Expiração',
-        email: `cliente-expira-${Date.now()}@test.dev`,
+        email: `cliente-expira-${timestamp}@test.dev`,
+        username: `cliente-expira-${timestamp}`,
+        displayName: 'Cliente Expiracao',
+        passwordHash: 'hash',
+        authProvider: 'PASSWORD',
         role: UserRole.CLIENT,
         wallet: { create: { balance: 100 } },
       },
@@ -28,10 +33,13 @@ describe.skipIf(!hasDatabase)('session expiration', () => {
 
     const hostUser = await prisma.user.create({
       data: {
-        name: 'Host Expiração',
-        email: `host-expira-${Date.now()}@test.dev`,
+        email: `host-expira-${timestamp}@test.dev`,
+        username: `host-expira-${timestamp}`,
+        displayName: 'Host Expiracao',
+        passwordHash: 'hash',
+        authProvider: 'PASSWORD',
         role: UserRole.HOST,
-        host: { create: { displayName: 'Host Expiração' } },
+        host: { create: { displayName: `host-expira-${timestamp}` } },
       },
       include: { host: true },
     });
@@ -41,7 +49,7 @@ describe.skipIf(!hasDatabase)('session expiration', () => {
     const pc = await prisma.pC.create({
       data: {
         hostId: hostId,
-        name: 'PC Expiração',
+        name: 'PC Expiracao',
         level: PCLevel.B,
         cpu: 'i5',
         ramGb: 16,

@@ -14,10 +14,15 @@ describe.skipIf(!hasDatabase)('session lock', () => {
   beforeAll(async () => {
     await prisma.$connect();
 
+    const timestamp = Date.now();
+
     const client = await prisma.user.create({
       data: {
-        name: 'Cliente Teste',
-        email: `cliente-${Date.now()}@test.dev`,
+        email: `cliente-${timestamp}@test.dev`,
+        username: `cliente-${timestamp}`,
+        displayName: 'Cliente Teste',
+        passwordHash: 'hash',
+        authProvider: 'PASSWORD',
         role: UserRole.CLIENT,
         wallet: { create: { balance: 50 } },
       },
@@ -26,10 +31,13 @@ describe.skipIf(!hasDatabase)('session lock', () => {
 
     const hostUser = await prisma.user.create({
       data: {
-        name: 'Host Teste',
-        email: `host-${Date.now()}@test.dev`,
+        email: `host-${timestamp}@test.dev`,
+        username: `host-${timestamp}`,
+        displayName: 'Host Teste',
+        passwordHash: 'hash',
+        authProvider: 'PASSWORD',
         role: UserRole.HOST,
-        host: { create: { displayName: 'Host Teste' } },
+        host: { create: { displayName: `host-${timestamp}` } },
       },
       include: { host: true },
     });

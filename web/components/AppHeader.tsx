@@ -34,7 +34,7 @@ export default function AppHeader() {
         ) : isAuthenticated && user ? (
           <>
             <span>
-              Ola, {user.name || user.email}
+              Ola, {user.displayName ?? user.username ?? user.email}
             </span>
             <button type="button" onClick={handleLogout} className={styles.logout}>
               Sair

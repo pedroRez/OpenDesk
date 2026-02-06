@@ -1,17 +1,25 @@
 import { PrismaClient, UserRole, PCLevel, PCStatus } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
+  const passwordHash = await bcrypt.hash('123456', 10);
   const clientUser = await prisma.user.upsert({
     where: { email: 'cliente@opendesk.dev' },
     update: {
-      name: 'Cliente Demo',
+      username: 'cliente_demo',
+      displayName: 'Cliente Demo',
+      passwordHash,
+      authProvider: 'PASSWORD',
       role: UserRole.CLIENT,
     },
     create: {
-      name: 'Cliente Demo',
+      username: 'cliente_demo',
+      displayName: 'Cliente Demo',
       email: 'cliente@opendesk.dev',
+      passwordHash,
+      authProvider: 'PASSWORD',
       role: UserRole.CLIENT,
     },
   });
@@ -25,12 +33,18 @@ async function main() {
   const hostUser = await prisma.user.upsert({
     where: { email: 'host@opendesk.dev' },
     update: {
-      name: 'Host Demo',
+      username: 'host_demo',
+      displayName: 'Host Demo',
+      passwordHash,
+      authProvider: 'PASSWORD',
       role: UserRole.HOST,
     },
     create: {
-      name: 'Host Demo',
+      username: 'host_demo',
+      displayName: 'Host Demo',
       email: 'host@opendesk.dev',
+      passwordHash,
+      authProvider: 'PASSWORD',
       role: UserRole.HOST,
     },
   });
@@ -44,12 +58,12 @@ async function main() {
   const hostProfile = await prisma.hostProfile.upsert({
     where: { userId: hostUser.id },
     update: {
-      displayName: 'Host Gamer',
+      displayName: hostUser.username,
       reliabilityScore: 0.95,
     },
     create: {
       userId: hostUser.id,
-      displayName: 'Host Gamer',
+      displayName: hostUser.username,
       reliabilityScore: 0.95,
     },
   });

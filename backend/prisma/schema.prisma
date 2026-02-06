@@ -13,6 +13,11 @@ enum UserRole {
   ADMIN
 }
 
+enum AuthProvider {
+  PASSWORD
+  GOOGLE
+}
+
 enum PCLevel {
   A
   B
@@ -66,11 +71,16 @@ enum WalletTxType {
 }
 
 model User {
-  id        String        @id @default(uuid())
-  name      String
-  email     String        @unique
-  role      UserRole
-  createdAt DateTime      @default(now())
+  id           String        @id @default(uuid())
+  email        String        @unique
+  username     String        @unique
+  displayName  String?
+  passwordHash String?
+  authProvider AuthProvider  @default(PASSWORD)
+  googleSub    String?       @unique
+  role         UserRole
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   host      HostProfile?
   sessions  Session[]     @relation("ClientSessions")
   queueEntries QueueEntry[]

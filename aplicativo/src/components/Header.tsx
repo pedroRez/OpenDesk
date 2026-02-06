@@ -86,7 +86,7 @@ export default function Header() {
         {user ? (
           <>
             <div className={styles.userMeta}>
-              <span className={styles.userName}>Ola, {user.name}</span>
+              <span className={styles.userName}>Ola, {user.displayName ?? user.username}</span>
               <span className={styles.userEmail}>{user.email}</span>
             </div>
             <button type="button" onClick={handleLogout} className={styles.ghostButton}>
