@@ -24,6 +24,38 @@ fn validate_exe_path(path: String) -> bool {
 }
 
 #[tauri::command]
+fn is_process_running(process_name: String) -> Result<bool, String> {
+  if !cfg!(windows) {
+    return Ok(false);
+  }
+  let name = process_name.trim();
+  if name.is_empty() {
+    return Ok(false);
+  }
+  let filter = format!("IMAGENAME eq {}", name);
+  let output = std::process::Command::new("tasklist")
+    .args(["/FI", &filter])
+    .output()
+    .map_err(|error| error.to_string())?;
+
+  let stdout = String::from_utf8_lossy(&output.stdout).to_lowercase();
+  Ok(stdout.contains(&name.to_lowercase()))
+}
+
+#[tauri::command]
+fn launch_exe(path: String, args: Vec<String>) -> Result<(), String> {
+  let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+  if trimmed.is_empty() {
+    return Err("path vazio".to_string());
+  }
+  std::process::Command::new(trimmed)
+    .args(args)
+    .spawn()
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn detect_sunshine_path() -> Option<String> {
   detect_path("sunshine", "Sunshine", "sunshine.exe")
 }
@@ -506,11 +538,13 @@ fn main() {
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
+      validate_exe_path,
+      is_process_running,
+      launch_exe,
       get_local_pc_id,
       detect_local_ip,
       get_hardware_profile,
       cancel_hardware_profile,
-      validate_exe_path,
       detect_sunshine_path,
       detect_moonlight_path,
       start_sunshine,

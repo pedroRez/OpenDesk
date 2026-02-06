@@ -17,7 +17,7 @@ import {
 } from '../../lib/hostState';
 import { cancelHardwareProfile, getHardwareProfile, getLocalMachineId, type HardwareProfile } from '../../lib/hardwareProfile';
 import { DEFAULT_CONNECT_HINT, detectHostIp, resolveConnectAddress } from '../../lib/networkAddress';
-import { detectSunshinePath, ensureSunshineRunning } from '../../lib/sunshineController';
+import { detectSunshinePath, ensureSunshineRunning, isSunshineRunning } from '../../lib/sunshineController';
 import { getSunshinePath, setSunshinePath } from '../../lib/sunshineSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -111,12 +111,13 @@ export default function HostDashboard() {
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [onlineModalPc, setOnlineModalPc] = useState<PC | null>(null);
   const [onlineStep, setOnlineStep] = useState<
-    'idle' | 'checking' | 'needs_sunshine' | 'needs_connection' | 'publishing' | 'activating' | 'done' | 'error'
+    'idle' | 'checking' | 'starting' | 'needs_sunshine' | 'needs_connection' | 'publishing' | 'activating' | 'done' | 'error'
   >('idle');
   const [onlineStatus, setOnlineStatus] = useState('');
   const [onlineError, setOnlineError] = useState('');
   const [onlineConnection, setOnlineConnection] = useState({ host: '', port: 47990 });
   const [onlineBusy, setOnlineBusy] = useState(false);
+  const [sunshineRunning, setSunshineRunning] = useState<boolean | null>(null);
   const manualEnabled = false;
 
   const hostProfileId = user?.hostProfileId ?? null;
@@ -175,6 +176,13 @@ export default function HostDashboard() {
       }, 200);
     }
   }, [pcs, localMachineId]);
+
+  useEffect(() => {
+    if (!hostProfileId) return;
+    isSunshineRunning()
+      .then((running) => setSunshineRunning(running))
+      .catch(() => setSunshineRunning(false));
+  }, [hostProfileId]);
 
   useEffect(() => {
     if (!autoRequestId) return;
@@ -527,6 +535,7 @@ export default function HostDashboard() {
         setSunshinePath(normalized);
         console.log('[PATH] selected sunshinePath=', normalized);
         setSunshineHelpStatus('Sunshine selecionado.');
+        setShowSunshineHelp(false);
       }
     } catch (error) {
       console.warn('[PATH] sunshine picker fail', error);
@@ -541,6 +550,7 @@ export default function HostDashboard() {
       if (exists) {
         console.log('[PATH] verify sunshine ok', { path: current });
         setSunshineHelpStatus('Detectado OK');
+        setShowSunshineHelp(false);
         return;
       }
       console.log('[PATH] verify sunshine fail', { path: current });
@@ -550,9 +560,11 @@ export default function HostDashboard() {
     if (fallback) {
       console.log('[PATH] autodetect sunshine ok', { path: fallback });
       setSunshineHelpStatus('Encontrado automaticamente');
+      setShowSunshineHelp(false);
     } else {
       console.log('[PATH] autodetect sunshine fail');
       setSunshineHelpStatus('Nao encontrado. Use "Procurar...".');
+      setShowSunshineHelp(true);
     }
   };
 
@@ -561,10 +573,29 @@ export default function HostDashboard() {
     if (detected) {
       console.log('[PATH] autodetect sunshine ok', { path: detected });
       setSunshineHelpStatus('Encontrado automaticamente');
+      setShowSunshineHelp(false);
     } else {
       console.log('[PATH] autodetect sunshine fail');
       setSunshineHelpStatus('Nao encontramos o Sunshine nas pastas padrao.');
+      setShowSunshineHelp(true);
     }
+  };
+
+  const handleSunshineEnsure = async () => {
+    setSunshineHelpStatus('');
+    const result = await ensureSunshineRunning();
+    if (result.ok) {
+      setSunshineRunning(true);
+      setShowSunshineHelp(false);
+      return;
+    }
+    setSunshineRunning(false);
+    if (result.reason === 'path_missing') {
+      setSunshineHelpStatus('Sunshine nao detectado.');
+      setShowSunshineHelp(true);
+      return;
+    }
+    setSunshineHelpStatus('Falha ao iniciar o Sunshine.');
   };
 
   const publishNetwork = async (pcId: string) => {
@@ -572,11 +603,17 @@ export default function HostDashboard() {
     setIsPublishingNetwork(true);
     setOperationMessage('Publicando conexao...');
     try {
-      const running = await ensureSunshineRunning();
-      if (!running) {
+      const result = await ensureSunshineRunning();
+      if (!result.ok) {
         console.error('[NET][HOST] sunshine not running; abort publish', { pcId });
+        setSunshineRunning(false);
+        if (result.reason === 'path_missing') {
+          setShowSunshineHelp(true);
+        }
         return;
       }
+      setSunshineRunning(true);
+      setShowSunshineHelp(false);
       let connectAddress: string;
       try {
         connectAddress = await resolveConnectAddress();
@@ -655,20 +692,28 @@ export default function HostDashboard() {
     setOnlineStatus('Verificando Sunshine...');
     setOnlineStep('checking');
 
-    const detected = await detectSunshinePath();
+    const sunshineResult = await ensureSunshineRunning();
     if (onlineAbortRef.current.cancelled) return;
-    if (!detected) {
-      setOnlineStep('needs_sunshine');
-      setOnlineStatus('Sunshine nao detectado.');
+    if (!sunshineResult.ok) {
+      setSunshineRunning(false);
+      if (sunshineResult.reason === 'path_missing') {
+        setOnlineStep('needs_sunshine');
+        setOnlineStatus('Sunshine nao detectado.');
+        setSunshineHelpStatus('Sunshine nao detectado.');
+        setShowSunshineHelp(true);
+        return;
+      }
+      setOnlineStep('error');
+      setOnlineError('Falha ao iniciar o Sunshine.');
       return;
     }
-    const running = await ensureSunshineRunning();
-    if (onlineAbortRef.current.cancelled) return;
-    if (!running) {
-      setOnlineStep('needs_sunshine');
-      setOnlineStatus('Sunshine nao detectado.');
-      return;
+    if (sunshineResult.started) {
+      setOnlineStep('starting');
+      setOnlineStatus('Iniciando Sunshine...');
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
+    setSunshineRunning(true);
+    setShowSunshineHelp(false);
 
     if (!host) {
       setOnlineStep('needs_connection');
@@ -697,7 +742,7 @@ export default function HostDashboard() {
       setPcs((prev) => prev.map((item) => (item.id === pc.id ? data.pc : item)));
       console.log('[PC] online', { pcId: pc.id });
       setOnlineStep('done');
-      setOnlineStatus('ONLINE ✅');
+      setOnlineStatus('ONLINE OK');
       setTimeout(() => closeOnlineModal(), 900);
     } catch (error) {
       setOnlineStep('error');
@@ -795,13 +840,15 @@ export default function HostDashboard() {
   };
 
   const onlineStepIndex =
-    onlineStep === 'publishing'
+    onlineStep === 'starting'
       ? 1
-      : onlineStep === 'activating'
+      : onlineStep === 'publishing'
         ? 2
-        : onlineStep === 'done'
+        : onlineStep === 'activating'
           ? 3
-          : 0;
+          : onlineStep === 'done'
+            ? 4
+            : 0;
 
   return (
     <section className={styles.container}>
@@ -846,6 +893,37 @@ export default function HostDashboard() {
                 <span>{isFormOpen ? 'Fechar cadastro' : 'Cadastrar PC'}</span>
                 <span className={styles.toggleIcon}>{isFormOpen ? 'v' : '>'}</span>
               </button>
+            )}
+          </div>
+          <div className={styles.sunshinePanel}>
+            <div className={styles.sunshineInfo}>
+              <span
+                className={`${styles.sunshineBadge} ${
+                  sunshineRunning === null
+                    ? styles.sunshinePending
+                    : sunshineRunning
+                      ? styles.sunshineOn
+                      : styles.sunshineOff
+                }`}
+              >
+                {sunshineRunning === null
+                  ? 'Sunshine: verificando...'
+                  : sunshineRunning
+                    ? 'Sunshine: Rodando'
+                    : 'Sunshine: Parado'}
+              </span>
+              {sunshineRunning === false && (
+                <span className={styles.helperText}>
+                  Sunshine precisa estar rodando para ficar ONLINE.
+                </span>
+              )}
+            </div>
+            {sunshineRunning !== true && (
+              <div className={styles.sunshineActions}>
+                <button type="button" onClick={handleSunshineEnsure} className={styles.ghost}>
+                  Tentar iniciar novamente
+                </button>
+              </div>
             )}
           </div>
 
@@ -1195,7 +1273,7 @@ export default function HostDashboard() {
                   <ul className={styles.stepList}>
                     <li
                       className={`${styles.stepItem} ${
-                        onlineStepIndex > 0 || onlineStep === 'publishing' || onlineStep === 'activating' || onlineStep === 'done'
+                        onlineStepIndex > 0 || onlineStep === 'starting' || onlineStep === 'publishing' || onlineStep === 'activating' || onlineStep === 'done'
                           ? styles.stepDone
                           : styles.stepActive
                       }`}
@@ -1205,9 +1283,21 @@ export default function HostDashboard() {
                     </li>
                     <li
                       className={`${styles.stepItem} ${
-                        onlineStepIndex > 1 || onlineStep === 'activating' || onlineStep === 'done'
+                        onlineStepIndex > 1 || onlineStep === 'publishing' || onlineStep === 'activating' || onlineStep === 'done'
                           ? styles.stepDone
-                          : onlineStepIndex === 1
+                          : onlineStep === 'starting'
+                            ? styles.stepActive
+                            : styles.stepPending
+                      }`}
+                    >
+                      <span className={styles.stepDot} />
+                      Iniciando Sunshine
+                    </li>
+                    <li
+                      className={`${styles.stepItem} ${
+                        onlineStepIndex > 2 || onlineStep === 'activating' || onlineStep === 'done'
+                          ? styles.stepDone
+                          : onlineStep === 'publishing'
                             ? styles.stepActive
                             : styles.stepPending
                       }`}
@@ -1217,9 +1307,9 @@ export default function HostDashboard() {
                     </li>
                     <li
                       className={`${styles.stepItem} ${
-                        onlineStepIndex > 2 || onlineStep === 'done'
+                        onlineStepIndex > 3 || onlineStep === 'done'
                           ? styles.stepDone
-                          : onlineStepIndex === 2
+                          : onlineStep === 'activating'
                             ? styles.stepActive
                             : styles.stepPending
                       }`}
@@ -1293,7 +1383,7 @@ export default function HostDashboard() {
                   {onlineStep === 'done' && (
                     <div className={styles.modalRow}>
                       <span className={styles.spinner} />
-                      <span>ONLINE ✅</span>
+                      <span>ONLINE OK</span>
                     </div>
                   )}
 

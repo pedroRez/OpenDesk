@@ -48,8 +48,10 @@ Resultado esperado: login forte, marketplace nao expoe email/nome real, username
 - [ ] Ver mensagem de sucesso/erro no modal.
 
 ## Streaming - Robustez (Already Running)
-- [ ] Cenario A: Sunshine ja aberto -> colocar PC ONLINE -> nao duplicar processo e logar "[STREAM][HOST] sunshine already running".
-- [ ] Cenario B: Moonlight ja aberto -> clicar "Conectar agora" -> nao quebrar e logar "[STREAM][CLIENT] moonlight already running, attempting reuse".
+- [ ] Sunshine ja aberto -> colocar PC ONLINE -> nao duplicar processo e logar "[SUNSHINE] already running".
+- [ ] Sunshine fechado -> clicar "Ficar ONLINE" -> iniciar Sunshine e ficar ONLINE.
+- [ ] Path errado -> fluxo para com mensagem e botao "Procurar...".
+- [ ] Moonlight ja aberto -> clicar "Conectar agora" -> nao quebrar e logar "[STREAM][CLIENT] moonlight already running, attempting reuse".
 
 ## Streaming - Paths e UX (DEV)
 - [ ] HOST com Sunshine instalado e sem Moonlight -> deve funcionar (nao exigir Moonlight).

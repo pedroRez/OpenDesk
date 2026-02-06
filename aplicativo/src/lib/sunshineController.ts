@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import { Command } from '@tauri-apps/plugin-shell';
 
 import { getSunshinePath, setSunshinePath } from './sunshineSettings';
 import { isTauriRuntime } from './hostDaemon';
@@ -20,29 +19,25 @@ const FALLBACK_PATHS = [
 type SunshineProcess = { kill: () => Promise<void> };
 
 let sunshineProcess: SunshineProcess | null = null;
-let sunshineCheckInFlight: Promise<boolean> | null = null;
+let sunshineCheckInFlight: Promise<SunshineEnsureResult> | null = null;
 
-async function isSunshineRunning(): Promise<boolean> {
+export async function isSunshineRunning(): Promise<boolean> {
   if (!isTauriRuntime()) return false;
   try {
-    const command = Command.create('cmd', ['/c', 'tasklist', '/FI', 'IMAGENAME eq sunshine.exe']);
-    const output = await command.execute();
-    const stdout = (output.stdout ?? '').toString().toLowerCase();
-    return stdout.includes('sunshine.exe');
+    const result = await invoke<boolean>('is_process_running', { processName: 'sunshine.exe' });
+    return Boolean(result);
   } catch (error) {
-    console.warn('[STREAM][HOST] sunshine check fail', { error });
+    console.warn('[SUNSHINE] check fail', { error });
     return false;
   }
 }
 
 async function tryStart(path: string): Promise<SunshineProcess | null> {
   try {
-    console.log('[LAUNCH] starting sunshine', { path });
-    await invoke('start_sunshine', { path });
-    console.log('[LAUNCH] sunshine ok', { path });
+    await invoke('launch_exe', { path, args: [] });
     return { kill: async () => {} };
   } catch (error) {
-    console.warn('[LAUNCH] sunshine fail', { path, error });
+    console.warn('[SUNSHINE] launch fail', { error });
     return null;
   }
 }
@@ -73,41 +68,63 @@ async function resolveSunshinePaths(): Promise<string[]> {
   return Array.from(new Set(unique));
 }
 
-export async function ensureSunshineRunning(): Promise<boolean> {
+export type SunshineEnsureResult = {
+  ok: boolean;
+  started: boolean;
+  reason?: 'path_missing' | 'launch_failed';
+};
+
+export async function ensureSunshineRunning(): Promise<SunshineEnsureResult> {
   if (!isTauriRuntime()) {
-    console.warn('[STREAM][HOST] sunshine skip (not tauri runtime)');
-    return false;
-  }
-  if (sunshineProcess) {
-    console.log('[STREAM][HOST] sunshine already running');
-    return true;
+    console.warn('[SUNSHINE] skip (not tauri runtime)');
+    return { ok: false, started: false, reason: 'launch_failed' };
   }
   if (sunshineCheckInFlight) {
     return sunshineCheckInFlight;
   }
 
   sunshineCheckInFlight = (async () => {
+    if (sunshineProcess) {
+      const stillRunning = await isSunshineRunning();
+      if (stillRunning) {
+        console.log('[SUNSHINE] already running');
+        return { ok: true, started: false };
+      }
+      sunshineProcess = null;
+    }
     const running = await isSunshineRunning();
     if (running) {
-      console.log('[STREAM][HOST] sunshine already running');
-      return true;
+      console.log('[SUNSHINE] already running');
+      sunshineProcess = { kill: async () => {} };
+      return { ok: true, started: false };
     }
 
-    console.log('[STREAM][HOST] sunshine start');
     const paths = await resolveSunshinePaths();
+    let attempted = false;
     for (const path of paths) {
       const exists = await pathExists(path);
       if (!exists) continue;
+      attempted = true;
+      console.log('[SUNSHINE] detected path=', path);
       const process = await tryStart(path);
       if (process) {
-        sunshineProcess = process;
-        console.log('[STREAM][HOST] sunshine ok', { path });
-        return true;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        const nowRunning = await isSunshineRunning();
+        if (nowRunning) {
+          sunshineProcess = process;
+          console.log('[SUNSHINE] launch ok');
+          return { ok: true, started: true };
+        }
+        console.warn('[SUNSHINE] launch fail', { error: 'process not detected' });
+        return { ok: false, started: false, reason: 'launch_failed' };
       }
     }
-
-    console.error('[STREAM][HOST] sunshine fail (no valid path)');
-    return false;
+    if (attempted) {
+      console.warn('[SUNSHINE] launch fail', { error: 'launch failed' });
+      return { ok: false, started: false, reason: 'launch_failed' };
+    }
+    console.warn('[SUNSHINE] launch fail', { error: 'path missing' });
+    return { ok: false, started: false, reason: 'path_missing' };
   })();
 
   try {
@@ -124,10 +141,10 @@ export async function detectSunshinePath(): Promise<string | null> {
     const current = getSunshinePath();
     if (current !== detected) {
       setSunshinePath(detected);
-      console.log('[PATH] autodetected sunshinePath=', detected);
+      console.log('[SUNSHINE] detected path=', detected);
     }
   } else {
-    console.log('[PATH] autodetect sunshinePath fail');
+    console.log('[SUNSHINE] detected path fail');
   }
   return detected;
 }
