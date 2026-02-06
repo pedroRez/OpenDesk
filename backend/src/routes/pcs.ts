@@ -156,6 +156,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
     if (!user.host) {
       return reply.status(403).send({ error: 'Usuario nao e host' });
     }
+    fastify.log.info({ userId: user.id, hostId: user.host.id }, '[PC_CREATE] start');
 
     const pc = await fastify.prisma.pC.findUnique({ where: { id: params.pcId } });
     if (!pc) {
@@ -329,8 +330,9 @@ export async function pcRoutes(fastify: FastifyInstance) {
       fastify.log.info({ pcId: created.id }, '[PC_CREATE] created');
       return reply.status(201).send(created);
     } catch (error) {
-      fastify.log.error({ error }, '[PC_CREATE] fail');
-      return reply.status(500).send({ error: 'Falha ao cadastrar PC.' });
+      const detail = error instanceof Error ? error.message : String(error ?? '');
+      fastify.log.error({ error: detail }, '[PC_CREATE] fail');
+      return reply.status(500).send({ error: 'Falha ao cadastrar PC.', detail });
     }
   });
 
