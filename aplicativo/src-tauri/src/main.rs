@@ -157,6 +157,7 @@ struct CommandOutput {
 }
 
 #[derive(Serialize, Clone)]
+#[allow(non_snake_case)]
 struct HardwareProfile {
   cpuName: String,
   ramGb: u64,
@@ -167,6 +168,7 @@ struct HardwareProfile {
 }
 
 #[derive(Serialize, Clone)]
+#[allow(non_snake_case)]
 struct HardwareProgress {
   requestId: String,
   status: String,
@@ -280,7 +282,7 @@ fn detect_storage_summary() -> String {
 fn extract_ipv4s(text: &str) -> Vec<String> {
   let mut ips: Vec<String> = Vec::new();
   let mut buffer = String::new();
-  let mut push_candidate = |candidate: &str, ips: &mut Vec<String>| {
+  let push_candidate = |candidate: &str, ips: &mut Vec<String>| {
     let parts: Vec<&str> = candidate.split('.').collect();
     if parts.len() != 4 {
       return;
@@ -441,8 +443,15 @@ fn get_hardware_profile(app: tauri::AppHandle, request_id: String) -> Result<Har
     return Err("cancelled".to_string());
   }
   system.refresh_memory();
-  let total_kb = system.total_memory();
-  let ram_gb = ((total_kb as f64 / 1024.0 / 1024.0).round() as u64).max(1);
+  let total_mem = system.total_memory();
+  let ram_gb = if total_mem > 1_000_000_000 {
+    // sysinfo >= 0.30 returns bytes
+    (total_mem as f64 / 1024.0 / 1024.0 / 1024.0).round() as u64
+  } else {
+    // older behavior: KiB
+    (total_mem as f64 / 1024.0 / 1024.0).round() as u64
+  };
+  let ram_gb = ram_gb.max(1);
 
   emit_progress(&app, &request_id, "Detectando GPU...");
   if is_cancelled(&request_id) {
