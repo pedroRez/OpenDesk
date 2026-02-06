@@ -317,6 +317,23 @@ select {
   background: rgba(255, 255, 255, 0.8);
 }
 
+.errorBox {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(184, 29, 29, 0.4);
+  background: rgba(184, 29, 29, 0.08);
+  display: grid;
+  gap: 8px;
+}
+
+.errorDetails {
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
 .categoryGroup {
   display: grid;
   gap: 8px;

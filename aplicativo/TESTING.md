@@ -82,6 +82,7 @@ Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras
 - [ ] Clicar “Cadastrar este PC” -> modal de deteccao aparece com loading.
 - [ ] Cancelar -> modal fecha e nada e criado no backend.
 - [ ] Finalizar deteccao -> preview com CPU/RAM/GPU/Storage aparece.
+- [ ] Confirmar cadastro -> cria no backend e mostra o PC no painel.
 - [ ] Host cadastra 2 PCs (rodando o app em cada maquina) -> aparecem como PCs separados.
 - [ ] Tentar criar PC duplicado -> bloqueado corretamente.
 

@@ -97,13 +97,16 @@ export default function HostDashboard() {
   const [localMachineId, setLocalMachineIdState] = useState<string | null>(getStoredMachineId());
   const [localPcRecord, setLocalPcRecord] = useState<PC | null>(null);
   const [autoModalOpen, setAutoModalOpen] = useState(false);
-  const [autoStep, setAutoStep] = useState<'idle' | 'detecting' | 'review'>('idle');
+  const [autoStep, setAutoStep] = useState<'idle' | 'detecting' | 'review' | 'creating'>('idle');
   const [autoStatus, setAutoStatus] = useState('');
   const [autoRequestId, setAutoRequestId] = useState<string | null>(null);
   const [hardwareProfile, setHardwareProfile] = useState<HardwareProfile | null>(null);
   const [autoForm, setAutoForm] = useState<AutoForm>({
     nickname: '',
   });
+  const [autoError, setAutoError] = useState('');
+  const [autoErrorDetails, setAutoErrorDetails] = useState('');
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const manualEnabled = false;
 
   const hostProfileId = user?.hostProfileId ?? null;
@@ -357,6 +360,9 @@ export default function HostDashboard() {
     setAutoStatus('');
     setAutoRequestId(null);
     setHardwareProfile(null);
+    setAutoError('');
+    setAutoErrorDetails('');
+    setShowErrorDetails(false);
   };
 
   const handleAutoDetect = async () => {
@@ -391,6 +397,9 @@ export default function HostDashboard() {
       setAutoForm({
         nickname: '',
       });
+      setAutoError('');
+      setAutoErrorDetails('');
+      setShowErrorDetails(false);
       setAutoStep('review');
       setAutoStatus('');
     } catch (error) {
@@ -415,6 +424,60 @@ export default function HostDashboard() {
     }
     console.log('[HW] canceled');
     resetAutoFlow();
+  };
+
+  const handleConfirmAuto = async () => {
+    if (!hardwareProfile || !localMachineId) return;
+    if (autoStep === 'creating') return;
+    setAutoStep('creating');
+    setAutoError('');
+    setAutoErrorDetails('');
+    setShowErrorDetails(false);
+    console.log('[PC_CREATE] start', { localPcId: localMachineId });
+    try {
+      const payload = {
+        localPcId: localMachineId,
+        nickname: autoForm.nickname.trim() || undefined,
+        hardwareProfile,
+      };
+      const created = await request<PC>('/pcs', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      console.log('[PC_CREATE] success', { pcId: created.id });
+      setPcs((prev) => {
+        const existingIndex = prev.findIndex((pc) => pc.id === created.id);
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = created;
+          return next;
+        }
+        return [created, ...prev];
+      });
+      setLocalPcId(created.id);
+      setPrimaryPcId(created.id);
+      setLocalPcRecord(created);
+      toast.show(
+        pcs.some((pc) => pc.id === created.id)
+          ? 'PC ja estava cadastrado.'
+          : 'PC cadastrado com sucesso!',
+        'success',
+      );
+      resetAutoFlow();
+      setTimeout(() => {
+        const el = document.getElementById(`pc-card-${created.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      console.warn('[PC_CREATE] fail', { error: message });
+      setAutoError('Nao foi possivel cadastrar este PC. Tente novamente.');
+      setAutoErrorDetails(message);
+      toast.show('Nao foi possivel cadastrar este PC. Tente novamente.', 'error');
+      setAutoStep('review');
+    }
   };
 
   const handleFinishPreview = () => {
@@ -958,13 +1021,39 @@ export default function HostDashboard() {
                         placeholder="Ex.: PC Sala"
                       />
                     </label>
+                    {autoError && (
+                      <div className={styles.errorBox}>
+                        <p>{autoError}</p>
+                        {import.meta.env.DEV && autoErrorDetails && (
+                          <button
+                            type="button"
+                            className={styles.ghost}
+                            onClick={() => setShowErrorDetails((prev) => !prev)}
+                          >
+                            {showErrorDetails ? 'Ocultar detalhes' : 'Ver detalhes'}
+                          </button>
+                        )}
+                        {showErrorDetails && autoErrorDetails && (
+                          <pre className={styles.errorDetails}>{autoErrorDetails}</pre>
+                        )}
+                      </div>
+                    )}
                     <div className={styles.modalActions}>
-                      <button type="button" onClick={handleFinishPreview}>
-                        Fechar
+                      <button type="button" onClick={handleConfirmAuto} disabled={autoStep === 'creating'}>
+                        Confirmar cadastro
                       </button>
-                      <button type="button" onClick={handleCancelAuto} className={styles.ghost}>
+                      <button type="button" onClick={handleFinishPreview} className={styles.ghost}>
                         Cancelar
                       </button>
+                    </div>
+                  </div>
+                )}
+                {autoStep === 'creating' && (
+                  <div className={styles.modalBody}>
+                    <h3>Criando PC...</h3>
+                    <div className={styles.modalRow}>
+                      <span className={styles.spinner} />
+                      <span>Finalizando cadastro...</span>
                     </div>
                   </div>
                 )}

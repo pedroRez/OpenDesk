@@ -221,12 +221,16 @@ export async function pcRoutes(fastify: FastifyInstance) {
     }
 
     if (body.localPcId) {
+      fastify.log.info(
+        { hostId: user.host.id, localPcId: body.localPcId },
+        '[PC_CREATE] request',
+      );
       const existingLocal = await fastify.prisma.pC.findFirst({
         where: { hostId: user.host.id, localPcId: body.localPcId },
-        select: { id: true },
       });
       if (existingLocal) {
-        return reply.status(409).send({ error: 'PC ja cadastrado neste host', pcId: existingLocal.id });
+        fastify.log.info({ pcId: existingLocal.id }, '[PC_CREATE] exists returning existing');
+        return reply.status(200).send(existingLocal);
       }
     }
 
@@ -269,7 +273,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
         ram: `${resolvedRam} GB`,
       } satisfies z.infer<typeof specSummarySchema>);
 
-    return fastify.prisma.pC.create({
+    const created = await fastify.prisma.pC.create({
       data: {
         ...payload,
         name: resolvedName,
@@ -289,6 +293,8 @@ export async function pcRoutes(fastify: FastifyInstance) {
         localPcId: localPcId ?? null,
       },
     });
+    fastify.log.info({ pcId: created.id }, '[PC_CREATE] created');
+    return reply.status(201).send(created);
   });
 
   fastify.put('/pcs/:id', async (request, reply) => {
