@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
+use tauri::Emitter;
 use sysinfo::System;
 
 #[tauri::command]
@@ -120,7 +121,7 @@ struct HardwareProfile {
   screenResolution: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct HardwareProgress {
   requestId: String,
   status: String,

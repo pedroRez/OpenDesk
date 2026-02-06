@@ -77,10 +77,13 @@ Resultado esperado: nao depende mais de copy/paste de path; evita erro de barras
 - [ ] Com a flag desativada, bloquear e mostrar "Saldo insuficiente".
 
 ## Cadastro automatico de PC (Host)
-- [ ] Primeiro uso em um PC -> detecta hardware e cadastra automaticamente.
+- [ ] Primeiro uso em um PC -> botao “Cadastrar este PC” aparece.
 - [ ] Reabrir o app no mesmo PC -> reconhece localPcId e nao duplica.
-- [ ] Cancelar durante a deteccao -> nao cria PC.
+- [ ] Clicar “Cadastrar este PC” -> modal de deteccao aparece com loading.
+- [ ] Cancelar -> modal fecha e nada e criado no backend.
+- [ ] Finalizar deteccao -> preview com CPU/RAM/GPU/Storage aparece.
 - [ ] Host cadastra 2 PCs (rodando o app em cada maquina) -> aparecem como PCs separados.
+- [ ] Tentar criar PC duplicado -> bloqueado corretamente.
 
 ## Fluxo Host
 - [ ] Abrir o app e escolher modo **Host**.

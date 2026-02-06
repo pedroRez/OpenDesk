@@ -43,18 +43,7 @@ type PC = {
 
 type AutoForm = {
   nickname: string;
-  categories: string[];
-  softwareTags: string;
-  pricePerHour: number;
 };
-
-const CATEGORY_OPTIONS = [
-  { value: 'GAMES', label: 'Jogos' },
-  { value: 'DESIGN', label: 'Design' },
-  { value: 'VIDEO', label: 'Video' },
-  { value: 'DEV', label: 'Dev' },
-  { value: 'OFFICE', label: 'Office' },
-];
 
 type PCInput = {
   name: string;
@@ -108,16 +97,14 @@ export default function HostDashboard() {
   const [localMachineId, setLocalMachineIdState] = useState<string | null>(getStoredMachineId());
   const [localPcRecord, setLocalPcRecord] = useState<PC | null>(null);
   const [autoModalOpen, setAutoModalOpen] = useState(false);
-  const [autoStep, setAutoStep] = useState<'idle' | 'detecting' | 'review' | 'creating'>('idle');
+  const [autoStep, setAutoStep] = useState<'idle' | 'detecting' | 'review'>('idle');
   const [autoStatus, setAutoStatus] = useState('');
   const [autoRequestId, setAutoRequestId] = useState<string | null>(null);
   const [hardwareProfile, setHardwareProfile] = useState<HardwareProfile | null>(null);
   const [autoForm, setAutoForm] = useState<AutoForm>({
     nickname: '',
-    categories: [],
-    softwareTags: '',
-    pricePerHour: 10,
   });
+  const manualEnabled = false;
 
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
@@ -166,6 +153,12 @@ export default function HostDashboard() {
     if (found) {
       setLocalPcId(found.id);
       setPrimaryPcId(found.id);
+      setTimeout(() => {
+        const el = document.getElementById(`pc-card-${found.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 200);
     }
   }, [pcs, localMachineId]);
 
@@ -376,6 +369,7 @@ export default function HostDashboard() {
     autoAbortRef.current = new AbortController();
     const { signal } = autoAbortRef.current;
     const requestId = crypto.randomUUID();
+    console.log('[HW] start detect', { requestId });
     setAutoRequestId(requestId);
     setAutoStatus('Detectando hardware...');
     setAutoModalOpen(true);
@@ -383,23 +377,29 @@ export default function HostDashboard() {
     try {
       const profile = await getHardwareProfile(requestId);
       if (signal.aborted) {
+        console.log('[HW] canceled', { requestId });
         resetAutoFlow();
         return;
       }
+      console.log('[HW] detected', {
+        cpu: profile.cpuName,
+        ram: profile.ramGb,
+        gpu: profile.gpuName,
+        storage: profile.storageSummary,
+      });
       setHardwareProfile(profile);
       setAutoForm({
         nickname: '',
-        categories: [],
-        softwareTags: '',
-        pricePerHour: 10,
       });
       setAutoStep('review');
       setAutoStatus('');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error ?? '');
       if (message.includes('cancelled')) {
+        console.log('[HW] canceled', { requestId });
         setAutoStatus('Deteccao cancelada.');
       } else {
+        console.warn('[HW] failed', { error: message });
         toast.show(message || 'Falha ao detectar hardware', 'error');
       }
       resetAutoFlow();
@@ -413,46 +413,12 @@ export default function HostDashboard() {
     if (autoRequestId) {
       await cancelHardwareProfile(autoRequestId);
     }
+    console.log('[HW] canceled');
     resetAutoFlow();
   };
 
-  const handleConfirmAuto = async () => {
-    if (!hardwareProfile || !localMachineId) return;
-    if (autoStep === 'creating') return;
-    setAutoStep('creating');
-    setOperationMessage('Criando PC...');
-    try {
-      const tags = autoForm.softwareTags
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean);
-      const payload = {
-        localPcId: localMachineId,
-        nickname: autoForm.nickname.trim() || undefined,
-        hardwareProfile,
-        categories: autoForm.categories.length ? autoForm.categories : undefined,
-        softwareTags: tags.length ? tags : undefined,
-        pricePerHour: autoForm.pricePerHour || undefined,
-      };
-      const created = await request<PC>('/pcs', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      setPcs((prev) => [created, ...prev]);
-      setLocalPcId(created.id);
-      setPrimaryPcId(created.id);
-      setLocalPcRecord(created);
-      toast.show('PC cadastrado com sucesso!', 'success');
-      resetAutoFlow();
-      if (created.status === 'ONLINE') {
-        await publishNetwork(created.id);
-      }
-    } catch (error) {
-      toast.show(error instanceof Error ? error.message : 'Erro ao cadastrar PC', 'error');
-      setAutoStep('review');
-    } finally {
-      setOperationMessage('');
-    }
+  const handleFinishPreview = () => {
+    resetAutoFlow();
   };
 
   const handleDisconnect = async (pc: PC) => {
@@ -680,16 +646,18 @@ export default function HostDashboard() {
               <h3>Seus PCs</h3>
               <p className={styles.listHint}>Controle disponibilidade e conexao por PC.</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsFormOpen((prev) => !prev)}
-              className={styles.toggleButton}
-              aria-expanded={isFormOpen}
-              aria-controls="pc-form"
-            >
-              <span>{isFormOpen ? 'Fechar cadastro' : 'Cadastrar PC'}</span>
-              <span className={styles.toggleIcon}>{isFormOpen ? 'v' : '>'}</span>
-            </button>
+            {manualEnabled && (
+              <button
+                type="button"
+                onClick={() => setIsFormOpen((prev) => !prev)}
+                className={styles.toggleButton}
+                aria-expanded={isFormOpen}
+                aria-controls="pc-form"
+              >
+                <span>{isFormOpen ? 'Fechar cadastro' : 'Cadastrar PC'}</span>
+                <span className={styles.toggleIcon}>{isFormOpen ? 'v' : '>'}</span>
+              </button>
+            )}
           </div>
 
           <div className={styles.localPcPanel}>
@@ -730,7 +698,7 @@ export default function HostDashboard() {
             )}
           </div>
 
-          {isFormOpen && (
+          {manualEnabled && isFormOpen && (
             <form onSubmit={handleCreatePC} className={`${styles.form} ${styles.formPanel}`} id="pc-form">
               <h3>Cadastrar PC</h3>
               <div className={styles.grid}>
@@ -838,7 +806,9 @@ export default function HostDashboard() {
           )}
 
           {isLoadingPcs && <p>Carregando PCs...</p>}
-          {!isLoadingPcs && pcs.length === 0 && <p>Nenhum PC cadastrado.</p>}
+          {!isLoadingPcs && pcs.length === 0 && (
+            <p>{localPcRecord ? 'Este PC ja esta cadastrado.' : 'Nenhum PC cadastrado.'}</p>
+          )}
           {showSunshineHelp && (
             <div className={styles.missingPanel}>
               <strong>Sunshine nao detectado.</strong>
@@ -988,63 +958,13 @@ export default function HostDashboard() {
                         placeholder="Ex.: PC Sala"
                       />
                     </label>
-                    <div className={styles.categoryGroup}>
-                      <span>Categorias (opcional)</span>
-                      <div className={styles.categoryList}>
-                        {CATEGORY_OPTIONS.map((option) => {
-                          const checked = autoForm.categories.includes(option.value);
-                          return (
-                            <label key={option.value} className={styles.categoryItem}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  const next = checked
-                                    ? autoForm.categories.filter((item) => item !== option.value)
-                                    : [...autoForm.categories, option.value];
-                                  setAutoForm({ ...autoForm, categories: next });
-                                }}
-                              />
-                              {option.label}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <label>
-                      Software/Tags (opcional, separadas por virgula)
-                      <input
-                        value={autoForm.softwareTags}
-                        onChange={(event) => setAutoForm({ ...autoForm, softwareTags: event.target.value })}
-                        placeholder="Steam, Photoshop"
-                      />
-                    </label>
-                    <label>
-                      Preco por hora (opcional)
-                      <input
-                        type="number"
-                        value={autoForm.pricePerHour}
-                        onChange={(event) =>
-                          setAutoForm({ ...autoForm, pricePerHour: Number(event.target.value) })
-                        }
-                      />
-                    </label>
                     <div className={styles.modalActions}>
-                      <button type="button" onClick={handleConfirmAuto} disabled={autoStep === 'creating'}>
-                        Confirmar cadastro
+                      <button type="button" onClick={handleFinishPreview}>
+                        Fechar
                       </button>
                       <button type="button" onClick={handleCancelAuto} className={styles.ghost}>
                         Cancelar
                       </button>
-                    </div>
-                  </div>
-                )}
-                {autoStep === 'creating' && (
-                  <div className={styles.modalBody}>
-                    <h3>Criando PC...</h3>
-                    <div className={styles.modalRow}>
-                      <span className={styles.spinner} />
-                      <span>Finalizando...</span>
                     </div>
                   </div>
                 )}
