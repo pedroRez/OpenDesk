@@ -193,7 +193,7 @@ select {
 }
 
 .pcCard {
-  padding: 18px;
+  padding: 14px;
   border-radius: 16px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.9);
@@ -207,16 +207,38 @@ select {
   box-shadow: 0 0 0 2px rgba(244, 93, 18, 0.15);
 }
 
-.pcInfo {
+.pcMain {
   display: grid;
-  gap: 4px;
+  gap: 6px;
 }
 
 .pcHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pcTitle {
+  display: flex;
+  align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pcSpec {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.pcBusyInfo {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
 
 .statusBadge {
@@ -225,6 +247,16 @@ select {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.queueBadge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+  border: 1px solid rgba(148, 163, 184, 0.4);
 }
 
 .statusOnline {
@@ -300,6 +332,38 @@ select {
   border: 1px solid var(--stroke) !important;
 }
 
+.detailsToggle {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pcDetails {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed var(--stroke);
+  display: grid;
+  gap: 12px;
+}
+
+.queuePanel {
+  display: grid;
+  gap: 6px;
+}
+
+.queueList {
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--stroke);
+  font-size: 0.85rem;
+}
+
 .missingPanel {
   padding: 16px;
   border-radius: 16px;
@@ -307,6 +371,21 @@ select {
   background: rgba(244, 93, 18, 0.08);
   display: grid;
   gap: 10px;
+}
+
+.downloadPanel {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(244, 93, 18, 0.4);
+  background: rgba(255, 242, 231, 0.95);
+  display: grid;
+  gap: 10px;
+}
+
+.downloadActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .missingActions {

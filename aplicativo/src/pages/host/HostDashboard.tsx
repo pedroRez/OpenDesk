@@ -33,6 +33,12 @@ type PC = {
   name: string;
   level: string;
   status: 'ONLINE' | 'OFFLINE' | 'BUSY';
+  queueCount?: number;
+  activeSession?: {
+    id: string;
+    startedAt?: string | null;
+    user?: { username?: string | null } | null;
+  } | null;
   pricePerHour: number;
   connectionHost?: string | null;
   connectionPort?: number | null;
@@ -78,6 +84,30 @@ const createDefaultForm = (): PCInput => ({
   connectionPort: 47990,
   connectionNotes: '',
 });
+
+const SUNSHINE_URL = 'https://app.lizardbyte.dev/Sunshine/';
+
+const formatSpecLine = (pc: PC) => {
+  const ram = pc.ramGb ? `${pc.ramGb}GB` : null;
+  const cpu = pc.cpu ?? null;
+  const gpu = pc.gpu ?? null;
+  const storage = pc.storageType ?? null;
+  const parts = [ram, cpu, gpu, storage].filter(Boolean);
+  return parts.join(' | ');
+};
+
+const formatDuration = (startAt?: string | null) => {
+  if (!startAt) return '';
+  const started = new Date(startAt).getTime();
+  if (Number.isNaN(started)) return '';
+  const diffMs = Date.now() - started;
+  if (diffMs < 0) return '';
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+};
 
 export default function HostDashboard() {
   const { user, updateUser } = useAuth();
@@ -129,12 +159,15 @@ export default function HostDashboard() {
   const [onlineConnection, setOnlineConnection] = useState({ host: '', port: 47990 });
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [sunshineRunning, setSunshineRunning] = useState<boolean | null>(null);
+  const [sunshineAvailable, setSunshineAvailable] = useState(true);
+  const [sunshineStatusMessage, setSunshineStatusMessage] = useState('');
   const [hostLocked, setHostLocked] = useState(false);
   const [hostPin, setHostPin] = useState('');
   const [hostPinConfirm, setHostPinConfirm] = useState('');
   const [hostPinError, setHostPinError] = useState('');
   const [hostPinSet, setHostPinSet] = useState(hasHostLockPin());
   const [highlightPcId, setHighlightPcId] = useState<string | null>(null);
+  const [detailsOpenPcId, setDetailsOpenPcId] = useState<string | null>(null);
   const manualEnabled = false;
 
   const hostProfileId = user?.hostProfileId ?? null;
@@ -200,6 +233,26 @@ export default function HostDashboard() {
       .then((running) => setSunshineRunning(running))
       .catch(() => setSunshineRunning(false));
   }, [hostProfileId]);
+
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      const current = getSunshinePath();
+      if (current) {
+        const ok = await pathExists(current);
+        if (active) setSunshineAvailable(ok);
+        return;
+      }
+      const detected = await detectSunshinePath();
+      if (active) setSunshineAvailable(Boolean(detected));
+    };
+    check().catch(() => {
+      if (active) setSunshineAvailable(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -571,7 +624,9 @@ export default function HostDashboard() {
         const normalized = normalizeWindowsPath(selected);
         setSunshinePath(normalized);
         console.log('[PATH] selected sunshinePath=', normalized);
-        setSunshineHelpStatus('Sunshine selecionado.');
+        const ok = await pathExists(normalized);
+        setSunshineAvailable(ok);
+        setSunshineHelpStatus(ok ? 'Sunshine selecionado.' : 'Caminho salvo, mas nao detectado.');
         setShowSunshineHelp(false);
       }
     } catch (error) {
@@ -586,20 +641,24 @@ export default function HostDashboard() {
       const exists = await pathExists(current);
       if (exists) {
         console.log('[PATH] verify sunshine ok', { path: current });
+        setSunshineAvailable(true);
         setSunshineHelpStatus('Detectado OK');
         setShowSunshineHelp(false);
         return;
       }
       console.log('[PATH] verify sunshine fail', { path: current });
+      setSunshineAvailable(false);
       setSunshineHelpStatus('Nao encontrado');
     }
     const fallback = await detectSunshinePath();
     if (fallback) {
       console.log('[PATH] autodetect sunshine ok', { path: fallback });
+      setSunshineAvailable(true);
       setSunshineHelpStatus('Encontrado automaticamente');
       setShowSunshineHelp(false);
     } else {
       console.log('[PATH] autodetect sunshine fail');
+      setSunshineAvailable(false);
       setSunshineHelpStatus('Nao encontrado. Use "Procurar...".');
       setShowSunshineHelp(true);
     }
@@ -609,13 +668,44 @@ export default function HostDashboard() {
     const detected = await detectSunshinePath();
     if (detected) {
       console.log('[PATH] autodetect sunshine ok', { path: detected });
+      setSunshineAvailable(true);
       setSunshineHelpStatus('Encontrado automaticamente');
       setShowSunshineHelp(false);
     } else {
       console.log('[PATH] autodetect sunshine fail');
+      setSunshineAvailable(false);
       setSunshineHelpStatus('Nao encontramos o Sunshine nas pastas padrao.');
       setShowSunshineHelp(true);
     }
+  };
+
+  const handleSunshineDownload = async () => {
+    try {
+      const { open: openExternal } = await import('@tauri-apps/plugin-shell');
+      await openExternal(SUNSHINE_URL);
+    } catch (error) {
+      window.open(SUNSHINE_URL, '_blank', 'noopener');
+    }
+  };
+
+  const handleSunshineVerifyCard = async () => {
+    const current = getSunshinePath();
+    if (current) {
+      const ok = await pathExists(current);
+      if (ok) {
+        setSunshineAvailable(true);
+        setSunshineStatusMessage('Sunshine detectado.');
+        return;
+      }
+    }
+    const detected = await detectSunshinePath();
+    if (detected) {
+      setSunshineAvailable(true);
+      setSunshineStatusMessage('Encontrado automaticamente.');
+      return;
+    }
+    setSunshineAvailable(false);
+    setSunshineStatusMessage('Nao encontramos o Sunshine. Use Procurar.');
   };
 
   const handleUnlockHost = async () => {
@@ -1176,6 +1266,26 @@ export default function HostDashboard() {
               {sunshineHelpStatus && <p className={styles.helperText}>{sunshineHelpStatus}</p>}
             </div>
           )}
+          {!sunshineAvailable && (
+            <div className={styles.downloadPanel}>
+              <div>
+                <strong>Sunshine nao detectado</strong>
+                <p>Instale o Sunshine para disponibilizar seus PCs rapidamente.</p>
+              </div>
+              <div className={styles.downloadActions}>
+                <button type="button" onClick={handleSunshineDownload}>
+                  Baixar Sunshine (Release oficial)
+                </button>
+                <button type="button" onClick={handleSunshineBrowse} className={styles.ghost}>
+                  Ja instalei / Procurar
+                </button>
+                <button type="button" onClick={handleSunshineVerifyCard} className={styles.ghost}>
+                  Verificar novamente
+                </button>
+              </div>
+              {sunshineStatusMessage && <p className={styles.helperText}>{sunshineStatusMessage}</p>}
+            </div>
+          )}
           {pcs.map((pc) => {
             const statusClass =
               pc.status === 'ONLINE'
@@ -1183,6 +1293,10 @@ export default function HostDashboard() {
                 : pc.status === 'OFFLINE'
                   ? styles.statusOffline
                   : styles.statusBusy;
+            const specLine = formatSpecLine(pc);
+            const activeUser = pc.activeSession?.user?.username ?? null;
+            const sessionDuration = formatDuration(pc.activeSession?.startedAt ?? null);
+            const detailsOpen = detailsOpenPcId === pc.id;
 
             return (
               <div
@@ -1190,15 +1304,30 @@ export default function HostDashboard() {
                 id={`pc-card-${pc.id}`}
                 className={`${styles.pcCard} ${highlightPcId === pc.id ? styles.pcHighlight : ''}`}
               >
-                <div className={styles.pcInfo}>
+                <div className={styles.pcMain}>
                   <div className={styles.pcHeader}>
-                    <strong>{pc.name}</strong>
-                    <span className={`${styles.statusBadge} ${statusClass}`}>{pc.status}</span>
+                    <div className={styles.pcTitle}>
+                      <strong>{pc.name}</strong>
+                      <span className={`${styles.statusBadge} ${statusClass}`}>{pc.status}</span>
+                      {typeof pc.queueCount === 'number' && pc.queueCount > 0 && (
+                        <span className={styles.queueBadge}>Fila: {pc.queueCount}</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.detailsToggle}
+                      onClick={() => setDetailsOpenPcId(detailsOpen ? null : pc.id)}
+                    >
+                      Detalhes {detailsOpen ? 'v' : '>'}
+                    </button>
                   </div>
-                  <span>
-                    Conexao: {pc.connectionHost ?? 'Nao informado'}:{pc.connectionPort ?? 47990}
-                  </span>
-                  {pc.connectionNotes && <span>Notas: {pc.connectionNotes}</span>}
+                  {specLine && <div className={styles.pcSpec}>{specLine}</div>}
+                  {pc.status === 'BUSY' && (
+                    <div className={styles.pcBusyInfo}>
+                      <span>Em uso por {activeUser ?? 'cliente'}</span>
+                      {sessionDuration && <span>Tempo: {sessionDuration}</span>}
+                    </div>
+                  )}
                 </div>
                 <div className={styles.pcActions}>
                   <button
@@ -1231,6 +1360,30 @@ export default function HostDashboard() {
                     Excluir PC
                   </button>
                 </div>
+
+                {detailsOpen && (
+                  <div className={styles.pcDetails}>
+                    <div>
+                      <strong>Conexao</strong>
+                      <p>
+                        {pc.connectionHost ?? 'Nao informado'}:{pc.connectionPort ?? 47990}
+                      </p>
+                      {pc.connectionNotes && <p className={styles.muted}>Notas: {pc.connectionNotes}</p>}
+                    </div>
+                    {typeof pc.queueCount === 'number' && (
+                      <div className={styles.queuePanel}>
+                        <strong>Fila</strong>
+                        <div className={styles.queueList}>
+                          {pc.queueCount > 0 ? (
+                            <span>{pc.queueCount} aguardando</span>
+                          ) : (
+                            <span className={styles.muted}>Sem fila no momento.</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {editingPcId === pc.id && (
                   <div className={styles.editPanel}>

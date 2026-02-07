@@ -5,6 +5,12 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../components/Toast';
 import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { useMode } from '../../lib/mode';
+import { isTauriRuntime } from '../../lib/hostDaemon';
+import { isMoonlightAvailable, detectMoonlightPath } from '../../lib/moonlightLauncher';
+import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
+import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
+import { open } from '@tauri-apps/plugin-dialog';
 
 import styles from './Marketplace.module.css';
 
@@ -74,6 +80,7 @@ const RELIABILITY_LABELS: Record<ReliabilityBadge, string> = {
   INSTAVEL: 'Instavel',
 };
 const RELIABILITY_TOOLTIP = 'Baseado em sessoes concluidas e tempo online recente.';
+const MOONLIGHT_URL = 'https://moonlight-stream.org/';
 
 const formatDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -144,6 +151,7 @@ export default function Marketplace() {
   const [searchQuery, setSearchQuery] = useState('');
   const [favoritesOpen, setFavoritesOpen] = useState(true);
   const [categoriesOpen, setCategoriesOpen] = useState(true);
+  const [platformsOpen, setPlatformsOpen] = useState(true);
   const [connectingPcId, setConnectingPcId] = useState<string | null>(null);
   const [detailsPc, setDetailsPc] = useState<PC | null>(null);
   const [schedulePc, setSchedulePc] = useState<PC | null>(null);
@@ -159,8 +167,11 @@ export default function Marketplace() {
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [scheduleError, setScheduleError] = useState('');
   const [scheduling, setScheduling] = useState(false);
+  const [moonlightAvailable, setMoonlightAvailable] = useState(true);
+  const [moonlightStatus, setMoonlightStatus] = useState('');
 
   const { user, isAuthenticated } = useAuth();
+  const { setMode } = useMode();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -214,6 +225,20 @@ export default function Marketplace() {
       setFavoritesError('');
     }
   }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    let active = true;
+    isMoonlightAvailable()
+      .then((available) => {
+        if (active) setMoonlightAvailable(available);
+      })
+      .catch(() => {
+        if (active) setMoonlightAvailable(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const statusCounts = useMemo(() => {
     return pcs.reduce(
@@ -535,6 +560,65 @@ export default function Marketplace() {
     setSearchQuery('');
   };
 
+  const handleSwitchToHost = () => {
+    setMode('HOST');
+    navigate('/host/dashboard');
+  };
+
+  const handleMoonlightBrowse = async () => {
+    if (!isTauriRuntime()) {
+      setMoonlightStatus('Selecao disponivel apenas no app desktop.');
+      return;
+    }
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Executavel', extensions: ['exe'] }],
+        defaultPath: 'Moonlight.exe',
+      });
+      if (!selected || typeof selected !== 'string') return;
+      const normalized = normalizeWindowsPath(selected);
+      if (!normalized) return;
+      setMoonlightPath(normalized);
+      const ok = await pathExists(normalized);
+      setMoonlightAvailable(ok);
+      setMoonlightStatus(ok ? 'Moonlight detectado.' : 'Caminho salvo, mas nao detectado.');
+    } catch (error) {
+      setMoonlightStatus('Falha ao selecionar o Moonlight.');
+      console.warn('[PATH] moonlight browse fail', error);
+    }
+  };
+
+  const handleMoonlightVerify = async () => {
+    const current = getMoonlightPath();
+    if (current) {
+      const ok = await pathExists(current);
+      if (ok) {
+        setMoonlightAvailable(true);
+        setMoonlightStatus('Moonlight detectado.');
+        return;
+      }
+    }
+    const detected = await detectMoonlightPath();
+    if (detected) {
+      setMoonlightAvailable(true);
+      setMoonlightStatus('Encontrado automaticamente.');
+      return;
+    }
+    setMoonlightAvailable(false);
+    setMoonlightStatus('Nao encontramos o Moonlight. Use Procurar.');
+  };
+
+  const handleMoonlightDownload = async () => {
+    try {
+      const { open: openExternal } = await import('@tauri-apps/plugin-shell');
+      await openExternal(MOONLIGHT_URL);
+    } catch (error) {
+      window.open(MOONLIGHT_URL, '_blank', 'noopener');
+    }
+  };
+
   return (
     <section className={styles.container}>
       <header className={styles.header}>
@@ -549,6 +633,15 @@ export default function Marketplace() {
 
       <div className={styles.marketplaceLayout}>
         <aside className={styles.sidebar}>
+          <div className={styles.sideSection}>
+            <button type="button" className={styles.sideCta} onClick={handleSwitchToHost}>
+              Quero disponibilizar meu PC
+            </button>
+            <p className={styles.muted}>
+              Abra o modo Host para cadastrar e disponibilizar seus computadores.
+            </p>
+          </div>
+
           <div className={styles.sideSection}>
             <button
               type="button"
@@ -600,7 +693,7 @@ export default function Marketplace() {
                                 onClick={() => handleToggleFavoritePc(favorite.pc)}
                                 aria-label="Desfavoritar PC"
                               >
-                                *
+                                ★
                               </button>
                             </div>
                           </li>
@@ -621,7 +714,7 @@ export default function Marketplace() {
                                 }
                                 aria-label="Desfavoritar host"
                               >
-                                *
+                                ★
                               </button>
                             </div>
                           </li>
@@ -665,9 +758,63 @@ export default function Marketplace() {
               </div>
             )}
           </div>
+
+          <div className={styles.sideSection}>
+            <button
+              type="button"
+              className={styles.sideToggle}
+              onClick={() => setPlatformsOpen((prev) => !prev)}
+              aria-expanded={platformsOpen}
+            >
+              <span>Plataformas</span>
+              <span className={styles.chevron}>{platformsOpen ? 'v' : '>'}</span>
+            </button>
+            {platformsOpen && (
+              <div className={styles.sideContent}>
+                <div className={styles.sideOptions}>
+                  {availableSoftwareTags.length === 0 && (
+                    <span className={styles.muted}>Sem plataformas.</span>
+                  )}
+                  {availableSoftwareTags.map((tag) => (
+                    <label key={tag} className={styles.filterOption}>
+                      <input
+                        type="checkbox"
+                        checked={selectedSoftwareTags.includes(tag)}
+                        onChange={() => handleSoftwareToggle(tag)}
+                      />
+                      {tag}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </aside>
 
         <main className={styles.main}>
+          {!moonlightAvailable && (
+            <div className={styles.detectCard}>
+              <div>
+                <strong>Moonlight nao detectado</strong>
+                <p className={styles.muted}>
+                  Instale o Moonlight para conectar rapidamente. Sem ele, o streaming nao pode iniciar.
+                </p>
+              </div>
+              <div className={styles.detectActions}>
+                <button type="button" className={styles.primaryButton} onClick={handleMoonlightDownload}>
+                  Baixar Moonlight (Release oficial)
+                </button>
+                <button type="button" className={styles.secondaryButton} onClick={handleMoonlightBrowse}>
+                  Ja instalei / Procurar
+                </button>
+                <button type="button" className={styles.ghostButton} onClick={handleMoonlightVerify}>
+                  Verificar novamente
+                </button>
+              </div>
+              {moonlightStatus && <p className={styles.helperText}>{moonlightStatus}</p>}
+            </div>
+          )}
+
           <div className={styles.searchRow}>
             <div className={styles.searchField}>
               <input
@@ -685,25 +832,6 @@ export default function Marketplace() {
               Limpar filtros
             </button>
           </div>
-
-          <section className={styles.filters}>
-            <div className={styles.filterGroup}>
-              <span className={styles.filterLabel}>Softwares e plataformas</span>
-              <div className={styles.filterOptions}>
-                {availableSoftwareTags.length === 0 && <span className={styles.muted}>Sem tags.</span>}
-                {availableSoftwareTags.map((tag) => (
-                  <label key={tag} className={styles.filterOption}>
-                    <input
-                      type="checkbox"
-                      checked={selectedSoftwareTags.includes(tag)}
-                      onChange={() => handleSoftwareToggle(tag)}
-                    />
-                    {tag}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </section>
 
           {isLoading && <p>Carregando PCs...</p>}
           {error && (
@@ -755,7 +883,7 @@ export default function Marketplace() {
                           onClick={() => handleToggleFavoritePc(pc)}
                           aria-label={isFavoritePc ? 'Desfavoritar PC' : 'Favoritar PC'}
                         >
-                          {isFavoritePc ? '*' : '+'}
+                          {isFavoritePc ? '★' : '☆'}
                         </button>
                         <button
                           type="button"
@@ -763,7 +891,7 @@ export default function Marketplace() {
                           onClick={() => setDetailsPc(pc)}
                           aria-label="Ver detalhes"
                         >
-                          i
+                          ℹ
                         </button>
                       </div>
                       <div className={styles.hostRow}>
@@ -775,7 +903,7 @@ export default function Marketplace() {
                             onClick={() => handleToggleFavoriteHost(hostId, hostName)}
                             aria-label={isFavoriteHost ? 'Desfavoritar host' : 'Favoritar host'}
                           >
-                            {isFavoriteHost ? '*' : '+'}
+                            {isFavoriteHost ? '★' : '☆'}
                           </button>
                         )}
                       </div>
@@ -787,7 +915,7 @@ export default function Marketplace() {
                     <span className={styles.price}>R$ {pc.pricePerHour}/hora</span>
                     <span className={styles.queue}>
                       <span className={styles.queueIcon} aria-hidden="true" />
-                      {pc.queueCount} na fila
+                      ⏳ {pc.queueCount} na fila
                     </span>
                   </div>
 
@@ -802,11 +930,12 @@ export default function Marketplace() {
                     </button>
                     <button
                       type="button"
-                      className={styles.secondaryButton}
+                      className={styles.iconButton}
                       onClick={() => openSchedule(pc)}
                       disabled={isOffline}
+                      title="Agendar"
                     >
-                      Agendar
+                      📅
                     </button>
                   </div>
                 </article>

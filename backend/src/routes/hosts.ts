@@ -15,6 +15,28 @@ export async function hostRoutes(fastify: FastifyInstance) {
     const pcs = await fastify.prisma.pC.findMany({
       where: { hostId },
     });
+    const pcIds = pcs.map((pc) => pc.id);
+    const queueCounts = pcIds.length
+      ? await fastify.prisma.queueEntry.groupBy({
+          by: ['pcId'],
+          where: { pcId: { in: pcIds } },
+          _count: { _all: true },
+        })
+      : [];
+    const queueCountMap = new Map(queueCounts.map((item) => [item.pcId, item._count._all]));
+
+    const activeSessions = pcIds.length
+      ? await fastify.prisma.session.findMany({
+          where: { pcId: { in: pcIds }, status: SessionStatus.ACTIVE },
+          select: {
+            id: true,
+            pcId: true,
+            startedAt: true,
+            user: { select: { username: true } },
+          },
+        })
+      : [];
+    const activeSessionMap = new Map(activeSessions.map((session) => [session.pcId, session]));
 
     const host = await fastify.prisma.hostProfile.findUnique({
       where: { id: hostId },
@@ -28,6 +50,8 @@ export async function hostRoutes(fastify: FastifyInstance) {
 
     return pcs.map((pc) => ({
       ...pc,
+      queueCount: queueCountMap.get(pc.id) ?? 0,
+      activeSession: activeSessionMap.get(pc.id) ?? null,
       reliabilityBadge: badge,
     }));
   };

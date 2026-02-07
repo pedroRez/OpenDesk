@@ -21,7 +21,7 @@
 
 .marketplaceLayout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 250px 1fr;
   gap: 20px;
 }
 
@@ -41,6 +41,17 @@
 .sideSection {
   display: grid;
   gap: 10px;
+}
+
+.sideCta {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
 }
 
 .sideToggle {
@@ -138,6 +149,11 @@
   border-color: var(--accent-strong);
 }
 
+.iconButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .favoriteActive {
   background: rgba(255, 122, 47, 0.15);
 }
@@ -150,6 +166,36 @@
 .main {
   display: grid;
   gap: 16px;
+}
+
+.detectCard {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(244, 93, 18, 0.4);
+  background: rgba(255, 242, 231, 0.95);
+  display: grid;
+  gap: 12px;
+}
+
+.detectActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ghostButton {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.helperText {
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .searchRow {
@@ -235,12 +281,12 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 14px;
 }
 
 .card {
-  padding: 14px;
+  padding: 12px;
   border-radius: 16px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.95);
@@ -256,8 +302,8 @@
 }
 
 .pcIcon {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 12px;
   background: linear-gradient(145deg, rgba(37, 99, 235, 0.2), rgba(15, 23, 42, 0.1));
   border: 1px solid rgba(59, 130, 246, 0.2);
@@ -343,13 +389,14 @@
 }
 
 .cardActions {
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
 .primaryButton,
 .secondaryButton {
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 12px;
   border: none;
   font-weight: 600;
@@ -359,6 +406,7 @@
 .primaryButton {
   background: var(--accent);
   color: #fff7ef;
+  flex: 1;
 }
 
 .primaryButton:hover {

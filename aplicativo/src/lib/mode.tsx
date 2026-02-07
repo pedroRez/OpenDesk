@@ -4,12 +4,13 @@ import type { ReactNode } from 'react';
 export type AppMode = 'CLIENT' | 'HOST';
 
 const MODE_KEY = 'opendesk_mode';
+const DEFAULT_MODE: AppMode = 'CLIENT';
 
 function loadMode(): AppMode | null {
   if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem(MODE_KEY);
   if (raw === 'CLIENT' || raw === 'HOST') return raw;
-  return null;
+  return DEFAULT_MODE;
 }
 
 function saveMode(mode: AppMode | null): void {
