@@ -6,6 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
 use tauri::{Emitter, Manager, AppHandle};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, MenuEvent};
+use tauri::tray::TrayIcon;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use sysinfo::System;
 
@@ -598,9 +599,9 @@ fn main() {
           }
           _ => {}
         })
-        .on_tray_icon_event(|app: &AppHandle, event: TrayIconEvent| {
+        .on_tray_icon_event(|tray: &TrayIcon, event: TrayIconEvent| {
           if let TrayIconEvent::DoubleClick { .. } = event {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = tray.app_handle().get_webview_window("main") {
               let _ = window.show();
               let _ = window.set_focus();
             }
