@@ -838,9 +838,9 @@ export default function HostDashboard() {
   const startOnlineFlow = async (pc: PC, override?: { host: string; port: number }) => {
     onlineAbortRef.current.cancelled = false;
     const stored = getHostConnection();
-    const host =
+    let host =
       override?.host ?? onlineConnection.host ?? pc.connectionHost ?? stored?.host ?? '';
-    const port =
+    let port =
       override?.port ?? onlineConnection.port ?? pc.connectionPort ?? stored?.port ?? 47990;
     setOnlineConnection({ host, port });
     setOnlineModalPc(pc);
@@ -878,7 +878,8 @@ export default function HostDashboard() {
       if (onlineAbortRef.current.cancelled) return;
       if (detected) {
         console.log('[NET][HOST] autodetect ip', { pcId: pc.id, host: detected });
-        setOnlineConnection({ host: detected, port });
+        host = detected;
+        setOnlineConnection({ host, port });
         setOnlineStatus(`Detectado automaticamente: ${detected}`);
         setHostConnection(detected, port);
       } else {
