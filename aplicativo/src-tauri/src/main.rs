@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
-use tauri::{Emitter, Manager};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::{Emitter, Manager, AppHandle};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, MenuEvent};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use sysinfo::System;
 
@@ -583,7 +583,7 @@ fn main() {
         builder = builder.icon(icon);
       }
       builder
-        .on_menu_event(|app, event| match event.id().as_ref() {
+        .on_menu_event(|app: &AppHandle, event: MenuEvent| match event.id().as_ref() {
           "open" => {
             if let Some(window) = app.get_webview_window("main") {
               let _ = window.show();
@@ -598,7 +598,7 @@ fn main() {
           }
           _ => {}
         })
-        .on_tray_icon_event(|app, event| {
+        .on_tray_icon_event(|app: &AppHandle, event: TrayIconEvent| {
           if let TrayIconEvent::DoubleClick { .. } = event {
             if let Some(window) = app.get_webview_window("main") {
               let _ = window.show();
