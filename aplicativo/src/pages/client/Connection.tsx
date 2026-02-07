@@ -225,6 +225,14 @@ export default function Connection() {
         connectAddress: resolveResult.data.connectAddress,
       });
 
+      if (session.status !== 'ACTIVE') {
+        try {
+          await request(`/sessions/${session.id}/start`, { method: 'POST' });
+        } catch (error) {
+          console.warn('[STREAM][CLIENT] start session fail', error);
+        }
+      }
+
       if (!resolveResult.data.connectAddress) {
         setProviderMessage('Endereco de conexao invalido.');
         setConnectError('Endereco de conexao invalido.');

@@ -201,6 +201,12 @@ select {
   gap: 12px;
 }
 
+.pcHighlight {
+  animation: pcPulse 1s ease;
+  border-color: rgba(244, 93, 18, 0.5);
+  box-shadow: 0 0 0 2px rgba(244, 93, 18, 0.15);
+}
+
 .pcInfo {
   display: grid;
   gap: 4px;
@@ -472,5 +478,17 @@ select {
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes pcPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 93, 18, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(244, 93, 18, 0.12);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 93, 18, 0);
   }
 }

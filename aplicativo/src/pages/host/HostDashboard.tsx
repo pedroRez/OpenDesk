@@ -15,11 +15,13 @@ import {
   setLocalPcId,
   setPrimaryPcId,
 } from '../../lib/hostState';
+import { hasHostLockPin, setHostLockPin, verifyHostLockPin } from '../../lib/hostLock';
 import { cancelHardwareProfile, getHardwareProfile, getLocalMachineId, type HardwareProfile } from '../../lib/hardwareProfile';
 import { DEFAULT_CONNECT_HINT, detectHostIp, resolveConnectAddress } from '../../lib/networkAddress';
 import { detectSunshinePath, ensureSunshineRunning, isSunshineRunning } from '../../lib/sunshineController';
 import { getSunshinePath, setSunshinePath } from '../../lib/sunshineSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
+import { isTauriRuntime } from '../../lib/hostDaemon';
 import { open } from '@tauri-apps/plugin-dialog';
 
 import styles from './HostDashboard.module.css';
@@ -111,13 +113,28 @@ export default function HostDashboard() {
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [onlineModalPc, setOnlineModalPc] = useState<PC | null>(null);
   const [onlineStep, setOnlineStep] = useState<
-    'idle' | 'checking' | 'starting' | 'needs_sunshine' | 'needs_connection' | 'publishing' | 'activating' | 'done' | 'error'
+    'idle'
+    | 'checking'
+    | 'detecting'
+    | 'starting'
+    | 'needs_sunshine'
+    | 'needs_connection'
+    | 'publishing'
+    | 'activating'
+    | 'done'
+    | 'error'
   >('idle');
   const [onlineStatus, setOnlineStatus] = useState('');
   const [onlineError, setOnlineError] = useState('');
   const [onlineConnection, setOnlineConnection] = useState({ host: '', port: 47990 });
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [sunshineRunning, setSunshineRunning] = useState<boolean | null>(null);
+  const [hostLocked, setHostLocked] = useState(false);
+  const [hostPin, setHostPin] = useState('');
+  const [hostPinConfirm, setHostPinConfirm] = useState('');
+  const [hostPinError, setHostPinError] = useState('');
+  const [hostPinSet, setHostPinSet] = useState(hasHostLockPin());
+  const [highlightPcId, setHighlightPcId] = useState<string | null>(null);
   const manualEnabled = false;
 
   const hostProfileId = user?.hostProfileId ?? null;
@@ -183,6 +200,26 @@ export default function HostDashboard() {
       .then((running) => setSunshineRunning(running))
       .catch(() => setSunshineRunning(false));
   }, [hostProfileId]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    const status = localPcRecord?.status;
+    if (status === 'BUSY') {
+      setHostLocked(true);
+      setHostPinError('');
+      console.log('[HOST_LOCK] locked');
+      import('@tauri-apps/api/window')
+        .then(({ appWindow }) => appWindow.hide())
+        .catch(() => undefined);
+      return;
+    }
+    if (status && status !== 'BUSY') {
+      setHostLocked(false);
+      setHostPin('');
+      setHostPinConfirm('');
+      setHostPinError('');
+    }
+  }, [localPcRecord?.status]);
 
   useEffect(() => {
     if (!autoRequestId) return;
@@ -581,6 +618,35 @@ export default function HostDashboard() {
     }
   };
 
+  const handleUnlockHost = async () => {
+    setHostPinError('');
+    if (!hostPinSet) {
+      if (hostPin.trim().length < 4 || hostPin.trim().length > 6) {
+        setHostPinError('Escolha um PIN de 4 a 6 digitos.');
+        return;
+      }
+      if (hostPin !== hostPinConfirm) {
+        setHostPinError('Os PINs nao conferem.');
+        return;
+      }
+      await setHostLockPin(hostPin);
+      setHostPinSet(true);
+      setHostLocked(false);
+      setHostPin('');
+      setHostPinConfirm('');
+      console.log('[HOST_LOCK] pin set');
+      return;
+    }
+    const ok = await verifyHostLockPin(hostPin);
+    if (!ok) {
+      setHostPinError('PIN invalido.');
+      return;
+    }
+    console.log('[HOST_LOCK] unlocked');
+    setHostLocked(false);
+    setHostPin('');
+  };
+
   const handleSunshineEnsure = async () => {
     setSunshineHelpStatus('');
     const result = await ensureSunshineRunning();
@@ -716,9 +782,21 @@ export default function HostDashboard() {
     setShowSunshineHelp(false);
 
     if (!host) {
-      setOnlineStep('needs_connection');
-      setOnlineStatus('Informe o host/porta da conexao.');
-      return;
+      setOnlineStep('detecting');
+      setOnlineStatus('Detectando IP...');
+      const detected = await detectHostIp();
+      if (onlineAbortRef.current.cancelled) return;
+      if (detected) {
+        console.log('[NET][HOST] autodetect ip', { pcId: pc.id, host: detected });
+        setOnlineConnection({ host: detected, port });
+        setOnlineStatus(`Detectado automaticamente: ${detected}`);
+        setHostConnection(detected, port);
+      } else {
+        console.log('[NET][HOST] autodetect ip fail', { pcId: pc.id });
+        setOnlineStep('needs_connection');
+        setOnlineStatus('Informe o host/porta da conexao.');
+        return;
+      }
     }
 
     setOnlineStep('publishing');
@@ -840,15 +918,17 @@ export default function HostDashboard() {
   };
 
   const onlineStepIndex =
-    onlineStep === 'starting'
+    onlineStep === 'detecting'
       ? 1
-      : onlineStep === 'publishing'
+      : onlineStep === 'starting'
         ? 2
-        : onlineStep === 'activating'
+        : onlineStep === 'publishing'
           ? 3
-          : onlineStep === 'done'
+          : onlineStep === 'activating'
             ? 4
-            : 0;
+            : onlineStep === 'done'
+              ? 5
+              : 0;
 
   return (
     <section className={styles.container}>
@@ -946,6 +1026,8 @@ export default function HostDashboard() {
                     if (el) {
                       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
+                    setHighlightPcId(localPcRecord.id);
+                    setTimeout(() => setHighlightPcId(null), 1000);
                   }}
                   className={styles.ghost}
                 >
@@ -1103,7 +1185,11 @@ export default function HostDashboard() {
                   : styles.statusBusy;
 
             return (
-              <div key={pc.id} id={`pc-card-${pc.id}`} className={styles.pcCard}>
+              <div
+                key={pc.id}
+                id={`pc-card-${pc.id}`}
+                className={`${styles.pcCard} ${highlightPcId === pc.id ? styles.pcHighlight : ''}`}
+              >
                 <div className={styles.pcInfo}>
                   <div className={styles.pcHeader}>
                     <strong>{pc.name}</strong>
@@ -1283,7 +1369,19 @@ export default function HostDashboard() {
                     </li>
                     <li
                       className={`${styles.stepItem} ${
-                        onlineStepIndex > 1 || onlineStep === 'publishing' || onlineStep === 'activating' || onlineStep === 'done'
+                        onlineStepIndex > 1 || onlineStep === 'starting' || onlineStep === 'publishing' || onlineStep === 'activating' || onlineStep === 'done'
+                          ? styles.stepDone
+                          : onlineStep === 'detecting'
+                            ? styles.stepActive
+                            : styles.stepPending
+                      }`}
+                    >
+                      <span className={styles.stepDot} />
+                      Detectando IP
+                    </li>
+                    <li
+                      className={`${styles.stepItem} ${
+                        onlineStepIndex > 2 || onlineStep === 'publishing' || onlineStep === 'activating' || onlineStep === 'done'
                           ? styles.stepDone
                           : onlineStep === 'starting'
                             ? styles.stepActive
@@ -1295,7 +1393,7 @@ export default function HostDashboard() {
                     </li>
                     <li
                       className={`${styles.stepItem} ${
-                        onlineStepIndex > 2 || onlineStep === 'activating' || onlineStep === 'done'
+                        onlineStepIndex > 3 || onlineStep === 'activating' || onlineStep === 'done'
                           ? styles.stepDone
                           : onlineStep === 'publishing'
                             ? styles.stepActive
@@ -1307,7 +1405,7 @@ export default function HostDashboard() {
                     </li>
                     <li
                       className={`${styles.stepItem} ${
-                        onlineStepIndex > 3 || onlineStep === 'done'
+                        onlineStepIndex > 4 || onlineStep === 'done'
                           ? styles.stepDone
                           : onlineStep === 'activating'
                             ? styles.stepActive
@@ -1397,6 +1495,65 @@ export default function HostDashboard() {
                       Cancelar
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {hostLocked && (
+            <div className={styles.overlay} role="dialog" aria-modal="true">
+              <div className={styles.modal}>
+                <div className={styles.modalBody}>
+                  <h3>Desbloquear painel do Host</h3>
+                  {hostPinSet ? (
+                    <>
+                      <label>
+                        PIN
+                        <input
+                          type="password"
+                          value={hostPin}
+                          onChange={(event) => setHostPin(event.target.value)}
+                          placeholder="Digite seu PIN"
+                        />
+                      </label>
+                      {hostPinError && <p className={styles.helperText}>{hostPinError}</p>}
+                      <div className={styles.modalActions}>
+                        <button type="button" onClick={handleUnlockHost}>
+                          Desbloquear
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className={styles.helperText}>
+                        Defina um PIN local para proteger o painel durante sessoes ativas.
+                      </p>
+                      <label>
+                        Novo PIN (4-6 digitos)
+                        <input
+                          type="password"
+                          value={hostPin}
+                          onChange={(event) => setHostPin(event.target.value)}
+                          placeholder="Ex.: 1234"
+                        />
+                      </label>
+                      <label>
+                        Confirmar PIN
+                        <input
+                          type="password"
+                          value={hostPinConfirm}
+                          onChange={(event) => setHostPinConfirm(event.target.value)}
+                          placeholder="Repita o PIN"
+                        />
+                      </label>
+                      {hostPinError && <p className={styles.helperText}>{hostPinError}</p>}
+                      <div className={styles.modalActions}>
+                        <button type="button" onClick={handleUnlockHost}>
+                          Salvar e desbloquear
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

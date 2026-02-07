@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use sysinfo::System;
 
 #[tauri::command]
@@ -559,6 +561,54 @@ fn main() {
   tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_dialog::init())
+    .setup(|app| {
+      let open = MenuItem::with_id(app, "open", "Abrir OpenDesk", true, None)?;
+      let status = MenuItem::with_id(app, "status", "Status: --", false, None)?;
+      let end_session = MenuItem::with_id(app, "end_session", "Encerrar sessao", true, None)?;
+      let quit = MenuItem::with_id(app, "quit", "Sair", true, None)?;
+      let menu = Menu::with_items(
+        app,
+        &[
+          &open,
+          &status,
+          &end_session,
+          &PredefinedMenuItem::separator(app)?,
+          &quit,
+        ],
+      )?;
+
+      let icon = app.default_window_icon().cloned();
+      let mut builder = TrayIconBuilder::with_id("main").menu(&menu);
+      if let Some(icon) = icon {
+        builder = builder.icon(icon);
+      }
+      builder
+        .on_menu_event(|app, event| match event.id().as_ref() {
+          "open" => {
+            if let Some(window) = app.get_webview_window("main") {
+              let _ = window.show();
+              let _ = window.set_focus();
+            }
+          }
+          "end_session" => {
+            let _ = app.emit("tray-action", "end_session");
+          }
+          "quit" => {
+            app.exit(0);
+          }
+          _ => {}
+        })
+        .on_tray_icon_event(|app, event| {
+          if let TrayIconEvent::DoubleClick { .. } = event {
+            if let Some(window) = app.get_webview_window("main") {
+              let _ = window.show();
+              let _ = window.set_focus();
+            }
+          }
+        })
+        .build(app)?;
+      Ok(())
+    })
     .invoke_handler(tauri::generate_handler![
       validate_exe_path,
       is_process_running,

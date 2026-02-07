@@ -7,6 +7,7 @@ import { useAuth } from '../../lib/auth';
 import {
   isMoonlightAvailable,
   ensureMoonlightReady,
+  isMoonlightProcessRunning,
   launchMoonlight,
   detectMoonlightPath,
   pairMoonlight,
@@ -63,6 +64,7 @@ export default function Session() {
   const [lastConnectAddress, setLastConnectAddress] = useState<string | null>(null);
   const [showMoonlightHelp, setShowMoonlightHelp] = useState(false);
   const [moonlightHelpStatus, setMoonlightHelpStatus] = useState('');
+  const [moonlightMonitorActive, setMoonlightMonitorActive] = useState(false);
 
   const loadSession = async () => {
     if (isLoading || !isAuthenticated || !id) {
@@ -101,6 +103,34 @@ export default function Session() {
         setShowMoonlightHelp(true);
       });
   }, []);
+
+  useEffect(() => {
+    if (!moonlightMonitorActive || !session?.id || session.status !== 'ACTIVE') {
+      return;
+    }
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const running = await isMoonlightProcessRunning();
+        if (!running) {
+          console.log('[MOONLIGHT] process ended, finishing session');
+          setMoonlightMonitorActive(false);
+          await request(`/sessions/${session.id}/end`, {
+            method: 'POST',
+            body: JSON.stringify({ failureReason: 'CLIENT' }),
+          });
+          toast.show('Sessao encerrada (Moonlight fechado).', 'info');
+        }
+      } catch (error) {
+        console.warn('[MOONLIGHT] monitor fail', error);
+      }
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [moonlightMonitorActive, session?.id, session?.status, toast]);
 
   const handleMoonlightBrowse = async () => {
     try {
@@ -181,6 +211,7 @@ export default function Session() {
         method: 'POST',
         body: JSON.stringify({ failureReason: 'NONE' }),
       });
+      setMoonlightMonitorActive(false);
       toast.show('Sessao encerrada', 'success');
       navigate('/client/marketplace');
     } catch (err) {
@@ -279,6 +310,17 @@ export default function Session() {
         connectAddress: resolveResult.data.connectAddress,
       });
 
+      if (session.status !== 'ACTIVE') {
+        try {
+          const started = await request<{ session: SessionDetail }>(`/sessions/${session.id}/start`, {
+            method: 'POST',
+          });
+          setSession(started.session);
+        } catch (error) {
+          console.warn('[STREAM][CLIENT] start session fail', error);
+        }
+      }
+
       if (!resolveResult.data.connectAddress) {
         setProviderMessage('Endereco de conexao invalido.');
         setConnectError('Endereco de conexao invalido.');
@@ -297,6 +339,7 @@ export default function Session() {
         setProviderMessage('Abrindo conexao...');
         setConnectStage('opening');
         setPairAvailable(false);
+        setMoonlightMonitorActive(true);
       } else {
         console.error('[STREAM][CLIENT] launch fail');
         setPairAvailable(launchResult.needsPair);

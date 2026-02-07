@@ -110,6 +110,11 @@ export async function isMoonlightAvailable(): Promise<boolean> {
   return Boolean(existing);
 }
 
+export async function isMoonlightProcessRunning(): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  return isMoonlightRunning();
+}
+
 export async function ensureMoonlightReady(): Promise<MoonlightEnsureResult> {
   if (!isTauriRuntime()) {
     return { ok: false, reason: 'launch_failed', alreadyRunning: false, path: null };
