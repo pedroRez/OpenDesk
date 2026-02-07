@@ -563,10 +563,11 @@ fn main() {
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_dialog::init())
     .setup(|app| {
-      let open = MenuItem::with_id(app, "open", "Abrir OpenDesk", true, None)?;
-      let status = MenuItem::with_id(app, "status", "Status: --", false, None)?;
-      let end_session = MenuItem::with_id(app, "end_session", "Encerrar sessao", true, None)?;
-      let quit = MenuItem::with_id(app, "quit", "Sair", true, None)?;
+      let open = MenuItem::with_id(app, "open", "Abrir OpenDesk", true, Option::<&str>::None)?;
+      let status = MenuItem::with_id(app, "status", "Status: --", false, Option::<&str>::None)?;
+      let end_session =
+        MenuItem::with_id(app, "end_session", "Encerrar sessao", true, Option::<&str>::None)?;
+      let quit = MenuItem::with_id(app, "quit", "Sair", true, Option::<&str>::None)?;
       let menu = Menu::with_items(
         app,
         &[
