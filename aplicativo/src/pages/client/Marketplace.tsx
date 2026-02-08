@@ -81,7 +81,10 @@ const RELIABILITY_LABELS: Record<ReliabilityBadge, string> = {
   INSTAVEL: 'Instavel',
 };
 const RELIABILITY_TOOLTIP = 'Baseado em sessoes concluidas e tempo online recente.';
-const MOONLIGHT_URL = 'https://github.com/moonlight-stream/moonlight-qt/releases/latest';
+const MOONLIGHT_RELEASES_LATEST_URL =
+  'https://github.com/moonlight-stream/moonlight-qt/releases/latest';
+const MOONLIGHT_WINDOWS_URL =
+  'https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.1.0/MoonlightSetup-6.1.0.exe';
 
 const formatDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -138,6 +141,22 @@ const formatHostName = (host?: { id?: string; displayName?: string | null } | nu
     return `Host #${suffix}`;
   }
   return 'Host';
+};
+
+const getOsKind = () => {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const ua = navigator.userAgent.toLowerCase();
+  const platform = (navigator.platform ?? '').toLowerCase();
+  if (ua.includes('windows') || platform.includes('win')) return 'windows';
+  if (ua.includes('mac') || platform.includes('mac')) return 'mac';
+  if (ua.includes('linux') || platform.includes('linux')) return 'linux';
+  return 'unknown';
+};
+
+const getMoonlightDownloadUrl = () => {
+  const os = getOsKind();
+  if (os === 'windows') return MOONLIGHT_WINDOWS_URL;
+  return MOONLIGHT_RELEASES_LATEST_URL;
 };
 
 export default function Marketplace() {
@@ -612,10 +631,11 @@ export default function Marketplace() {
   };
 
   const handleMoonlightDownload = async () => {
+    const url = getMoonlightDownloadUrl();
     try {
-      await openExternal(MOONLIGHT_URL);
+      await openExternal(url);
     } catch (error) {
-      window.open(MOONLIGHT_URL, '_blank', 'noopener');
+      window.open(url, '_blank', 'noopener');
     }
   };
 
