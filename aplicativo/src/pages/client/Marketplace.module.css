@@ -165,7 +165,8 @@
 
 .main {
   display: grid;
-  gap: 16px;
+  gap: 10px;
+  padding-left: 14px;
 }
 
 .detectCard {
@@ -203,7 +204,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin-top: -4px;
+  margin-top: 0;
 }
 
 .searchField {
