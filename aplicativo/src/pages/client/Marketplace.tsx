@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useToast } from '../../components/Toast';
@@ -12,6 +12,7 @@ import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings'
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
 import { open as openExternal } from '@tauri-apps/plugin-shell';
+import Tooltip from '../../components/Tooltip';
 
 import styles from './Marketplace.module.css';
 
@@ -81,7 +82,10 @@ const RELIABILITY_LABELS: Record<ReliabilityBadge, string> = {
   INSTAVEL: 'Instavel',
 };
 const RELIABILITY_TOOLTIP = 'Baseado em sessoes concluidas e tempo online recente.';
-const MOONLIGHT_URL = 'https://github.com/moonlight-stream/moonlight-qt/releases/latest';
+const MOONLIGHT_RELEASES_LATEST_URL =
+  'https://github.com/moonlight-stream/moonlight-qt/releases/latest';
+const MOONLIGHT_WINDOWS_URL =
+  'https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.1.0/MoonlightSetup-6.1.0.exe';
 
 const formatDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -140,6 +144,22 @@ const formatHostName = (host?: { id?: string; displayName?: string | null } | nu
   return 'Host';
 };
 
+const getOsKind = () => {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const ua = navigator.userAgent.toLowerCase();
+  const platform = (navigator.platform ?? '').toLowerCase();
+  if (ua.includes('windows') || platform.includes('win')) return 'windows';
+  if (ua.includes('mac') || platform.includes('mac')) return 'mac';
+  if (ua.includes('linux') || platform.includes('linux')) return 'linux';
+  return 'unknown';
+};
+
+const getMoonlightDownloadUrl = () => {
+  const os = getOsKind();
+  if (os === 'windows') return MOONLIGHT_WINDOWS_URL;
+  return MOONLIGHT_RELEASES_LATEST_URL;
+};
+
 export default function Marketplace() {
   const [pcs, setPcs] = useState<PC[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -175,6 +195,8 @@ export default function Marketplace() {
   const { setMode } = useMode();
   const toast = useToast();
   const navigate = useNavigate();
+  const favoritesUserToggled = useRef(false);
+  const platformsUserToggled = useRef(false);
 
   const loadPcs = async (showLoading = false) => {
     if (showLoading) {
@@ -228,6 +250,28 @@ export default function Marketplace() {
   }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
+    if (favoritesUserToggled.current) return;
+    setFavoritesOpen(favorites.length > 0);
+  }, [favorites.length]);
+
+  const availableSoftwareTags = useMemo(() => {
+    const set = new Set<string>();
+    (pcs ?? []).forEach((pc) => {
+      pc.softwareTags?.forEach((tag) => {
+        if (tag && tag.trim()) {
+          set.add(tag.trim());
+        }
+      });
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pcs]);
+
+  useEffect(() => {
+    if (platformsUserToggled.current) return;
+    setPlatformsOpen(availableSoftwareTags.length > 0);
+  }, [availableSoftwareTags.length]);
+
+  useEffect(() => {
     let active = true;
     isMoonlightAvailable()
       .then((available) => {
@@ -241,19 +285,6 @@ export default function Marketplace() {
     };
   }, []);
 
-  const statusCounts = useMemo(() => {
-    return pcs.reduce(
-      (acc, pc) => {
-        acc.total += 1;
-        if (pc.status === 'ONLINE') acc.online += 1;
-        if (pc.status === 'BUSY') acc.busy += 1;
-        if (pc.status === 'OFFLINE') acc.offline += 1;
-        return acc;
-      },
-      { total: 0, online: 0, busy: 0, offline: 0 },
-    );
-  }, [pcs]);
-
   const favoritePcIds = useMemo(
     () => new Set(favorites.filter((favorite) => favorite.pcId).map((favorite) => favorite.pcId!)),
     [favorites],
@@ -265,18 +296,6 @@ export default function Marketplace() {
     [favorites],
   );
 
-  const availableSoftwareTags = useMemo(() => {
-    const set = new Set<string>();
-    pcs.forEach((pc) => {
-      pc.softwareTags?.forEach((tag) => {
-        if (tag && tag.trim()) {
-          set.add(tag.trim());
-        }
-      });
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [pcs]);
-
   const searchTokens = useMemo(
     () => searchQuery.toLowerCase().split(/\s+/).filter(Boolean),
     [searchQuery],
@@ -284,6 +303,35 @@ export default function Marketplace() {
 
   const filtersActive =
     selectedCategories.length > 0 || selectedSoftwareTags.length > 0 || searchTokens.length > 0;
+
+  const activeChips = useMemo(() => {
+    const chips: { key: string; label: string; type: 'category' | 'platform' | 'search'; value: string }[] = [];
+    selectedCategories.forEach((category) => {
+      chips.push({
+        key: `cat-${category}`,
+        label: CATEGORY_LABELS[category] ?? category,
+        type: 'category',
+        value: category,
+      });
+    });
+    selectedSoftwareTags.forEach((tag) => {
+      chips.push({
+        key: `tag-${tag}`,
+        label: tag,
+        type: 'platform',
+        value: tag,
+      });
+    });
+    searchTokens.forEach((token) => {
+      chips.push({
+        key: `search-${token}`,
+        label: `Busca: ${token}`,
+        type: 'search',
+        value: token,
+      });
+    });
+    return chips;
+  }, [selectedCategories, selectedSoftwareTags, searchTokens]);
 
   const filteredPcs = useMemo(() => {
     return pcs.filter((pc) => {
@@ -322,6 +370,19 @@ export default function Marketplace() {
       return searchTokens.every((token) => searchable.includes(token) || compact.includes(token));
     });
   }, [pcs, selectedCategories, selectedSoftwareTags, searchTokens]);
+
+  const filteredStatusCounts = useMemo(() => {
+    return filteredPcs.reduce(
+      (acc, pc) => {
+        acc.total += 1;
+        if (pc.status === 'ONLINE') acc.online += 1;
+        if (pc.status === 'BUSY') acc.busy += 1;
+        if (pc.status === 'OFFLINE') acc.offline += 1;
+        return acc;
+      },
+      { total: 0, online: 0, busy: 0, offline: 0 },
+    );
+  }, [filteredPcs]);
 
   const handleToggleFavoritePc = async (pc: FavoritePcTarget) => {
     if (!isAuthenticated || !user) {
@@ -561,6 +622,19 @@ export default function Marketplace() {
     setSearchQuery('');
   };
 
+  const handleRemoveChip = (chip: { type: 'category' | 'platform' | 'search'; value: string }) => {
+    if (chip.type === 'category') {
+      setSelectedCategories((prev) => prev.filter((item) => item !== chip.value));
+      return;
+    }
+    if (chip.type === 'platform') {
+      setSelectedSoftwareTags((prev) => prev.filter((item) => item !== chip.value));
+      return;
+    }
+    const remaining = searchTokens.filter((token) => token !== chip.value);
+    setSearchQuery(remaining.join(' '));
+  };
+
   const handleSwitchToHost = () => {
     setMode('HOST');
     navigate('/host/dashboard');
@@ -612,10 +686,11 @@ export default function Marketplace() {
   };
 
   const handleMoonlightDownload = async () => {
+    const url = getMoonlightDownloadUrl();
     try {
-      await openExternal(MOONLIGHT_URL);
+      await openExternal(url);
     } catch (error) {
-      window.open(MOONLIGHT_URL, '_blank', 'noopener');
+      window.open(url, '_blank', 'noopener');
     }
   };
 
@@ -624,45 +699,30 @@ export default function Marketplace() {
       <header className={styles.header}>
         <div>
           <h1>Marketplace</h1>
-          <p>Escolha um PC e conecte agora ou agende um horario.</p>
-        </div>
-        <div className={styles.counter}>
-          {statusCounts.total} PCs | {statusCounts.online} online | {statusCounts.busy} ocupados
+          <p>Conecte agora ou agende</p>
         </div>
       </header>
 
       <div className={styles.marketplaceLayout}>
         <aside className={styles.sidebar}>
           <div className={styles.sideSection}>
-            <button type="button" className={styles.sideCta} onClick={handleSwitchToHost}>
-              Quero disponibilizar meu PC
-            </button>
-            <p className={styles.muted}>
-              Abra o modo Host para cadastrar e disponibilizar seus computadores.
-            </p>
-          </div>
-
-          <div className={styles.sideSection}>
             <button
               type="button"
               className={styles.sideToggle}
-              onClick={() => setFavoritesOpen((prev) => !prev)}
+              onClick={() => {
+                favoritesUserToggled.current = true;
+                setFavoritesOpen((prev) => !prev);
+              }}
               aria-expanded={favoritesOpen}
             >
-              <span>Favoritos</span>
+              <span>Favoritos ({favorites.length})</span>
               <span className={styles.chevron}>{favoritesOpen ? 'v' : '>'}</span>
             </button>
             {favoritesOpen && (
               <div className={styles.sideContent}>
-                <span className={styles.sideCount}>{favorites.length} itens</span>
-                {!isAuthenticated && (
-                  <p className={styles.muted}>Faca login para salvar favoritos e acessar esta lista.</p>
-                )}
+                {favorites.length > 0 && <span className={styles.sideCount}>{favorites.length} itens</span>}
                 {isAuthenticated && favoritesLoading && <p>Carregando favoritos...</p>}
                 {isAuthenticated && favoritesError && <p className={styles.errorInline}>{favoritesError}</p>}
-                {isAuthenticated && !favoritesLoading && !favoritesError && favorites.length === 0 && (
-                  <p className={styles.muted}>Nenhum favorito ainda.</p>
-                )}
                 {favorites.length > 0 && (
                   <ul className={styles.sideList}>
                     {favorites.map((favorite) => {
@@ -763,18 +823,18 @@ export default function Marketplace() {
             <button
               type="button"
               className={styles.sideToggle}
-              onClick={() => setPlatformsOpen((prev) => !prev)}
+              onClick={() => {
+                platformsUserToggled.current = true;
+                setPlatformsOpen((prev) => !prev);
+              }}
               aria-expanded={platformsOpen}
             >
-              <span>Plataformas</span>
+              <span>Plataformas ({availableSoftwareTags.length})</span>
               <span className={styles.chevron}>{platformsOpen ? 'v' : '>'}</span>
             </button>
-            {platformsOpen && (
+            {platformsOpen && availableSoftwareTags.length > 0 && (
               <div className={styles.sideContent}>
                 <div className={styles.sideOptions}>
-                  {availableSoftwareTags.length === 0 && (
-                    <span className={styles.muted}>Sem plataformas.</span>
-                  )}
                   {availableSoftwareTags.map((tag) => (
                     <label key={tag} className={styles.filterOption}>
                       <input
@@ -823,6 +883,10 @@ export default function Marketplace() {
                 placeholder="Buscar host, specs (ex: 16GB SSD RX6600)"
               />
             </div>
+            <span className={styles.searchMeta}>
+              {filteredStatusCounts.total} PCs • {filteredStatusCounts.online} online •{' '}
+              {filteredStatusCounts.busy} ocupados
+            </span>
             <button
               type="button"
               className={styles.clearFilters}
@@ -832,6 +896,21 @@ export default function Marketplace() {
               Limpar filtros
             </button>
           </div>
+          {activeChips.length > 0 && (
+            <div className={styles.chipRow}>
+              {activeChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  className={styles.chip}
+                  onClick={() => handleRemoveChip(chip)}
+                  aria-label={`Remover filtro ${chip.label}`}
+                >
+                  {chip.label} ✕
+                </button>
+              ))}
+            </div>
+          )}
 
           {isLoading && <p>Carregando PCs...</p>}
           {error && (
@@ -864,51 +943,33 @@ export default function Marketplace() {
                   : pc.status === 'BUSY'
                     ? styles.statusBusy
                     : styles.statusOffline;
+              const badgeClass =
+                pc.status === 'ONLINE'
+                  ? styles.statusBadgeOnline
+                  : pc.status === 'BUSY'
+                    ? styles.statusBadgeBusy
+                    : styles.statusBadgeOffline;
+              const statusLabel =
+                pc.status === 'ONLINE' ? 'Online' : pc.status === 'BUSY' ? 'Ocupado' : 'Offline';
               const specLine = formatCompactSpecs(pc);
               const isFavoritePc = favoritePcIds.has(pc.id);
               const hostName = formatHostName(pc.host ?? null);
-              const hostId = pc.host?.id ?? null;
               return (
                 <article key={pc.id} className={styles.card}>
                   <div className={styles.cardTop}>
                     <div className={styles.pcIcon} aria-hidden="true" />
-                    <div className={styles.cardMain}>
-                      <div className={styles.cardTitleRow}>
-                        <div className={styles.cardTitleMain}>
-                          <span className={`${styles.statusDot} ${statusClass}`} />
-                          <h3>{hostName}</h3>
-                          <span className={styles.pcSubtitle}>{pc.name}</span>
-                        </div>
-                        <div className={styles.cardIconGroup}>
-                          <button
-                            type="button"
-                            className={`${styles.iconButton} ${isFavoritePc ? styles.favoriteActive : ''}`}
-                            onClick={() => handleToggleFavoritePc(pc)}
-                            aria-label={isFavoritePc ? 'Desfavoritar PC' : 'Favoritar PC'}
-                          >
-                            {isFavoritePc ? '★' : '☆'}
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.iconButton}
-                            onClick={() => setDetailsPc(pc)}
-                            aria-label="Ver detalhes"
-                          >
-                            ℹ
-                          </button>
-                        </div>
-                      </div>
-                      {specLine && <div className={styles.specLine}>{specLine}</div>}
+                  <div className={`${styles.cardStatus} ${badgeClass}`}>
+                      <span className={`${styles.statusDot} ${statusClass}`} />
+                      <span className={styles.statusLabel}>{statusLabel}</span>
+                      {pc.queueCount > 0 && (
+                        <span className={styles.queueBadge}>Fila: {pc.queueCount}</span>
+                      )}
                     </div>
                   </div>
 
-                  <div className={styles.cardMeta}>
-                    <span className={styles.price}>R$ {pc.pricePerHour}/hora</span>
-                    <span className={styles.queue}>
-                      <span className={styles.queueIcon} aria-hidden="true" />
-                      ⏳ {pc.queueCount} na fila
-                    </span>
-                  </div>
+                  {specLine && <div className={styles.specLineMain}>{specLine}</div>}
+                  <div className={styles.hostLine}>{hostName}</div>
+                  <div className={styles.priceLine}>R$ {pc.pricePerHour}/hora</div>
 
                   <div className={styles.cardActions}>
                     <button
@@ -919,15 +980,39 @@ export default function Marketplace() {
                     >
                       {connectingPcId === pc.id ? 'Conectando...' : isBusy ? 'Entrar na fila' : 'Conectar'}
                     </button>
-                    <button
-                      type="button"
-                      className={styles.iconButton}
-                      onClick={() => openSchedule(pc)}
-                      disabled={isOffline}
-                      title="Agendar"
-                    >
-                      📅
-                    </button>
+                    <div className={styles.actionIcons}>
+                      <Tooltip label={isFavoritePc ? 'Desfavoritar' : 'Favoritar'}>
+                        <button
+                          type="button"
+                          className={`${styles.iconButton} ${isFavoritePc ? styles.favoriteActive : ''}`}
+                          onClick={() => handleToggleFavoritePc(pc)}
+                          aria-label={isFavoritePc ? 'Desfavoritar PC' : 'Favoritar PC'}
+                        >
+                          {isFavoritePc ? '★' : '☆'}
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Detalhes">
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          onClick={() => setDetailsPc(pc)}
+                          aria-label="Ver detalhes"
+                        >
+                          ℹ
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Agendar">
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          onClick={() => openSchedule(pc)}
+                          disabled={isOffline}
+                          aria-label="Agendar"
+                        >
+                          📅
+                        </button>
+                      </Tooltip>
+                    </div>
                   </div>
                 </article>
               );
