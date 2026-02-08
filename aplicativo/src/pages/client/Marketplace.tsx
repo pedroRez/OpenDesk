@@ -11,6 +11,7 @@ import { isMoonlightAvailable, detectMoonlightPath } from '../../lib/moonlightLa
 import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
+import { open as openExternal } from '@tauri-apps/api/shell';
 
 import styles from './Marketplace.module.css';
 
@@ -612,7 +613,6 @@ export default function Marketplace() {
 
   const handleMoonlightDownload = async () => {
     try {
-      const { open: openExternal } = await import('@tauri-apps/plugin-shell');
       await openExternal(MOONLIGHT_URL);
     } catch (error) {
       window.open(MOONLIGHT_URL, '_blank', 'noopener');

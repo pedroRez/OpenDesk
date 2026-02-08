@@ -98,6 +98,19 @@ select {
   gap: 12px;
 }
 
+.localPcHint {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .sunshineStatus {
   display: inline-flex;
   align-items: center;

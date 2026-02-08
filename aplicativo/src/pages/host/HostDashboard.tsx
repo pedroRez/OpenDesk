@@ -1097,6 +1097,9 @@ export default function HostDashboard() {
           <div className={styles.listHeader}>
             <div>
               <h3>Seus PCs</h3>
+              {localPcRecord && (
+                <span className={styles.localPcHint}>Este computador ja esta cadastrado.</span>
+              )}
             </div>
             {manualEnabled && (
               <button
