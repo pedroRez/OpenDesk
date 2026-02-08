@@ -36,8 +36,8 @@ type PC = {
   queueCount?: number;
   activeSession?: {
     id: string;
-    startedAt?: string | null;
-    user?: { username?: string | null } | null;
+    startAt?: string | null;
+    client?: { username?: string | null } | null;
   } | null;
   pricePerHour: number;
   connectionHost?: string | null;
@@ -161,6 +161,7 @@ export default function HostDashboard() {
   const [sunshineRunning, setSunshineRunning] = useState<boolean | null>(null);
   const [sunshineAvailable, setSunshineAvailable] = useState(true);
   const [sunshineStatusMessage, setSunshineStatusMessage] = useState('');
+  const [hostSearchQuery, setHostSearchQuery] = useState('');
   const [hostLocked, setHostLocked] = useState(false);
   const [hostPin, setHostPin] = useState('');
   const [hostPinConfirm, setHostPinConfirm] = useState('');
@@ -172,6 +173,7 @@ export default function HostDashboard() {
 
   const hostProfileId = user?.hostProfileId ?? null;
   const isHost = useMemo(() => Boolean(hostProfileId), [hostProfileId]);
+  const hasPcs = pcs.length > 0;
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastHeartbeatLogRef = useRef<number>(0);
   const autoAbortRef = useRef<AbortController | null>(null);
@@ -1019,15 +1021,59 @@ export default function HostDashboard() {
             ? 4
             : onlineStep === 'done'
               ? 5
-              : 0;
+      : 0;
+
+  const searchTokens = useMemo(
+    () => hostSearchQuery.toLowerCase().split(/\s+/).filter(Boolean),
+    [hostSearchQuery],
+  );
+
+  const filteredPcs = useMemo(() => {
+    if (searchTokens.length === 0) return pcs;
+    return pcs.filter((pc) => {
+      const searchable = [
+        pc.name,
+        pc.cpu,
+        pc.gpu,
+        pc.storageType,
+        pc.ramGb ? `${pc.ramGb}GB` : null,
+        formatSpecLine(pc),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      const compact = searchable.replace(/\s+/g, '');
+      return searchTokens.every((token) => searchable.includes(token) || compact.includes(token));
+    });
+  }, [pcs, searchTokens]);
 
   return (
     <section className={styles.container}>
       <div className={styles.header}>
         <div>
           <h1>Painel do Host</h1>
-          <p>Gerencie seus PCs e fique online quando quiser.</p>
+          {!hasPcs && <p>Cadastre seu PC para ficar online e receber conexoes.</p>}
         </div>
+        {isHost && (
+          <div className={styles.sunshineStatus}>
+            <span
+              className={`${styles.sunshineDot} ${
+                sunshineRunning === null
+                  ? styles.sunshinePending
+                  : sunshineRunning
+                    ? styles.sunshineOn
+                    : styles.sunshineOff
+              }`}
+            />
+            <span>
+              {sunshineRunning === null
+                ? 'Sunshine: verificando...'
+                : sunshineRunning
+                  ? 'Sunshine: Rodando'
+                  : 'Sunshine: Parado'}
+            </span>
+          </div>
+        )}
       </div>
 
       {!isHost && (
@@ -1051,7 +1097,6 @@ export default function HostDashboard() {
           <div className={styles.listHeader}>
             <div>
               <h3>Seus PCs</h3>
-              <p className={styles.listHint}>Controle disponibilidade e conexao por PC.</p>
             </div>
             {manualEnabled && (
               <button
@@ -1066,66 +1111,23 @@ export default function HostDashboard() {
               </button>
             )}
           </div>
-          <div className={styles.sunshinePanel}>
-            <div className={styles.sunshineInfo}>
-              <span
-                className={`${styles.sunshineBadge} ${
-                  sunshineRunning === null
-                    ? styles.sunshinePending
-                    : sunshineRunning
-                      ? styles.sunshineOn
-                      : styles.sunshineOff
-                }`}
-              >
-                {sunshineRunning === null
-                  ? 'Sunshine: verificando...'
-                  : sunshineRunning
-                    ? 'Sunshine: Rodando'
-                    : 'Sunshine: Parado'}
-              </span>
-              {sunshineRunning === false && (
-                <span className={styles.helperText}>
-                  Sunshine precisa estar rodando para ficar ONLINE.
-                </span>
-              )}
-            </div>
-            {sunshineRunning !== true && (
-              <div className={styles.sunshineActions}>
-                <button type="button" onClick={handleSunshineEnsure} className={styles.ghost}>
-                  Tentar iniciar novamente
-                </button>
-              </div>
-            )}
+          <div className={styles.searchRow}>
+            <input
+              className={styles.searchInput}
+              value={hostSearchQuery}
+              onChange={(event) => setHostSearchQuery(event.target.value)}
+              placeholder="Buscar por nome ou specs (ex: 16GB RTX SSD)"
+            />
           </div>
 
-          <div className={styles.localPcPanel}>
-            <div>
-              <strong>Cadastro rapido deste PC</strong>
-              <p className={styles.listHint}>
-                Detecte o hardware automaticamente e cadastre este PC com 1 clique.
-              </p>
-            </div>
-            {localPcRecord ? (
-              <div className={styles.localPcActions}>
-                <span>
-                  Este PC ja esta cadastrado como <strong>{localPcRecord.name}</strong>.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.getElementById(`pc-card-${localPcRecord.id}`);
-                    if (el) {
-                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                    setHighlightPcId(localPcRecord.id);
-                    setTimeout(() => setHighlightPcId(null), 1000);
-                  }}
-                  className={styles.ghost}
-                >
-                  Ver no painel
-                </button>
+          {!hasPcs && (
+            <div className={styles.localPcPanel}>
+              <div>
+                <strong>Cadastrar este PC</strong>
+                <p className={styles.listHint}>
+                  Detecte o hardware automaticamente e cadastre este PC com 1 clique.
+                </p>
               </div>
-            ) : (
               <div className={styles.localPcActions}>
                 <button
                   type="button"
@@ -1135,8 +1137,8 @@ export default function HostDashboard() {
                   {localMachineId ? 'Cadastrar este PC' : 'Detectando identificador...'}
                 </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {manualEnabled && isFormOpen && (
             <form onSubmit={handleCreatePC} className={`${styles.form} ${styles.formPanel}`} id="pc-form">
@@ -1246,8 +1248,9 @@ export default function HostDashboard() {
           )}
 
           {isLoadingPcs && <p>Carregando PCs...</p>}
-          {!isLoadingPcs && pcs.length === 0 && (
-            <p>{localPcRecord ? 'Este PC ja esta cadastrado.' : 'Nenhum PC cadastrado.'}</p>
+          {!isLoadingPcs && pcs.length === 0 && <p>Nenhum PC cadastrado.</p>}
+          {!isLoadingPcs && pcs.length > 0 && filteredPcs.length === 0 && (
+            <p className={styles.listHint}>Nenhum PC corresponde a busca.</p>
           )}
           {showSunshineHelp && (
             <div className={styles.missingPanel}>
@@ -1287,7 +1290,7 @@ export default function HostDashboard() {
               {sunshineStatusMessage && <p className={styles.helperText}>{sunshineStatusMessage}</p>}
             </div>
           )}
-          {pcs.map((pc) => {
+          {filteredPcs.map((pc) => {
             const statusClass =
               pc.status === 'ONLINE'
                 ? styles.statusOnline
@@ -1295,8 +1298,8 @@ export default function HostDashboard() {
                   ? styles.statusOffline
                   : styles.statusBusy;
             const specLine = formatSpecLine(pc);
-            const activeUser = pc.activeSession?.user?.username ?? null;
-            const sessionDuration = formatDuration(pc.activeSession?.startedAt ?? null);
+            const activeUser = pc.activeSession?.client?.username ?? null;
+            const sessionDuration = formatDuration(pc.activeSession?.startAt ?? null);
             const detailsOpen = detailsOpenPcId === pc.id;
 
             return (

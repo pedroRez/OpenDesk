@@ -80,7 +80,7 @@ const RELIABILITY_LABELS: Record<ReliabilityBadge, string> = {
   INSTAVEL: 'Instavel',
 };
 const RELIABILITY_TOOLTIP = 'Baseado em sessoes concluidas e tempo online recente.';
-const MOONLIGHT_URL = 'https://moonlight-stream.org/';
+const MOONLIGHT_URL = 'https://github.com/moonlight-stream/moonlight-qt/releases/latest';
 
 const formatDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -802,7 +802,7 @@ export default function Marketplace() {
               </div>
               <div className={styles.detectActions}>
                 <button type="button" className={styles.primaryButton} onClick={handleMoonlightDownload}>
-                  Baixar Moonlight (Release oficial)
+                  Baixar Moonlight
                 </button>
                 <button type="button" className={styles.secondaryButton} onClick={handleMoonlightBrowse}>
                   Ja instalei / Procurar
@@ -868,44 +868,35 @@ export default function Marketplace() {
               const isFavoritePc = favoritePcIds.has(pc.id);
               const hostName = formatHostName(pc.host ?? null);
               const hostId = pc.host?.id ?? null;
-              const isFavoriteHost = hostId ? favoriteHostIds.has(hostId) : false;
               return (
                 <article key={pc.id} className={styles.card}>
                   <div className={styles.cardTop}>
                     <div className={styles.pcIcon} aria-hidden="true" />
                     <div className={styles.cardMain}>
                       <div className={styles.cardTitleRow}>
-                        <span className={`${styles.statusDot} ${statusClass}`} />
-                        <h3>{pc.name}</h3>
-                        <button
-                          type="button"
-                          className={`${styles.iconButton} ${isFavoritePc ? styles.favoriteActive : ''}`}
-                          onClick={() => handleToggleFavoritePc(pc)}
-                          aria-label={isFavoritePc ? 'Desfavoritar PC' : 'Favoritar PC'}
-                        >
-                          {isFavoritePc ? '★' : '☆'}
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.iconButton}
-                          onClick={() => setDetailsPc(pc)}
-                          aria-label="Ver detalhes"
-                        >
-                          ℹ
-                        </button>
-                      </div>
-                      <div className={styles.hostRow}>
-                        <span className={styles.hostName}>{hostName}</span>
-                        {hostId && (
+                        <div className={styles.cardTitleMain}>
+                          <span className={`${styles.statusDot} ${statusClass}`} />
+                          <h3>{hostName}</h3>
+                          <span className={styles.pcSubtitle}>{pc.name}</span>
+                        </div>
+                        <div className={styles.cardIconGroup}>
                           <button
                             type="button"
-                            className={`${styles.iconButton} ${isFavoriteHost ? styles.favoriteActive : ''}`}
-                            onClick={() => handleToggleFavoriteHost(hostId, hostName)}
-                            aria-label={isFavoriteHost ? 'Desfavoritar host' : 'Favoritar host'}
+                            className={`${styles.iconButton} ${isFavoritePc ? styles.favoriteActive : ''}`}
+                            onClick={() => handleToggleFavoritePc(pc)}
+                            aria-label={isFavoritePc ? 'Desfavoritar PC' : 'Favoritar PC'}
                           >
-                            {isFavoriteHost ? '★' : '☆'}
+                            {isFavoritePc ? '★' : '☆'}
                           </button>
-                        )}
+                          <button
+                            type="button"
+                            className={styles.iconButton}
+                            onClick={() => setDetailsPc(pc)}
+                            aria-label="Ver detalhes"
+                          >
+                            ℹ
+                          </button>
+                        </div>
                       </div>
                       {specLine && <div className={styles.specLine}>{specLine}</div>}
                     </div>
@@ -1026,6 +1017,20 @@ export default function Marketplace() {
                 <h2>{detailsPc.name}</h2>
                 <p className={styles.muted}>Host: {formatHostName(detailsPc.host ?? null)}</p>
               </div>
+              {detailsPc.host?.id && (
+                <button
+                  type="button"
+                  className={`${styles.iconButton} ${
+                    favoriteHostIds.has(detailsPc.host.id) ? styles.favoriteActive : ''
+                  }`}
+                  onClick={() => handleToggleFavoriteHost(detailsPc.host!.id, formatHostName(detailsPc.host))}
+                  aria-label={
+                    favoriteHostIds.has(detailsPc.host.id) ? 'Desfavoritar host' : 'Favoritar host'
+                  }
+                >
+                  {favoriteHostIds.has(detailsPc.host.id) ? '★' : '☆'}
+                </button>
+              )}
               <button type="button" onClick={() => setDetailsPc(null)} className={styles.closeButton}>
                 Fechar
               </button>

@@ -31,8 +31,8 @@ export async function hostRoutes(fastify: FastifyInstance) {
           select: {
             id: true,
             pcId: true,
-            startedAt: true,
-            user: { select: { username: true } },
+            startAt: true,
+            client: { select: { username: true } },
           },
         })
       : [];

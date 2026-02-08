@@ -203,6 +203,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  margin-top: -4px;
 }
 
 .searchField {
@@ -318,13 +319,34 @@
 .cardTitleRow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitleMain {
+  display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.cardIconGroup {
+  display: inline-flex;
+  gap: 6px;
 }
 
 .cardTitleRow h3 {
   margin: 0;
   font-size: 0.95rem;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pcSubtitle {
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .statusDot {
@@ -332,18 +354,6 @@
   height: 10px;
   border-radius: 999px;
   background: var(--muted);
-}
-
-.hostRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.hostName {
-  font-size: 0.85rem;
-  color: var(--muted);
 }
 
 .specLine {
@@ -516,6 +526,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .detailsSection {

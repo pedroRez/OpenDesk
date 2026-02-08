@@ -6,6 +6,9 @@
 .header {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .cta {
@@ -95,38 +98,22 @@ select {
   gap: 12px;
 }
 
-.sunshinePanel {
-  padding: 12px 16px;
-  border-radius: 16px;
-  border: 1px solid var(--stroke);
-  background: rgba(255, 255, 255, 0.9);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.sunshineInfo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.sunshineActions {
-  display: flex;
+.sunshineStatus {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-
-.sunshineBadge {
   padding: 6px 12px;
   border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
   border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.sunshineDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
 }
 
 .sunshineOn {
@@ -145,6 +132,19 @@ select {
   background: rgba(92, 92, 102, 0.12);
   color: #5c5c66;
   border-color: rgba(92, 92, 102, 0.35);
+}
+
+.searchRow {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.searchInput {
+  width: min(380px, 100%);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .listHint {
