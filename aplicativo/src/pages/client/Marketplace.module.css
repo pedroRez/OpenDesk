@@ -1,6 +1,6 @@
 .container {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .header {
@@ -27,20 +27,22 @@
 
 .sidebar {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   align-content: start;
-  padding: 14px;
-  border-radius: 16px;
+  padding: 12px;
+  border-radius: 14px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.9);
   position: sticky;
   top: 16px;
   height: fit-content;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
 }
 
 .sideSection {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .sideCta {
@@ -61,8 +63,8 @@
   gap: 8px;
   border: none;
   background: transparent;
-  font-weight: 700;
-  font-size: 0.95rem;
+  font-weight: 600;
+  font-size: 0.85rem;
   cursor: pointer;
   color: var(--ink);
 }
@@ -74,7 +76,7 @@
 
 .sideContent {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .sideCount {
@@ -84,18 +86,23 @@
   color: var(--muted);
 }
 
+.sideHint {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
 .sideList {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .sideItem {
   display: grid;
-  gap: 6px;
-  padding: 10px;
+  gap: 4px;
+  padding: 8px;
   border-radius: 12px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.85);
@@ -115,7 +122,7 @@
 
 .sideItemName {
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .sideItemActions {
@@ -126,7 +133,7 @@
 }
 
 .sideQueue {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--muted);
 }
 
@@ -160,7 +167,7 @@
 
 .sideOptions {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .main {
@@ -171,7 +178,7 @@
 
 .detectCard {
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid rgba(244, 93, 18, 0.4);
   background: rgba(255, 242, 231, 0.95);
   display: grid;
@@ -207,6 +214,12 @@
   margin-top: 0;
 }
 
+.searchMeta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .searchField {
   flex: 1 1 260px;
 }
@@ -214,14 +227,14 @@
 .searchField input {
   width: 100%;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.95);
 }
 
 .filters {
-  padding: 14px;
-  border-radius: 16px;
+  padding: 12px;
+  border-radius: 14px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.9);
   display: grid;
@@ -244,18 +257,18 @@
 .filterOptions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .filterOption {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 4px;
+  padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.8);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
@@ -263,15 +276,17 @@
 
 .filterOption input {
   accent-color: var(--accent-strong);
+  width: 12px;
+  height: 12px;
 }
 
 .clearFilters {
   width: fit-content;
-  padding: 8px 14px;
+  padding: 6px 12px;
   border-radius: 10px;
   border: 1px solid var(--stroke);
-  background: rgba(255, 255, 255, 0.85);
-  color: var(--accent-strong);
+  background: transparent;
+  color: var(--muted);
   font-weight: 600;
   cursor: pointer;
 }
@@ -281,73 +296,72 @@
   cursor: not-allowed;
 }
 
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -2px;
+}
+
+.chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--accent-strong);
+}
+
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: stretch;
 }
 
 .card {
   padding: 12px;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.95);
   display: grid;
-  gap: 10px;
+  gap: 8px;
   box-shadow: 0 14px 24px rgba(10, 10, 16, 0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(244, 93, 18, 0.35);
+  box-shadow: 0 18px 28px rgba(10, 10, 16, 0.12);
 }
 
 .cardTop {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  gap: 10px;
+  align-items: center;
 }
 
 .pcIcon {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 12px;
   background: linear-gradient(145deg, rgba(37, 99, 235, 0.2), rgba(15, 23, 42, 0.1));
   border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
-.cardMain {
-  flex: 1;
-  display: grid;
-  gap: 6px;
-}
-
-.cardTitleRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.cardTitleMain {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.cardIconGroup {
+.cardStatus {
   display: inline-flex;
+  align-items: center;
   gap: 6px;
-}
-
-.cardTitleRow h3 {
-  margin: 0;
-  font-size: 0.95rem;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pcSubtitle {
-  font-size: 0.75rem;
-  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.8rem;
 }
 
 .statusDot {
@@ -357,46 +371,39 @@
   background: var(--muted);
 }
 
-.specLine {
-  font-size: 0.8rem;
-  color: #1f2937;
-  font-weight: 600;
+.statusLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.queueBadge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.specLineMain {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #111827;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.cardMeta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-weight: 600;
-}
-
-.price {
-  font-size: 0.9rem;
-}
-
-.queue {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.hostLine {
   font-size: 0.8rem;
   color: var(--muted);
 }
 
-.queueIcon {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: repeating-linear-gradient(
-    90deg,
-    rgba(148, 163, 184, 0.25),
-    rgba(148, 163, 184, 0.25) 3px,
-    transparent 3px,
-    transparent 6px
-  );
+.priceLine {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1f2937;
 }
 
 .cardActions {
@@ -408,7 +415,7 @@
 .primaryButton,
 .secondaryButton {
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: none;
   font-weight: 600;
   cursor: pointer;
@@ -430,6 +437,12 @@
   color: var(--accent-strong);
 }
 
+.actionIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .secondaryButton:hover {
   border-color: var(--accent-strong);
 }
@@ -445,7 +458,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 18px;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid rgba(244, 93, 18, 0.4);
   background: rgba(255, 236, 223, 0.95);
   gap: 16px;
@@ -472,7 +485,7 @@
 
 .empty {
   padding: 16px 18px;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px dashed var(--stroke);
   background: rgba(255, 255, 255, 0.7);
   color: var(--muted);
@@ -481,7 +494,7 @@
 .policyNote {
   margin-top: 10px;
   padding: 12px 16px;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.85);
   color: var(--muted);
@@ -518,7 +531,7 @@
 .detailsPanel {
   width: min(520px, 92vw);
   height: auto;
-  border-radius: 18px;
+  border-radius: 14px;
   border: 1px solid var(--stroke);
 }
 
@@ -661,5 +674,12 @@
 
   .sidebar {
     position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
   }
 }

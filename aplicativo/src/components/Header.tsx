@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../lib/auth';
 import { useMode } from '../lib/mode';
+import Tooltip from './Tooltip';
 
 import styles from './Header.module.css';
 
 export default function Header() {
   const { user, logout } = useAuth();
-  const { mode, clearMode } = useMode();
+  const { mode, clearMode, setMode } = useMode();
   const navigate = useNavigate();
   const showQuickLinks = Boolean(user && mode);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -19,6 +22,12 @@ export default function Header() {
   const handleModeReset = () => {
     clearMode();
     navigate('/');
+  };
+
+  const handleGoHost = () => {
+    setMode('HOST');
+    navigate('/host/dashboard');
+    setProfileMenuOpen(false);
   };
 
   return (
@@ -34,9 +43,16 @@ export default function Header() {
             <span className={styles.modeBadge}>
               Modo: {mode === 'CLIENT' ? 'Cliente' : 'Host'}
             </span>
-            <button type="button" onClick={handleModeReset} className={styles.modeSwitch}>
-              Trocar modo
-            </button>
+            <Tooltip label="Trocar modo">
+              <button
+                type="button"
+                onClick={handleModeReset}
+                className={styles.modeIconButton}
+                aria-label="Trocar modo"
+              >
+                ⇆
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>
@@ -47,7 +63,7 @@ export default function Header() {
             <NavLink
               to="/client/marketplace"
               className={({ isActive }) =>
-                `${styles.link} ${isActive ? styles.linkActive : ''}`
+                `${styles.link} ${styles.linkPrimary} ${isActive ? styles.linkActive : ''}`
               }
             >
               Marketplace
@@ -55,7 +71,7 @@ export default function Header() {
             <NavLink
               to="/client/reservations"
               className={({ isActive }) =>
-                `${styles.link} ${isActive ? styles.linkActive : ''}`
+                `${styles.link} ${styles.linkGhost} ${isActive ? styles.linkGhostActive : ''}`
               }
             >
               Agendamentos
@@ -75,7 +91,7 @@ export default function Header() {
         <NavLink
           to="/settings"
           className={({ isActive }) =>
-            `${styles.link} ${isActive ? styles.linkActive : ''}`
+            `${styles.link} ${mode === 'CLIENT' ? styles.linkGhost : ''} ${isActive ? styles.linkGhostActive : ''}`
           }
         >
           Configuracoes
@@ -88,7 +104,33 @@ export default function Header() {
             <div className={styles.userMeta}>
               <span className={styles.userName}>Ola, {user.displayName ?? user.username}</span>
             </div>
-            <button type="button" onClick={handleLogout} className={styles.ghostButton}>
+            {mode === 'CLIENT' && (
+              <div className={styles.profileMenu}>
+                <Tooltip label="Menu do perfil">
+                  <button
+                    type="button"
+                    className={styles.profileButton}
+                    onClick={() => setProfileMenuOpen((prev) => !prev)}
+                    aria-label="Abrir menu do perfil"
+                    aria-expanded={profileMenuOpen}
+                  >
+                    ⋯
+                  </button>
+                </Tooltip>
+                {profileMenuOpen && (
+                  <div className={styles.profileDropdown}>
+                    <button
+                      type="button"
+                      className={styles.profileItem}
+                      onClick={handleGoHost}
+                    >
+                      Disponibilizar meu PC
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            <button type="button" onClick={handleLogout} className={styles.exitButton}>
               Sair
             </button>
           </>

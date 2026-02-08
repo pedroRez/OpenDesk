@@ -56,17 +56,23 @@
   gap: 8px;
 }
 
-.modeSwitch {
-  border: none;
-  background-color: transparent;
-  font-size: 0.75rem;
-  font-weight: 600;
+.modeIconButton {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.85);
   color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.modeSwitch:hover {
-  text-decoration: underline;
+.modeIconButton:hover {
+  border-color: var(--accent-strong);
 }
 
 .nav {
@@ -97,10 +103,28 @@
   box-shadow: 0 12px 24px rgba(244, 93, 18, 0.25);
 }
 
+.linkPrimary {
+  font-weight: 600;
+}
+
+.linkGhost {
+  background: transparent;
+  border-color: var(--stroke);
+  color: var(--muted);
+}
+
+.linkGhostActive {
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--ink);
+  border-color: var(--stroke);
+  box-shadow: none;
+}
+
 .user {
   display: flex;
   align-items: center;
   gap: 10px;
+  position: relative;
 }
 
 .userMeta {
@@ -149,6 +173,68 @@
 .ghostButton:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.exitButton {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.exitButton:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.profileMenu {
+  position: relative;
+}
+
+.profileButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profileButton:hover {
+  border-color: var(--accent);
+}
+
+.profileDropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 200px;
+  background: #fff;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.15);
+  padding: 6px;
+  z-index: 20;
+}
+
+.profileItem {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profileItem:hover {
+  background: rgba(244, 93, 18, 0.12);
 }
 
 @media (max-width: 960px) {
