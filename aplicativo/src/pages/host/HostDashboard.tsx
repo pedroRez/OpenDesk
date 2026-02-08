@@ -85,7 +85,25 @@ const createDefaultForm = (): PCInput => ({
   connectionNotes: '',
 });
 
-const SUNSHINE_URL = 'https://app.lizardbyte.dev/Sunshine/';
+const SUNSHINE_WINDOWS_URL =
+  'https://www.virustotal.com/gui/file-analysis/ZTgwMDJjNmUyMDgwYTBiMzgxNzg4ZjY1Y2VkMmI1NDM6MTc1ODczODI2MA==';
+const SUNSHINE_RELEASES_LATEST_URL = 'https://github.com/LizardByte/Sunshine/releases/latest';
+
+const getOsKind = () => {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const ua = navigator.userAgent.toLowerCase();
+  const platform = (navigator.platform ?? '').toLowerCase();
+  if (ua.includes('windows') || platform.includes('win')) return 'windows';
+  if (ua.includes('mac') || platform.includes('mac')) return 'mac';
+  if (ua.includes('linux') || platform.includes('linux')) return 'linux';
+  return 'unknown';
+};
+
+const getSunshineDownloadUrl = () => {
+  const os = getOsKind();
+  if (os === 'windows') return SUNSHINE_WINDOWS_URL;
+  return SUNSHINE_RELEASES_LATEST_URL;
+};
 
 const formatSpecLine = (pc: PC) => {
   const ram = pc.ramGb ? `${pc.ramGb}GB` : null;
@@ -682,11 +700,12 @@ export default function HostDashboard() {
   };
 
   const handleSunshineDownload = async () => {
+    const url = getSunshineDownloadUrl();
     try {
       const { open: openExternal } = await import('@tauri-apps/plugin-shell');
-      await openExternal(SUNSHINE_URL);
+      await openExternal(url);
     } catch (error) {
-      window.open(SUNSHINE_URL, '_blank', 'noopener');
+      window.open(url, '_blank', 'noopener');
     }
   };
 
