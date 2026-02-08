@@ -1,7 +1,43 @@
 .container {
   display: grid;
   gap: 16px;
-  max-width: 720px;
+  max-width: 900px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.state {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px dashed var(--stroke);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
+}
+
+.emptyState {
+  display: grid;
+  gap: 10px;
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px dashed var(--stroke);
+  background: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  justify-items: center;
+}
+
+.emptyIcon {
+  font-size: 2rem;
 }
 
 .list {
@@ -12,16 +48,25 @@
 .card {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 14px 16px;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
   border-radius: 14px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.9);
 }
 
-.card p {
-  margin: 4px 0 0;
-  color: var(--muted);
+.cardMain {
+  display: grid;
+  gap: 6px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .status {
@@ -31,4 +76,76 @@
   border-radius: 999px;
   border: 1px solid var(--stroke);
   background: rgba(15, 23, 42, 0.05);
+}
+
+.statusSCHEDULED {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.statusACTIVE {
+  background: rgba(16, 185, 129, 0.12);
+  color: #0f766e;
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.statusCANCELLED,
+.statusEXPIRED {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+.statusCOMPLETED {
+  background: rgba(124, 58, 237, 0.12);
+  color: #6d28d9;
+  border-color: rgba(124, 58, 237, 0.2);
+}
+
+.specs {
+  font-weight: 700;
+  color: #111827;
+}
+
+.hostRow,
+.timeRow {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.cardActions {
+  display: grid;
+  gap: 8px;
+  min-width: 160px;
+}
+
+.primaryButton {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ghostButton {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ghostButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

@@ -285,19 +285,6 @@ export default function Marketplace() {
     };
   }, []);
 
-  const statusCounts = useMemo(() => {
-    return pcs.reduce(
-      (acc, pc) => {
-        acc.total += 1;
-        if (pc.status === 'ONLINE') acc.online += 1;
-        if (pc.status === 'BUSY') acc.busy += 1;
-        if (pc.status === 'OFFLINE') acc.offline += 1;
-        return acc;
-      },
-      { total: 0, online: 0, busy: 0, offline: 0 },
-    );
-  }, [pcs]);
-
   const favoritePcIds = useMemo(
     () => new Set(favorites.filter((favorite) => favorite.pcId).map((favorite) => favorite.pcId!)),
     [favorites],
@@ -383,6 +370,19 @@ export default function Marketplace() {
       return searchTokens.every((token) => searchable.includes(token) || compact.includes(token));
     });
   }, [pcs, selectedCategories, selectedSoftwareTags, searchTokens]);
+
+  const filteredStatusCounts = useMemo(() => {
+    return filteredPcs.reduce(
+      (acc, pc) => {
+        acc.total += 1;
+        if (pc.status === 'ONLINE') acc.online += 1;
+        if (pc.status === 'BUSY') acc.busy += 1;
+        if (pc.status === 'OFFLINE') acc.offline += 1;
+        return acc;
+      },
+      { total: 0, online: 0, busy: 0, offline: 0 },
+    );
+  }, [filteredPcs]);
 
   const handleToggleFavoritePc = async (pc: FavoritePcTarget) => {
     if (!isAuthenticated || !user) {
@@ -720,7 +720,7 @@ export default function Marketplace() {
             </button>
             {favoritesOpen && (
               <div className={styles.sideContent}>
-                <span className={styles.sideCount}>{favorites.length} itens</span>
+                {favorites.length > 0 && <span className={styles.sideCount}>{favorites.length} itens</span>}
                 {isAuthenticated && favoritesLoading && <p>Carregando favoritos...</p>}
                 {isAuthenticated && favoritesError && <p className={styles.errorInline}>{favoritesError}</p>}
                 {favorites.length > 0 && (
@@ -884,7 +884,8 @@ export default function Marketplace() {
               />
             </div>
             <span className={styles.searchMeta}>
-              {filteredPcs.length} PCs • {statusCounts.online} online • {statusCounts.busy} ocupados
+              {filteredStatusCounts.total} PCs • {filteredStatusCounts.online} online •{' '}
+              {filteredStatusCounts.busy} ocupados
             </span>
             <button
               type="button"
@@ -942,6 +943,12 @@ export default function Marketplace() {
                   : pc.status === 'BUSY'
                     ? styles.statusBusy
                     : styles.statusOffline;
+              const badgeClass =
+                pc.status === 'ONLINE'
+                  ? styles.statusBadgeOnline
+                  : pc.status === 'BUSY'
+                    ? styles.statusBadgeBusy
+                    : styles.statusBadgeOffline;
               const statusLabel =
                 pc.status === 'ONLINE' ? 'Online' : pc.status === 'BUSY' ? 'Ocupado' : 'Offline';
               const specLine = formatCompactSpecs(pc);
@@ -951,7 +958,7 @@ export default function Marketplace() {
                 <article key={pc.id} className={styles.card}>
                   <div className={styles.cardTop}>
                     <div className={styles.pcIcon} aria-hidden="true" />
-                    <div className={styles.cardStatus}>
+                  <div className={`${styles.cardStatus} ${badgeClass}`}>
                       <span className={`${styles.statusDot} ${statusClass}`} />
                       <span className={styles.statusLabel}>{statusLabel}</span>
                       {pc.queueCount > 0 && (

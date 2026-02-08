@@ -362,6 +362,9 @@
   gap: 6px;
   font-weight: 700;
   font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
 }
 
 .statusDot {
@@ -374,6 +377,24 @@
 .statusLabel {
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.statusBadgeOnline {
+  background: rgba(16, 185, 129, 0.12);
+  color: #0f766e;
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.statusBadgeBusy {
+  background: rgba(245, 158, 11, 0.18);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.statusBadgeOffline {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+  border-color: rgba(148, 163, 184, 0.35);
 }
 
 .queueBadge {
