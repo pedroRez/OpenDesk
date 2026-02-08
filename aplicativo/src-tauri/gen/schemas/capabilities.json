@@ -1,1 +1,1 @@
-{"main-capability":{"identifier":"main-capability","description":"Default capabilities for the main window","local":true,"windows":["main"],"permissions":["core:default",{"identifier":"shell:allow-spawn","allow":[{"args":true,"cmd":"node","name":"node"}]},"shell:allow-kill"]}}
+{"main-capability":{"identifier":"main-capability","description":"Default capabilities for the main window","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open",{"identifier":"shell:allow-spawn","allow":[{"args":true,"cmd":"node","name":"node"}]},"shell:allow-kill"]}}
