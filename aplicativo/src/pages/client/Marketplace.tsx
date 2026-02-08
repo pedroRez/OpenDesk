@@ -11,7 +11,7 @@ import { isMoonlightAvailable, detectMoonlightPath } from '../../lib/moonlightLa
 import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
-import { open as openExternal } from '@tauri-apps/api/shell';
+import { open as openExternal } from '@tauri-apps/plugin-shell';
 
 import styles from './Marketplace.module.css';
 
