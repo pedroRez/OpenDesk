@@ -338,7 +338,7 @@ export default function Marketplace() {
     searchTokens.forEach((token) => {
       chips.push({
         key: `search-${token}`,
-        label: token,
+        label: `Busca: ${token}`,
         type: 'search',
         value: token,
       });
@@ -701,9 +701,6 @@ export default function Marketplace() {
           <h1>Marketplace</h1>
           <p>Conecte agora ou agende</p>
         </div>
-        <div className={styles.counter}>
-          {statusCounts.total} PCs | {statusCounts.online} online | {statusCounts.busy} ocupados
-        </div>
       </header>
 
       <div className={styles.marketplaceLayout}>
@@ -721,20 +718,11 @@ export default function Marketplace() {
               <span>Favoritos ({favorites.length})</span>
               <span className={styles.chevron}>{favoritesOpen ? 'v' : '>'}</span>
             </button>
-            {!favoritesOpen && favorites.length === 0 && (
-              <span className={styles.sideHint}>Nenhum favorito ainda.</span>
-            )}
             {favoritesOpen && (
               <div className={styles.sideContent}>
                 <span className={styles.sideCount}>{favorites.length} itens</span>
-                {!isAuthenticated && (
-                  <p className={styles.muted}>Faca login para salvar favoritos e acessar esta lista.</p>
-                )}
                 {isAuthenticated && favoritesLoading && <p>Carregando favoritos...</p>}
                 {isAuthenticated && favoritesError && <p className={styles.errorInline}>{favoritesError}</p>}
-                {isAuthenticated && !favoritesLoading && !favoritesError && favorites.length === 0 && (
-                  <p className={styles.muted}>Nenhum favorito ainda.</p>
-                )}
                 {favorites.length > 0 && (
                   <ul className={styles.sideList}>
                     {favorites.map((favorite) => {
