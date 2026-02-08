@@ -86,7 +86,7 @@ const createDefaultForm = (): PCInput => ({
 });
 
 const SUNSHINE_WINDOWS_URL =
-  'https://www.virustotal.com/gui/file-analysis/ZTgwMDJjNmUyMDgwYTBiMzgxNzg4ZjY1Y2VkMmI1NDM6MTc1ODczODI2MA==';
+  'https://github.com/LizardByte/Sunshine/releases/download/v2025.924.154138/Sunshine-Windows-AMD64-installer.exe';
 const SUNSHINE_RELEASES_LATEST_URL = 'https://github.com/LizardByte/Sunshine/releases/latest';
 
 const getOsKind = () => {

@@ -325,6 +325,18 @@
   align-items: stretch;
 }
 
+.loadMore {
+  margin: 6px auto 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px dashed var(--stroke);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  width: fit-content;
+}
+
 .card {
   padding: 12px;
   border-radius: 14px;

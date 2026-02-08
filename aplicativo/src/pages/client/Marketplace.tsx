@@ -86,6 +86,59 @@ const MOONLIGHT_RELEASES_LATEST_URL =
   'https://github.com/moonlight-stream/moonlight-qt/releases/latest';
 const MOONLIGHT_WINDOWS_URL =
   'https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.1.0/MoonlightSetup-6.1.0.exe';
+const MARKETPLACE_PAGE_SIZE = 12;
+
+const MOCK_MARKETPLACE_PCS =
+  (import.meta.env.VITE_MARKETPLACE_USE_MOCK ?? '').toString().toLowerCase() === 'true';
+
+const createMockPcs = (): PC[] => {
+  const cpuOptions = ['Ryzen 5 5600X', 'Ryzen 7 5800X3D', 'i5-12400F', 'i7-12700K', 'i9-13900KF'];
+  const gpuOptions = ['RTX 3060', 'RTX 3070 Ti', 'RTX 4070', 'RX 6700 XT', 'RX 7800 XT'];
+  const storageOptions: PC['storageType'][] = ['SSD', 'NVME', 'SSD', 'NVME', 'SSD'];
+  const categories: PCCategory[] = ['GAMES', 'DESIGN', 'VIDEO', 'DEV', 'OFFICE'];
+  const softwareTagsPool = ['Steam', 'Epic', 'Adobe', 'Blender', 'Unity', 'Unreal', 'VS Code', 'Figma'];
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const id = `mock-${index + 1}`;
+    const level = (['A', 'B', 'C'] as const)[index % 3];
+    const status = (['ONLINE', 'OFFLINE', 'BUSY'] as const)[index % 3];
+    const hostId = `host-${(index % 7) + 1}`;
+    const name = `PC ${String(index + 1).padStart(2, '0')}`;
+    const cpu = cpuOptions[index % cpuOptions.length];
+    const gpu = gpuOptions[index % gpuOptions.length];
+    const ramGb = 16 + (index % 4) * 8;
+    const vramGb = 8 + (index % 3) * 4;
+    const queueCount = status === 'BUSY' ? 1 + (index % 4) : 0;
+    const picks = [
+      softwareTagsPool[index % softwareTagsPool.length],
+      softwareTagsPool[(index + 2) % softwareTagsPool.length],
+    ];
+    return {
+      id,
+      name,
+      level,
+      pricePerHour: 6 + (index % 6) * 2,
+      status,
+      queueCount,
+      reliabilityBadge: (['CONFIAVEL', 'NOVO', 'INSTAVEL'] as const)[index % 3],
+      categories: [categories[index % categories.length]],
+      softwareTags: Array.from(new Set(picks)),
+      specSummary: {
+        cpu,
+        gpu,
+        ram: `${ramGb} GB`,
+      },
+      description: 'PC demonstrativo para visualizar o marketplace.',
+      host: { id: hostId, displayName: `Host ${String((index % 7) + 1).padStart(2, '0')}` },
+      cpu,
+      ramGb,
+      gpu,
+      vramGb,
+      storageType: storageOptions[index % storageOptions.length],
+      internetUploadMbps: 200 + (index % 5) * 50,
+    };
+  });
+};
 
 const formatDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -190,6 +243,7 @@ export default function Marketplace() {
   const [scheduling, setScheduling] = useState(false);
   const [moonlightAvailable, setMoonlightAvailable] = useState(true);
   const [moonlightStatus, setMoonlightStatus] = useState('');
+  const [visibleCount, setVisibleCount] = useState(MARKETPLACE_PAGE_SIZE);
 
   const { user, isAuthenticated } = useAuth();
   const { setMode } = useMode();
@@ -197,6 +251,7 @@ export default function Marketplace() {
   const navigate = useNavigate();
   const favoritesUserToggled = useRef(false);
   const platformsUserToggled = useRef(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const loadPcs = async (showLoading = false) => {
     if (showLoading) {
@@ -204,7 +259,7 @@ export default function Marketplace() {
       setError('');
     }
     try {
-      const data = await request<PC[]>('/pcs');
+      const data = MOCK_MARKETPLACE_PCS ? createMockPcs() : await request<PC[]>('/pcs');
       setPcs(data);
       setError('');
     } catch (err) {
@@ -236,8 +291,11 @@ export default function Marketplace() {
 
   useEffect(() => {
     loadPcs(true);
-    const intervalId = setInterval(() => loadPcs(false), 12000);
-    return () => clearInterval(intervalId);
+    if (!MOCK_MARKETPLACE_PCS) {
+      const intervalId = setInterval(() => loadPcs(false), 12000);
+      return () => clearInterval(intervalId);
+    }
+    return undefined;
   }, []);
 
   useEffect(() => {
@@ -370,6 +428,30 @@ export default function Marketplace() {
       return searchTokens.every((token) => searchable.includes(token) || compact.includes(token));
     });
   }, [pcs, selectedCategories, selectedSoftwareTags, searchTokens]);
+
+  useEffect(() => {
+    setVisibleCount(MARKETPLACE_PAGE_SIZE);
+  }, [selectedCategories, selectedSoftwareTags, searchTokens]);
+
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    if (visibleCount >= filteredPcs.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisibleCount((prev) => Math.min(prev + MARKETPLACE_PAGE_SIZE, filteredPcs.length));
+        }
+      },
+      { rootMargin: '400px' },
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [filteredPcs.length, visibleCount]);
+
+  const visiblePcs = useMemo(() => filteredPcs.slice(0, visibleCount), [filteredPcs, visibleCount]);
 
   const filteredStatusCounts = useMemo(() => {
     return filteredPcs.reduce(
@@ -934,7 +1016,7 @@ export default function Marketplace() {
           )}
 
           <div className={styles.grid}>
-            {filteredPcs.map((pc) => {
+            {visiblePcs.map((pc) => {
               const isOffline = pc.status === 'OFFLINE';
               const isBusy = pc.status === 'BUSY';
               const statusClass =
@@ -1018,6 +1100,11 @@ export default function Marketplace() {
               );
             })}
           </div>
+          {!isLoading && !error && visibleCount < filteredPcs.length && (
+            <div ref={loadMoreRef} className={styles.loadMore}>
+              Carregando mais PCs...
+            </div>
+          )}
         </main>
       </div>
 
