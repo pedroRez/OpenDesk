@@ -16,7 +16,7 @@ import styles from './Settings.module.css';
 
 export default function Settings() {
   const { mode, setMode } = useMode();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [message, setMessage] = useState('');
   const toast = useToast();
   const [isSwitching, setIsSwitching] = useState(false);
@@ -48,9 +48,15 @@ export default function Settings() {
     <section className={styles.container}>
       <h1>Configuracoes</h1>
 
-      <div className={styles.card}>
-        <h3>Modo de uso</h3>
-        <p>Escolha como este app deve iniciar por padrao.</p>
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionIcon}>🧭</span>
+          <div>
+            <h3>Modo de uso</h3>
+            <p className={styles.subtitle}>Modo de uso padrao</p>
+          </div>
+        </div>
+        <p className={styles.helper}>O app sempre iniciara neste modo.</p>
         <div className={styles.modeButtons}>
           <button
             type="button"
@@ -71,26 +77,35 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className={styles.card}>
-        <h3>Conta</h3>
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionIcon}>👤</span>
+          <div>
+            <h3>Conta</h3>
+            <p className={styles.subtitle}>Voce esta usando o OpenDesk como</p>
+          </div>
+        </div>
         {user ? (
-          <p>
-            Logado como <strong>{user.displayName ?? user.username}</strong>
-          </p>
+          <div className={styles.accountRow}>
+            <strong className={styles.accountName}>{user.displayName ?? user.username}</strong>
+            <button type="button" onClick={logout} className={styles.ghostButton}>
+              Sair
+            </button>
+          </div>
         ) : (
-          <p>Nenhum usuario logado.</p>
+          <p className={styles.helper}>Nenhum usuario logado.</p>
         )}
       </div>
 
-      <div className={styles.card}>
-        <h3>API</h3>
-        <p>Endpoint atual: {apiBaseUrl}</p>
-      </div>
-
       {mode === 'HOST' && (
-        <div className={styles.card}>
-          <h3>Streaming (Sunshine)</h3>
-          <p>Defina o caminho do executavel para iniciar o Sunshine automaticamente no modo Host.</p>
+        <div className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <span className={styles.sectionIcon}>☀️</span>
+            <div>
+              <h3>Streaming (Sunshine)</h3>
+              <p className={styles.subtitle}>Status e configuracao do Sunshine</p>
+            </div>
+          </div>
           <label className={styles.field}>
             Caminho do Sunshine
             <input
@@ -183,9 +198,18 @@ export default function Settings() {
       )}
 
       {mode === 'CLIENT' && (
-        <div className={styles.card}>
-          <h3>Streaming (Moonlight)</h3>
-          <p>Defina o caminho do executavel para abrir o Moonlight automaticamente no modo Cliente.</p>
+        <div className={styles.sectionPrimary}>
+          <div className={styles.sectionHeader}>
+            <span className={styles.sectionIcon}>🎮</span>
+            <div>
+              <h3>Streaming (Moonlight)</h3>
+              <p className={styles.subtitle}>Status e configuracao do Moonlight</p>
+            </div>
+          </div>
+          <div className={styles.statusRow}>
+            <span className={`${styles.statusDot} ${moonlightPath ? styles.statusOk : styles.statusBad}`} />
+            <span>{moonlightPath ? 'Detectado' : 'Nao encontrado'}</span>
+          </div>
           <label className={styles.field}>
             Caminho do Moonlight
             <input
@@ -276,6 +300,14 @@ export default function Settings() {
           <p className={styles.helper}>Se vazio, tentamos caminhos padrao do Windows.</p>
         </div>
       )}
+
+      <details className={styles.advanced}>
+        <summary>Configuracoes avancadas</summary>
+        <div className={styles.advancedBody}>
+          <strong>API</strong>
+          <p>Endpoint atual: {apiBaseUrl}</p>
+        </div>
+      </details>
 
       {message && <p className={styles.message}>{message}</p>}
     </section>
