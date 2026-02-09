@@ -171,6 +171,15 @@ async function startSessionInternal(params: {
     data: { status: SessionStatus.ACTIVE, startAt: now, endAt },
   });
 
+  await prisma.queueEntry.updateMany({
+    where: {
+      pcId: session.pcId,
+      userId: session.clientUserId,
+      status: QueueEntryStatus.PROMOTED,
+    },
+    data: { status: QueueEntryStatus.ACTIVE },
+  });
+
   await recordHostSessionStart(prisma, pc.hostId);
 
   return updatedSession;
@@ -461,7 +470,7 @@ export async function endSession(params: {
       where: {
         pcId: session.pcId,
         userId: session.clientUserId,
-        status: QueueEntryStatus.ACTIVE,
+        status: { in: [QueueEntryStatus.ACTIVE, QueueEntryStatus.PROMOTED] },
       },
       data: { status: QueueEntryStatus.EXPIRED },
     });
