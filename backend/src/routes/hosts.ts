@@ -6,7 +6,7 @@ import { endSession } from '../services/sessionService.js';
 import { getReliabilityBadge, getReliabilityStats, getReliabilityStatsMap } from '../services/hostReliabilityStats.js';
 import { sanitizeHost } from '../utils/hostPublic.js';
 import { requireUser } from '../utils/auth.js';
-import { PCStatus, SessionStatus } from '@prisma/client';
+import { PCStatus, QueueEntryStatus, SessionStatus } from '@prisma/client';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -19,7 +19,10 @@ export async function hostRoutes(fastify: FastifyInstance) {
     const queueCounts = pcIds.length
       ? await fastify.prisma.queueEntry.groupBy({
           by: ['pcId'],
-          where: { pcId: { in: pcIds } },
+          where: {
+            pcId: { in: pcIds },
+            status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.PROMOTED] },
+          },
           _count: { _all: true },
         })
       : [];

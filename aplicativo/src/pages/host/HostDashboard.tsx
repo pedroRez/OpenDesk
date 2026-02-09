@@ -196,6 +196,11 @@ export default function HostDashboard() {
   const lastHeartbeatLogRef = useRef<number>(0);
   const autoAbortRef = useRef<AbortController | null>(null);
   const onlineAbortRef = useRef<{ cancelled: boolean }>({ cancelled: false });
+  const pcsPollingInterval = useMemo(() => {
+    const hasQueue = pcs.some((pc) => (pc.queueCount ?? 0) > 0);
+    const hasBusy = pcs.some((pc) => pc.status === 'BUSY');
+    return hasQueue || hasBusy ? 2000 : 10000;
+  }, [pcs]);
   const heartbeatPcId = useMemo(() => {
     const localId = getLocalPcId();
     if (localId) {
@@ -321,21 +326,33 @@ export default function HostDashboard() {
 
   useEffect(() => {
     if (!hostProfileId) return;
-    setIsLoadingPcs(true);
-    request<PC[]>(`/hosts/${hostProfileId}/pcs`)
-      .then((data) => {
+    let active = true;
+    const load = async (showLoading: boolean) => {
+      if (showLoading) setIsLoadingPcs(true);
+      try {
+        const data = await request<PC[]>(`/hosts/${hostProfileId}/pcs`);
+        if (!active) return;
         setPcs(data);
         if (data.length > 0) {
           setPrimaryPcId(data[0].id);
         }
-      })
-      .catch((error) => {
+      } catch (error) {
+        if (!active) return;
         setPcs([]);
         const message = error instanceof Error ? error.message : 'Erro ao carregar PCs';
         toast.show(message, 'error');
-      })
-      .finally(() => setIsLoadingPcs(false));
-  }, [hostProfileId, toast]);
+      } finally {
+        if (showLoading && active) setIsLoadingPcs(false);
+      }
+    };
+
+    load(true);
+    const intervalId = setInterval(() => load(false), pcsPollingInterval);
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [hostProfileId, toast, pcsPollingInterval]);
 
   useEffect(() => {
     if (heartbeatRef.current) {

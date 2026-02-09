@@ -12,7 +12,7 @@ import { softwareRoutes } from './routes/software.js';
 import { streamRoutes } from './routes/stream.js';
 import { walletRoutes } from './routes/wallet.js';
 import { handleHostTimeouts } from './services/hostHeartbeat.js';
-import { expireSessions } from './services/sessionService.js';
+import { expirePromotedSlots, expireSessions } from './services/sessionService.js';
 
 const app = Fastify({
   logger: {
@@ -75,6 +75,10 @@ async function start() {
         const expired = await expireSessions(app.prisma);
         if (expired > 0) {
           app.log.info({ expired }, 'Sessions expired');
+        }
+        const expiredPromotions = await expirePromotedSlots(app.prisma);
+        if (expiredPromotions > 0) {
+          app.log.info({ expiredPromotions }, 'Queue promotions expired');
         }
       } catch (error) {
         app.log.error({ error }, 'Failed to expire sessions');

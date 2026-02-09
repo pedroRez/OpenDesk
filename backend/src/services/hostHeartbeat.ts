@@ -1,9 +1,11 @@
 import { PCStatus, SessionStatus, type PrismaClient } from '@prisma/client';
 
 import { config } from '../config.js';
-import { endSession } from './sessionService.js';
+import { clearQueueForPc, endSession } from './sessionService.js';
 import { recordReliabilityEvent } from './hostReliability.js';
 import { recordHostDrop, recordHostOnlineMinute } from './hostReliabilityStats.js';
+
+const offlineSinceByHost = new Map<string, number>();
 
 export async function registerHeartbeat(params: {
   prisma: PrismaClient;
@@ -18,6 +20,7 @@ export async function registerHeartbeat(params: {
       where: { id: hostId },
       data: { lastSeenAt: now },
     });
+    offlineSinceByHost.delete(hostId);
 
     if (status !== PCStatus.OFFLINE) {
       await recordHostOnlineMinute(prisma, hostId, now);
@@ -65,6 +68,7 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
   const now = new Date();
   const thresholdMs = config.hostHeartbeatTimeoutMs;
   const cutoff = new Date(now.getTime() - thresholdMs);
+  const graceMs = Math.max(0, config.hostOfflineGraceSeconds) * 1000;
 
   const hosts = await prisma.hostProfile.findMany({
     where: {
@@ -98,6 +102,16 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
         data: { status: PCStatus.OFFLINE },
       });
 
+      const offlineSince = offlineSinceByHost.get(host.id);
+      if (!offlineSince) {
+        offlineSinceByHost.set(host.id, now.getTime());
+        return;
+      }
+      const offlineDuration = now.getTime() - offlineSince;
+      if (offlineDuration < graceMs) {
+        return;
+      }
+
       await recordReliabilityEvent(prisma, host.id, 'HOST_DOWN');
       await recordHostDrop(prisma, host.id, now);
 
@@ -119,6 +133,12 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
           }),
         ),
       );
+
+      await Promise.all(
+        host.pcs.map((pc) => clearQueueForPc(prisma, pc.id)),
+      );
+
+      offlineSinceByHost.delete(host.id);
     }),
   );
 

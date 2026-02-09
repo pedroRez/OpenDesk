@@ -52,6 +52,7 @@ enum SessionStatus {
 
 enum QueueEntryStatus {
   WAITING
+  PROMOTED
   ACTIVE
   CANCELLED
   EXPIRED
@@ -203,6 +204,7 @@ model QueueEntry {
   userId           String
   minutesPurchased Int
   status           QueueEntryStatus @default(WAITING)
+  startBy          DateTime?
   createdAt        DateTime         @default(now())
   pc               PC               @relation(fields: [pcId], references: [id])
   user             User             @relation(fields: [userId], references: [id])

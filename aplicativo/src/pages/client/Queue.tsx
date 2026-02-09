@@ -9,9 +9,11 @@ import styles from './Queue.module.css';
 type QueueInfo = {
   queueCount: number;
   position: number | null;
-  status: 'WAITING' | 'ACTIVE' | null;
+  status: 'WAITING' | 'PROMOTED' | 'ACTIVE' | null;
   sessionId: string | null;
 };
+
+const AUTO_SESSION_STORAGE_KEY = 'opendesk:lastAutoSessionId';
 
 export default function Queue() {
   const { pcId } = useParams();
@@ -28,9 +30,13 @@ export default function Queue() {
       const data = await request<QueueInfo>(`/pcs/${pcId}/queue`);
       setQueue(data);
       setError('');
-      if (data.sessionId) {
-        toast.show('E sua vez! Conectando...', 'success');
-        navigate(`/client/session/${data.sessionId}`);
+      if (data.sessionId && (data.status === 'PROMOTED' || data.status === 'ACTIVE')) {
+        const lastAuto = localStorage.getItem(AUTO_SESSION_STORAGE_KEY);
+        if (lastAuto !== data.sessionId) {
+          localStorage.setItem(AUTO_SESSION_STORAGE_KEY, data.sessionId);
+          toast.show('E sua vez! Conectando...', 'success');
+          navigate(`/client/session/${data.sessionId}?auto=1`);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar fila');
@@ -85,7 +91,14 @@ export default function Queue() {
       <Link to="/client/marketplace">Voltar</Link>
       <h1>Fila do PC</h1>
       <div className={styles.card}>
-        <p>Status: {queue.status === 'WAITING' ? 'Aguardando' : 'Ativo'}</p>
+        <p>
+          Status:{' '}
+          {queue.status === 'WAITING'
+            ? 'Aguardando'
+            : queue.status === 'PROMOTED'
+              ? 'Chamando'
+              : 'Ativo'}
+        </p>
         <p>Fila total: {queue.queueCount}</p>
         {queue.position !== null && <p>Sua posicao: {queue.position}</p>}
       </div>

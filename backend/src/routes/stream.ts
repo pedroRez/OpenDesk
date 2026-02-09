@@ -35,13 +35,13 @@ export async function streamRoutes(fastify: FastifyInstance) {
       where: {
         pcId: pc.id,
         clientUserId: user.id,
-        status: { in: [SessionStatus.PENDING, SessionStatus.ACTIVE] },
+        status: SessionStatus.ACTIVE,
       },
       select: { id: true },
     });
     if (!session) {
-      fastify.log.warn({ pcId: pc.id, userId: user.id }, 'Stream token error: not authorized');
-      return reply.status(403).send({ error: 'Sem permissao para conectar' });
+      fastify.log.warn({ pcId: pc.id, userId: user.id }, 'Stream token error: session not active');
+      return reply.status(409).send({ error: 'Sessao nao esta ativa', code: 'SESSION_NOT_ACTIVE' });
     }
 
     const token = generateToken();
@@ -86,6 +86,22 @@ export async function streamRoutes(fastify: FastifyInstance) {
     if (!record) {
       fastify.log.warn({ token: body.token }, 'Stream token resolve error: not found');
       return reply.status(404).send({ error: 'Token nao encontrado' });
+    }
+
+    const activeSession = await fastify.prisma.session.findFirst({
+      where: {
+        pcId: record.pcId,
+        clientUserId: record.userId,
+        status: SessionStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    if (!activeSession) {
+      fastify.log.warn(
+        { token: body.token, pcId: record.pcId, userId: record.userId },
+        'Stream token resolve error: session not active',
+      );
+      return reply.status(409).send({ error: 'Sessao nao esta ativa', code: 'SESSION_NOT_ACTIVE' });
     }
 
     if (record.consumedAt) {

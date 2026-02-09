@@ -3,7 +3,7 @@ import { NetworkProvider, PCStatus, QueueEntryStatus, ReservationStatus, Session
 
 import type { FastifyInstance } from 'fastify';
 
-import { createAndStartSession, SessionError } from '../services/sessionService.js';
+import { createAndStartSession, SessionError, promoteQueueForPc, clearQueueForPc, endSession } from '../services/sessionService.js';
 import { getReliabilityBadge } from '../services/hostReliabilityStats.js';
 import { sanitizeHost } from '../utils/hostPublic.js';
 import { requireUser } from '../utils/auth.js';
@@ -454,14 +454,23 @@ export async function pcRoutes(fastify: FastifyInstance) {
           throw new SessionError('PC offline', 'PC_OFFLINE', 409);
         }
 
-        const existingEntry = await tx.queueEntry.findFirst({
+        const existingEntries = await tx.queueEntry.findMany({
           where: {
             pcId: params.pcId,
             userId: user.id,
-            status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.ACTIVE] },
+            status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.PROMOTED, QueueEntryStatus.ACTIVE] },
           },
           orderBy: { createdAt: 'asc' },
         });
+
+        const existingEntry = existingEntries[0] ?? null;
+        if (existingEntries.length > 1) {
+          const extraIds = existingEntries.slice(1).map((entry) => entry.id);
+          await tx.queueEntry.updateMany({
+            where: { id: { in: extraIds } },
+            data: { status: QueueEntryStatus.CANCELLED },
+          });
+        }
 
         if (existingEntry) {
           const queueCount = await tx.queueEntry.count({
@@ -486,7 +495,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
             },
             select: { id: true },
           });
-          return { status: 'ACTIVE', sessionId: activeSession?.id ?? null, queueCount };
+          return { status: existingEntry.status, sessionId: activeSession?.id ?? null, queueCount };
         }
 
         const existingClientSession = await tx.session.findFirst({
@@ -576,7 +585,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
       where: {
         pcId: params.pcId,
         userId: user.id,
-        status: QueueEntryStatus.WAITING,
+        status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.PROMOTED] },
       },
     });
 
@@ -594,10 +603,8 @@ export async function pcRoutes(fastify: FastifyInstance) {
 
   fastify.get('/pcs/:pcId/queue', async (request, reply) => {
     const params = z.object({ pcId: z.string() }).parse(request.params);
-    const header = request.headers['x-user-id'];
-    const hasUserHeader = Boolean(header);
-    const user = hasUserHeader ? await requireUser(request, reply, fastify.prisma) : null;
-    if (hasUserHeader && !user) return;
+    const user = await requireUser(request, reply, fastify.prisma);
+    if (!user) return;
 
     const queueCount = await fastify.prisma.queueEntry.count({
       where: { pcId: params.pcId, status: QueueEntryStatus.WAITING },
@@ -607,37 +614,35 @@ export async function pcRoutes(fastify: FastifyInstance) {
     let status: QueueEntryStatus | null = null;
     let sessionId: string | null = null;
 
-    if (user) {
-      const entry = await fastify.prisma.queueEntry.findFirst({
-        where: {
-          pcId: params.pcId,
-          userId: user.id,
-          status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.ACTIVE] },
-        },
-        orderBy: { createdAt: 'asc' },
-      });
+    const entry = await fastify.prisma.queueEntry.findFirst({
+      where: {
+        pcId: params.pcId,
+        userId: user.id,
+        status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.PROMOTED, QueueEntryStatus.ACTIVE] },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
 
-      if (entry) {
-        status = entry.status;
-        if (entry.status === QueueEntryStatus.WAITING) {
-          position = await fastify.prisma.queueEntry.count({
-            where: {
-              pcId: params.pcId,
-              status: QueueEntryStatus.WAITING,
-              createdAt: { lte: entry.createdAt },
-            },
-          });
-        } else {
-          const activeSession = await fastify.prisma.session.findFirst({
-            where: {
-              pcId: params.pcId,
-              clientUserId: user.id,
-              status: { in: [SessionStatus.PENDING, SessionStatus.ACTIVE] },
-            },
-            select: { id: true },
-          });
-          sessionId = activeSession?.id ?? null;
-        }
+    if (entry) {
+      status = entry.status;
+      if (entry.status === QueueEntryStatus.WAITING) {
+        position = await fastify.prisma.queueEntry.count({
+          where: {
+            pcId: params.pcId,
+            status: QueueEntryStatus.WAITING,
+            createdAt: { lte: entry.createdAt },
+          },
+        });
+      } else {
+        const activeSession = await fastify.prisma.session.findFirst({
+          where: {
+            pcId: params.pcId,
+            clientUserId: user.id,
+            status: { in: [SessionStatus.PENDING, SessionStatus.ACTIVE] },
+          },
+          select: { id: true },
+        });
+        sessionId = activeSession?.id ?? null;
       }
     }
 
@@ -651,7 +656,7 @@ export async function pcRoutes(fastify: FastifyInstance) {
     const entries = await fastify.prisma.queueEntry.findMany({
       where: {
         userId: user.id,
-        status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.ACTIVE] },
+        status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.PROMOTED, QueueEntryStatus.ACTIVE] },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -836,6 +841,28 @@ export async function pcRoutes(fastify: FastifyInstance) {
 
     if (body.status === 'ONLINE') {
       fastify.log.info({ pcId: params.id }, '[PC] online');
+      await promoteQueueForPc(fastify.prisma, params.id);
+    }
+    if (body.status === 'OFFLINE') {
+      const sessions = await fastify.prisma.session.findMany({
+        where: {
+          pcId: params.id,
+          status: { in: [SessionStatus.ACTIVE] },
+        },
+        select: { id: true },
+      });
+      await Promise.all(
+        sessions.map((session) =>
+          endSession({
+            prisma: fastify.prisma,
+            sessionId: session.id,
+            failureReason: 'HOST',
+            releaseStatus: PCStatus.OFFLINE,
+            hostFault: true,
+          }),
+        ),
+      );
+      await clearQueueForPc(fastify.prisma, params.id);
     }
 
     await fastify.prisma.hostProfile.update({

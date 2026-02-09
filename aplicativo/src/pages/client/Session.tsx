@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { useToast } from '../../components/Toast';
 import { request, requestWithStatus } from '../../lib/api';
@@ -39,6 +39,7 @@ export default function Session() {
   const { id } = useParams();
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [error, setError] = useState('');
@@ -65,6 +66,13 @@ export default function Session() {
   const [showMoonlightHelp, setShowMoonlightHelp] = useState(false);
   const [moonlightHelpStatus, setMoonlightHelpStatus] = useState('');
   const [moonlightMonitorActive, setMoonlightMonitorActive] = useState(false);
+  const [autoStartRequested, setAutoStartRequested] = useState(false);
+  const lastStatusRef = useRef<string | null>(null);
+  const endedNotifiedRef = useRef(false);
+
+  const autoConnect = useMemo(() => {
+    return new URLSearchParams(location.search).get('auto') === '1';
+  }, [location.search]);
 
   const loadSession = async () => {
     if (isLoading || !isAuthenticated || !id) {
@@ -76,6 +84,9 @@ export default function Session() {
       const data = await request<{ session: SessionDetail }>(`/sessions/${id}`);
       setSession(data.session);
       setError('');
+      if (data.session.status !== lastStatusRef.current) {
+        lastStatusRef.current = data.session.status;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar sessao');
     } finally {
@@ -105,6 +116,11 @@ export default function Session() {
   }, []);
 
   useEffect(() => {
+    setAutoStartRequested(false);
+    endedNotifiedRef.current = false;
+  }, [session?.id]);
+
+  useEffect(() => {
     if (!moonlightMonitorActive || !session?.id || session.status !== 'ACTIVE') {
       return;
     }
@@ -131,6 +147,7 @@ export default function Session() {
       clearInterval(interval);
     };
   }, [moonlightMonitorActive, session?.id, session?.status, toast]);
+
 
   const handleMoonlightBrowse = async () => {
     try {
@@ -239,6 +256,21 @@ export default function Session() {
     setProviderMessage('Verificando Moonlight...');
     setConnectStage('checking');
     try {
+      if (session.status === 'PENDING') {
+        try {
+          const started = await request<{ session: SessionDetail }>(`/sessions/${session.id}/start`, {
+            method: 'POST',
+          });
+          setSession(started.session);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Nao foi possivel iniciar a sessao.';
+          setProviderMessage(message);
+          setConnectError(message);
+          setConnectFailed(true);
+          return;
+        }
+      }
+
       const moonlightReady = await ensureMoonlightReady();
       if (!moonlightReady.ok) {
         setInstalled(false);
@@ -310,17 +342,6 @@ export default function Session() {
         connectAddress: resolveResult.data.connectAddress,
       });
 
-      if (session.status !== 'ACTIVE') {
-        try {
-          const started = await request<{ session: SessionDetail }>(`/sessions/${session.id}/start`, {
-            method: 'POST',
-          });
-          setSession(started.session);
-        } catch (error) {
-          console.warn('[STREAM][CLIENT] start session fail', error);
-        }
-      }
-
       if (!resolveResult.data.connectAddress) {
         setProviderMessage('Endereco de conexao invalido.');
         setConnectError('Endereco de conexao invalido.');
@@ -365,6 +386,35 @@ export default function Session() {
       setConnecting(false);
     }
   };
+
+  useEffect(() => {
+    if (!session) return;
+    if (session.status === 'ENDED' || session.status === 'FAILED' || session.status === 'EXPIRED') {
+      setMoonlightMonitorActive(false);
+      if (!endedNotifiedRef.current) {
+        endedNotifiedRef.current = true;
+        toast.show('Sessao encerrada. Conexao finalizada.', 'info');
+      }
+    }
+  }, [session, toast]);
+
+  useEffect(() => {
+    if (!autoConnect || !session || autoStartRequested) return;
+    if (session.status !== 'PENDING' && session.status !== 'ACTIVE') return;
+    const storageKey = 'opendesk:lastAutoSessionId';
+    const lastAuto = localStorage.getItem(storageKey);
+    if (lastAuto === session.id) return;
+    localStorage.setItem(storageKey, session.id);
+    setAutoStartRequested(true);
+    handleConnect();
+  }, [autoConnect, autoStartRequested, session, handleConnect]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (session.status === 'ENDED' || session.status === 'FAILED' || session.status === 'EXPIRED') {
+      localStorage.removeItem('opendesk:lastAutoSessionId');
+    }
+  }, [session]);
 
   const handleSubmitPairing = async () => {
     if (!session?.pc?.id || !pairingPin.trim()) return;
@@ -462,7 +512,7 @@ export default function Session() {
         <button
           type="button"
           onClick={handleConnect}
-          disabled={session.status !== 'ACTIVE' || connecting}
+          disabled={(session.status !== 'ACTIVE' && session.status !== 'PENDING') || connecting}
         >
           {connecting ? 'Conectando...' : 'Conectar'}
         </button>

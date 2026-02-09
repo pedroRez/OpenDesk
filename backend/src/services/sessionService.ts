@@ -219,11 +219,14 @@ export async function createAndStartSession(params: {
 
 async function promoteNextInQueue(prisma: PrismaClient, pcId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    const pc = await tx.pC.findUnique({
-      where: { id: pcId },
-      select: { status: true },
-    });
+    const pcRows = await tx.$queryRaw<{ id: string; status: PCStatus }[]>`
+      SELECT "id", "status" FROM "PC" WHERE "id" = ${pcId} FOR UPDATE
+    `;
+    const pc = pcRows[0];
     if (!pc || pc.status === PCStatus.OFFLINE) {
+      return;
+    }
+    if (pc.status === PCStatus.BUSY) {
       return;
     }
 
@@ -239,6 +242,13 @@ async function promoteNextInQueue(prisma: PrismaClient, pcId: string): Promise<v
       return;
     }
 
+    const existingPromoted = await tx.queueEntry.findFirst({
+      where: { pcId, status: QueueEntryStatus.PROMOTED },
+    });
+    if (existingPromoted) {
+      return;
+    }
+
     let entry = await tx.queueEntry.findFirst({
       where: { pcId, status: QueueEntryStatus.WAITING },
       orderBy: { createdAt: 'asc' },
@@ -246,16 +256,17 @@ async function promoteNextInQueue(prisma: PrismaClient, pcId: string): Promise<v
 
     while (entry) {
       try {
-        await createAndStartSession({
+        const session = await createSessionInternal({
           prisma: tx,
           pcId,
           clientId: entry.userId,
           minutesPurchased: entry.minutesPurchased,
         });
 
+        const startBy = new Date(Date.now() + config.queuePromotionTtlSeconds * 1000);
         await tx.queueEntry.update({
           where: { id: entry.id },
-          data: { status: QueueEntryStatus.ACTIVE },
+          data: { status: QueueEntryStatus.PROMOTED, startBy },
         });
         return;
       } catch (error) {
@@ -277,6 +288,93 @@ async function promoteNextInQueue(prisma: PrismaClient, pcId: string): Promise<v
       }
     }
   });
+}
+
+async function cancelPendingSessionForUser(params: {
+  prisma: PrismaClient;
+  pcId: string;
+  userId: string;
+  failureReason: string;
+}): Promise<void> {
+  const { prisma, pcId, userId, failureReason } = params;
+  const session = await prisma.session.findFirst({
+    where: {
+      pcId,
+      clientUserId: userId,
+      status: SessionStatus.PENDING,
+    },
+  });
+  if (!session) return;
+
+  const debitTx = await prisma.walletTx.findFirst({
+    where: { sessionId: session.id, type: WalletTxType.DEBIT },
+  });
+
+  await prisma.session.update({
+    where: { id: session.id },
+    data: { status: SessionStatus.FAILED, endAt: new Date(), failureReason },
+  });
+
+  if (debitTx) {
+    await prisma.wallet.update({
+      where: { userId: session.clientUserId },
+      data: { balance: { increment: session.priceTotal } },
+    });
+    await prisma.walletTx.create({
+      data: {
+        userId: session.clientUserId,
+        type: WalletTxType.CREDIT,
+        amount: session.priceTotal,
+        reason: 'Sessao nao iniciada',
+        sessionId: session.id,
+      },
+    });
+  }
+}
+
+export async function promoteQueueForPc(prisma: PrismaClient, pcId: string): Promise<void> {
+  await promoteNextInQueue(prisma, pcId);
+}
+
+export async function clearQueueForPc(prisma: PrismaClient, pcId: string): Promise<void> {
+  await prisma.queueEntry.updateMany({
+    where: { pcId, status: { in: [QueueEntryStatus.WAITING, QueueEntryStatus.PROMOTED] } },
+    data: { status: QueueEntryStatus.CANCELLED },
+  });
+}
+
+export async function expirePromotedSlots(prisma: PrismaClient): Promise<number> {
+  const now = new Date();
+  const expired = await prisma.queueEntry.findMany({
+    where: {
+      status: QueueEntryStatus.PROMOTED,
+      startBy: { lt: now },
+    },
+    select: { id: true, pcId: true, userId: true },
+  });
+
+  if (expired.length === 0) return 0;
+
+  await Promise.all(
+    expired.map((entry) =>
+      cancelPendingSessionForUser({
+        prisma,
+        pcId: entry.pcId,
+        userId: entry.userId,
+        failureReason: 'QUEUE_TIMEOUT',
+      }),
+    ),
+  );
+
+  await prisma.queueEntry.updateMany({
+    where: { id: { in: expired.map((entry) => entry.id) } },
+    data: { status: QueueEntryStatus.CANCELLED },
+  });
+
+  const uniquePcIds = Array.from(new Set(expired.map((entry) => entry.pcId)));
+  await Promise.all(uniquePcIds.map((pcId) => promoteNextInQueue(prisma, pcId)));
+
+  return expired.length;
 }
 
 export async function endSession(params: {
@@ -366,6 +464,15 @@ export async function endSession(params: {
         status: QueueEntryStatus.ACTIVE,
       },
       data: { status: QueueEntryStatus.EXPIRED },
+    });
+
+    await tx.streamConnectToken.updateMany({
+      where: {
+        pcId: session.pcId,
+        userId: session.clientUserId,
+        consumedAt: null,
+      },
+      data: { consumedAt: endTime },
     });
 
     const reliabilityType: ReliabilityEventType =
