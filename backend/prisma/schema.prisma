@@ -1,4 +1,4 @@
-generator client {
+﻿generator client {
   provider = "prisma-client-js"
 }
 
@@ -191,6 +191,7 @@ model Session {
   platformFee     Float         @default(0)
   hostPayout      Float         @default(0)
   clientCredit    Float         @default(0)
+  clientIp       String?
   failureReason   String?
   createdAt       DateTime      @default(now())
   pc              PC            @relation(fields: [pcId], references: [id])
@@ -295,3 +296,4 @@ model OAuthState {
   createdAt    DateTime @default(now())
   expiresAt    DateTime
 }
+

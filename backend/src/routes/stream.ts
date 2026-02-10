@@ -1,10 +1,23 @@
-import { randomBytes } from 'crypto';
+﻿import { randomBytes } from 'crypto';
 import { z } from 'zod';
 import { PCStatus, SessionStatus } from '@prisma/client';
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { requireUser } from '../utils/auth.js';
+
+const extractForwardedIp = (value: string | string[] | undefined): string | null => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return null;
+  const parts = raw.split(',').map((part) => part.trim()).filter(Boolean);
+  const first = parts.find((part) => part.toLowerCase() !== 'unknown');
+  return first ?? null;
+};
+
+const getClientIp = (request: FastifyRequest): string | null => {
+  return extractForwardedIp(request.headers['x-forwarded-for']) ?? request.ip ?? null;
+};
+
 
 const TOKEN_TTL_MS = 60_000;
 
@@ -15,6 +28,7 @@ function generateToken(): string {
 export async function streamRoutes(fastify: FastifyInstance) {
   fastify.post('/stream/connect-token', async (request, reply) => {
     const body = z.object({ pcId: z.string() }).parse(request.body);
+    const clientIp = getClientIp(request);
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
 
@@ -37,11 +51,18 @@ export async function streamRoutes(fastify: FastifyInstance) {
         clientUserId: user.id,
         status: SessionStatus.ACTIVE,
       },
-      select: { id: true },
+      select: { id: true, clientIp: true },
     });
     if (!session) {
       fastify.log.warn({ pcId: pc.id, userId: user.id }, 'Stream token error: session not active');
       return reply.status(409).send({ error: 'Sessao nao esta ativa', code: 'SESSION_NOT_ACTIVE' });
+    }
+
+    if (clientIp && !session.clientIp) {
+      await fastify.prisma.session.updateMany({
+        where: { id: session.id, clientIp: null },
+        data: { clientIp },
+      });
     }
 
     const token = generateToken();
@@ -201,3 +222,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
     return reply.send({ ok: true });
   });
 }
+
+
+
+

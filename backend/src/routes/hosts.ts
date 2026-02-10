@@ -1,4 +1,4 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 
 import { config } from '../config.js';
 import { registerHeartbeat } from '../services/hostHeartbeat.js';
@@ -35,6 +35,7 @@ export async function hostRoutes(fastify: FastifyInstance) {
             id: true,
             pcId: true,
             startAt: true,
+            clientIp: true,
             client: { select: { username: true } },
           },
         })
@@ -318,3 +319,4 @@ export async function hostRoutes(fastify: FastifyInstance) {
     return reply.send({ pc: updated, sessionEnded: Boolean(activeSession) });
   });
 }
+

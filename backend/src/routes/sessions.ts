@@ -1,10 +1,21 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 import { SessionStatus } from '@prisma/client';
 
 import { endSession, startSession, createSession, SessionError } from '../services/sessionService.js';
 import { requireUser } from '../utils/auth.js';
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+const extractForwardedIp = (value: string | string[] | undefined): string | null => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return null;
+  const parts = raw.split(',').map((part) => part.trim()).filter(Boolean);
+  const first = parts.find((part) => part.toLowerCase() !== 'unknown');
+  return first ?? null;
+};
+
+const getClientIp = (request: FastifyRequest): string | null => {
+  return extractForwardedIp(request.headers['x-forwarded-for']) ?? request.ip ?? null;
+};
 
 export async function sessionRoutes(fastify: FastifyInstance) {
   fastify.post('/sessions', async (request, reply) => {
@@ -46,6 +57,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
 
   fastify.post('/sessions/:id/start', async (request, reply) => {
     const params = z.object({ id: z.string() }).parse(request.params);
+    const clientIp = getClientIp(request);
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
 
@@ -59,6 +71,12 @@ export async function sessionRoutes(fastify: FastifyInstance) {
 
     try {
       const session = await startSession({ prisma: fastify.prisma, sessionId: params.id });
+      if (clientIp) {
+        await fastify.prisma.session.updateMany({
+          where: { id: params.id, clientIp: null },
+          data: { clientIp },
+        });
+      }
       return reply.send({ session });
     } catch (error) {
       if (error instanceof SessionError) {
@@ -109,6 +127,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
 
   fastify.get('/sessions/:id', async (request, reply) => {
     const params = z.object({ id: z.string() }).parse(request.params);
+    const clientIp = getClientIp(request);
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
 
@@ -141,3 +160,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
     });
   });
 }
+
+
+
+
