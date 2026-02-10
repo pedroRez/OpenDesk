@@ -221,7 +221,9 @@ export async function hostRoutes(fastify: FastifyInstance) {
       timestamp: z.string().optional(),
       intervalMs: z.number().int().positive().optional(),
       seq: z.number().int().optional(),
+      hbSeq: z.number().int().optional(),
       sentAt: z.string().optional(),
+      sentAtMs: z.number().int().optional(),
     });
     const body = bodySchema.parse(request.body ?? {});
     const logTimestamp = body.timestamp ?? new Date().toISOString();
@@ -260,7 +262,9 @@ export async function hostRoutes(fastify: FastifyInstance) {
         status: body.status,
         intervalMs: body.intervalMs ?? null,
         seq: body.seq ?? null,
+        hbSeq: body.hbSeq ?? null,
         sentAt: body.sentAt ?? null,
+        sentAtMs: body.sentAtMs ?? null,
       });
       if (isDebug) {
         console.log('[HB][BACKEND] atualizado', {

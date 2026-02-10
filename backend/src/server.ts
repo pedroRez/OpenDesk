@@ -12,6 +12,7 @@ import { softwareRoutes } from './routes/software.js';
 import { streamRoutes } from './routes/stream.js';
 import { walletRoutes } from './routes/wallet.js';
 import { handleHostTimeouts } from './services/hostHeartbeat.js';
+import { serverInstanceId } from './instance.js';
 import { expirePromotedSlots, expireSessions } from './services/sessionService.js';
 
 const app = Fastify({
@@ -96,6 +97,7 @@ async function start() {
       }
     }, config.hostHeartbeatCheckIntervalMs);
 
+    app.log.info({ serverInstanceId }, 'Backend instance started');
     await app.listen({ port: config.port, host: '0.0.0.0' });
   } catch (error) {
     app.log.error({ error }, 'Failed to start server');

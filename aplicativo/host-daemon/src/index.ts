@@ -14,6 +14,8 @@ type Config = {
 
 const REQUEST_TIMEOUT_MS = Number(process.env.HEARTBEAT_REQUEST_TIMEOUT_MS ?? 5000);
 const FAILURE_ALERT_THRESHOLD = Number(process.env.HEARTBEAT_FAILURE_ALERT_THRESHOLD ?? 3);
+const PING_INTERVAL_MS = Number(process.env.HEARTBEAT_PING_INTERVAL_MS ?? 300000);
+const PING_TIMEOUT_MS = Number(process.env.HEARTBEAT_PING_TIMEOUT_MS ?? REQUEST_TIMEOUT_MS);
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -75,7 +77,9 @@ async function sendHeartbeat() {
     status: config.status,
     intervalMs: config.intervalMs,
     seq,
+    hbSeq: seq,
     sentAt,
+    sentAtMs: now,
   };
 
   const start = Date.now();
@@ -88,6 +92,8 @@ async function sendHeartbeat() {
       headers: {
         'Content-Type': 'application/json',
         'x-user-id': config.userId,
+        'x-hb-seq': String(seq),
+        'x-hb-sent-at-ms': String(now),
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -103,12 +109,14 @@ async function sendHeartbeat() {
           tag: 'host-daemon',
           event: 'heartbeat',
           result: 'error',
+          errorType: 'http',
           hostId: config.hostId,
           seq,
           sentAt,
           durationMs,
           statusCode: response.status,
           errorMessage: text,
+          endpoint: `${config.apiUrl}/hosts/${config.hostId}/heartbeat`,
           failures: heartbeatFailures,
         }),
       );
@@ -140,28 +148,34 @@ async function sendHeartbeat() {
         sentAt,
         durationMs,
         statusCode: response.status,
+        endpoint: `${config.apiUrl}/hosts/${config.hostId}/heartbeat`,
       }),
     );
   } catch (error) {
     const durationMs = Date.now() - now;
     heartbeatFailures += 1;
+    const isTimeout =
+      error && typeof error === 'object' && 'name' in error && error.name === 'AbortError';
     const errorMessage =
-      error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+      isTimeout
         ? 'timeout'
         : error instanceof Error
           ? error.message
           : String(error ?? 'unknown');
+    const errorType = isTimeout ? 'timeout' : 'network';
     console.error(
       JSON.stringify({
         tag: 'host-daemon',
         event: 'heartbeat',
         result: 'error',
+        errorType,
         hostId: config.hostId,
         seq,
         sentAt,
         durationMs,
         statusCode: 0,
         errorMessage,
+        endpoint: `${config.apiUrl}/hosts/${config.hostId}/heartbeat`,
         failures: heartbeatFailures,
       }),
     );
@@ -191,6 +205,7 @@ console.log(`host-daemon: iniciado (hostId=${config.hostId}, interval=${config.i
 
 let loopTimer: NodeJS.Timeout | null = null;
 let watchdogTimer: NodeJS.Timeout | null = null;
+let pingTimer: NodeJS.Timeout | null = null;
 let heartbeatSeq = 0;
 let heartbeatFailures = 0;
 let lastSentAt = 0;
@@ -222,6 +237,67 @@ const runLoop = async () => {
   }
 };
 
+const pingBackend = async () => {
+  const fetch = await getFetch();
+  const started = Date.now();
+  const controller = new AbortController();
+  let timeoutId: NodeJS.Timeout | null = null;
+  try {
+    timeoutId = setTimeout(() => controller.abort(), PING_TIMEOUT_MS);
+    const response = await fetch(`${config.apiUrl}/health`, { signal: controller.signal });
+    const durationMs = Date.now() - started;
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      console.error(
+        JSON.stringify({
+          tag: 'host-daemon',
+          event: 'backend_ping',
+          result: 'error',
+          hostId: config.hostId,
+          statusCode: response.status,
+          durationMs,
+          errorMessage: text,
+          endpoint: `${config.apiUrl}/health`,
+        }),
+      );
+      return;
+    }
+    console.log(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'backend_ping',
+        result: 'ok',
+        hostId: config.hostId,
+        statusCode: response.status,
+        durationMs,
+        endpoint: `${config.apiUrl}/health`,
+      }),
+    );
+  } catch (error) {
+    const durationMs = Date.now() - started;
+    const errorMessage =
+      error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+        ? 'timeout'
+        : error instanceof Error
+          ? error.message
+          : String(error ?? 'unknown');
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'backend_ping',
+        result: 'error',
+        hostId: config.hostId,
+        statusCode: 0,
+        durationMs,
+        errorMessage,
+        endpoint: `${config.apiUrl}/health`,
+      }),
+    );
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
+
 const start = () => {
   if (loopTimer) return;
   runLoop();
@@ -241,6 +317,10 @@ const start = () => {
       );
     }
   }, Math.max(1000, Math.floor(config.intervalMs / 2)));
+  if (PING_INTERVAL_MS > 0) {
+    pingBackend();
+    pingTimer = setInterval(pingBackend, PING_INTERVAL_MS);
+  }
 };
 
 const stop = () => {
@@ -251,6 +331,10 @@ const stop = () => {
   if (watchdogTimer) {
     clearInterval(watchdogTimer);
     watchdogTimer = null;
+  }
+  if (pingTimer) {
+    clearInterval(pingTimer);
+    pingTimer = null;
   }
 };
 
