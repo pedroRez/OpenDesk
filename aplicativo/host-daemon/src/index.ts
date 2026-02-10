@@ -60,15 +60,23 @@ if (!config.userId || !config.hostId) {
 
 async function sendHeartbeat() {
   const fetch = await getFetch();
+  const now = Date.now();
+  const seq = ++heartbeatSeq;
+  const sentAt = new Date(now).toISOString();
+  lastSentAt = now;
   const payload = {
     hostId: config.hostId,
     pcId: config.pcId ?? null,
-    timestamp: new Date().toISOString(),
+    timestamp: sentAt,
     version: config.version,
     status: config.status,
+    intervalMs: config.intervalMs,
+    seq,
+    sentAt,
   };
 
   try {
+    const start = Date.now();
     const response = await fetch(`${config.apiUrl}/hosts/${config.hostId}/heartbeat`, {
       method: 'POST',
       headers: {
@@ -78,23 +86,87 @@ async function sendHeartbeat() {
       body: JSON.stringify(payload),
     });
 
+    const durationMs = Date.now() - start;
+    lastSentAt = now;
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      console.error(`host-daemon: heartbeat falhou (${response.status}) ${text}`);
+      heartbeatFailures += 1;
+      console.error(
+        JSON.stringify({
+          tag: 'host-daemon',
+          event: 'heartbeat',
+          result: 'error',
+          hostId: config.hostId,
+          seq,
+          sentAt,
+          durationMs,
+          statusCode: response.status,
+          errorMessage: text,
+          failures: heartbeatFailures,
+        }),
+      );
+      return;
     }
+    heartbeatFailures = 0;
+    console.log(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'heartbeat',
+        result: 'ok',
+        hostId: config.hostId,
+        seq,
+        sentAt,
+        durationMs,
+        statusCode: response.status,
+      }),
+    );
   } catch (error) {
-    console.error('host-daemon: erro ao enviar heartbeat', error);
+    const durationMs = Date.now() - now;
+    heartbeatFailures += 1;
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'heartbeat',
+        result: 'error',
+        hostId: config.hostId,
+        seq,
+        sentAt,
+        durationMs,
+        statusCode: 0,
+        errorMessage: error instanceof Error ? error.message : String(error ?? 'unknown'),
+        failures: heartbeatFailures,
+      }),
+    );
   }
 }
 
 console.log(`host-daemon: iniciado (hostId=${config.hostId}, interval=${config.intervalMs}ms)`);
 
 let interval: NodeJS.Timeout | null = null;
+let heartbeatSeq = 0;
+let heartbeatFailures = 0;
+let lastSentAt = 0;
 
 const start = () => {
   if (interval) return;
   sendHeartbeat();
-  interval = setInterval(sendHeartbeat, config.intervalMs);
+  interval = setInterval(() => {
+    // Watchdog: se nao conseguimos enviar por 2 ciclos, loga para diagnostico.
+    const now = Date.now();
+    if (lastSentAt > 0 && now - lastSentAt > config.intervalMs * 2) {
+      console.warn(
+        JSON.stringify({
+          tag: 'host-daemon',
+          event: 'heartbeat_watchdog',
+          hostId: config.hostId,
+          lastSentAt: new Date(lastSentAt).toISOString(),
+          now: new Date(now).toISOString(),
+          intervalMs: config.intervalMs,
+        }),
+      );
+    }
+    sendHeartbeat();
+  }, config.intervalMs);
 };
 
 const stop = () => {

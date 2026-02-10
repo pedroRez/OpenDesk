@@ -219,6 +219,9 @@ export async function hostRoutes(fastify: FastifyInstance) {
       status: z.enum(['ONLINE', 'OFFLINE', 'BUSY']).optional(),
       pcId: z.string().nullable().optional(),
       timestamp: z.string().optional(),
+      intervalMs: z.number().int().positive().optional(),
+      seq: z.number().int().optional(),
+      sentAt: z.string().optional(),
     });
     const body = bodySchema.parse(request.body ?? {});
     const logTimestamp = body.timestamp ?? new Date().toISOString();
@@ -255,6 +258,9 @@ export async function hostRoutes(fastify: FastifyInstance) {
         prisma: fastify.prisma,
         hostId: params.id,
         status: body.status,
+        intervalMs: body.intervalMs ?? null,
+        seq: body.seq ?? null,
+        sentAt: body.sentAt ?? null,
       });
       if (isDebug) {
         console.log('[HB][BACKEND] atualizado', {

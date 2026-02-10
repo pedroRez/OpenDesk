@@ -5,14 +5,21 @@ import { clearQueueForPc, endSession } from './sessionService.js';
 import { recordReliabilityEvent } from './hostReliability.js';
 import { recordHostDrop, recordHostOnlineMinute } from './hostReliabilityStats.js';
 
+// Controle de transicao ONLINE -> UNSTABLE -> OFFLINE por host.
 const offlineSinceByHost = new Map<string, number>();
+// Intervalo informado pelo host para calcular jitter tolerance.
+const lastIntervalByHost = new Map<string, number>();
+const hostStateByHost = new Map<string, 'ONLINE' | 'UNSTABLE' | 'OFFLINE'>();
 
 export async function registerHeartbeat(params: {
   prisma: PrismaClient;
   hostId: string;
   status?: PCStatus;
+  intervalMs?: number | null;
+  seq?: number | null;
+  sentAt?: string | null;
 }): Promise<void> {
-  const { prisma, hostId, status } = params;
+  const { prisma, hostId, status, intervalMs, seq, sentAt } = params;
 
   try {
     const now = new Date();
@@ -21,6 +28,19 @@ export async function registerHeartbeat(params: {
       data: { lastSeenAt: now },
     });
     const hadOffline = offlineSinceByHost.delete(hostId);
+    hostStateByHost.set(hostId, 'ONLINE');
+    if (intervalMs && Number.isFinite(intervalMs) && intervalMs > 0) {
+      lastIntervalByHost.set(hostId, intervalMs);
+    }
+    if (seq || sentAt) {
+      console.log('[HB][BACKEND] received', {
+        hostId,
+        receivedAt: now.toISOString(),
+        seq: seq ?? null,
+        sentAt: sentAt ?? null,
+        intervalMs: intervalMs ?? null,
+      });
+    }
     if (hadOffline) {
       console.warn('[HB][BACKEND] host recovered', {
         hostId,
@@ -72,8 +92,8 @@ function logHeartbeatSample(hostId: string, timestamp: Date): void {
 
 export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> {
   const now = new Date();
-  const thresholdMs = config.hostHeartbeatTimeoutMs;
-  const cutoff = new Date(now.getTime() - thresholdMs);
+  const baseThresholdMs = config.hostHeartbeatTimeoutMs;
+  const cutoff = new Date(now.getTime() - baseThresholdMs);
 
   const hosts = await prisma.hostProfile.findMany({
     where: {
@@ -90,6 +110,8 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
     },
   });
 
+  let offlineTransitions = 0;
+
   await Promise.all(
     hosts.map(async (host) => {
       const diffMs = host.lastSeenAt ? now.getTime() - host.lastSeenAt.getTime() : null;
@@ -103,27 +125,35 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
       const timeoutMs = hasActiveSession
         ? config.hostHeartbeatTimeoutActiveMs
         : config.hostHeartbeatTimeoutMs;
+      const intervalMs = lastIntervalByHost.get(host.id) ?? config.hostHeartbeatCheckIntervalMs;
+      // Jitter tolerance = 3x interval para evitar falso positivo por pequenos atrasos.
+      const jitterToleranceMs = Math.max(0, intervalMs) * 3;
       const graceMs = Math.max(
         0,
         hasActiveSession ? config.hostOfflineGraceActiveSeconds : config.hostOfflineGraceSeconds,
       ) * 1000;
 
-      if (diffMs !== null && diffMs < timeoutMs) {
+      if (diffMs !== null && diffMs < timeoutMs + jitterToleranceMs) {
         return;
       }
 
       const offlineSince = offlineSinceByHost.get(host.id);
       if (!offlineSince) {
         offlineSinceByHost.set(host.id, now.getTime());
-        console.warn('[HB][BACKEND] host unstable', {
-          hostId: host.id,
-          pcIds: host.pcs.map((pc) => pc.id),
-          lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
-          now: now.toISOString(),
-          diffMs,
-          thresholdMs: timeoutMs,
-          activeSessions,
-        });
+        if (hostStateByHost.get(host.id) !== 'UNSTABLE') {
+          hostStateByHost.set(host.id, 'UNSTABLE');
+          console.warn('[HB][BACKEND] host unstable', {
+            hostId: host.id,
+            pcIds: host.pcs.map((pc) => pc.id),
+            lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
+            now: now.toISOString(),
+            diffMs,
+            thresholdMs: timeoutMs,
+            jitterToleranceMs,
+            intervalMs,
+            activeSessions,
+          });
+        }
         return;
       }
       const offlineDuration = now.getTime() - offlineSince;
@@ -131,16 +161,21 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
         return;
       }
 
-      console.warn('[HB][BACKEND] host offline', {
-        hostId: host.id,
-        pcIds: host.pcs.map((pc) => pc.id),
-        lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
-        now: now.toISOString(),
-        diffMs,
-        thresholdMs: timeoutMs,
-        activeSessions,
-        offlineDurationMs: offlineDuration,
-      });
+      if (hostStateByHost.get(host.id) !== 'OFFLINE') {
+        hostStateByHost.set(host.id, 'OFFLINE');
+        console.warn('[HB][BACKEND] host offline', {
+          hostId: host.id,
+          pcIds: host.pcs.map((pc) => pc.id),
+          lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
+          now: now.toISOString(),
+          diffMs,
+          thresholdMs: timeoutMs,
+          jitterToleranceMs,
+          intervalMs,
+          activeSessions,
+          offlineDurationMs: offlineDuration,
+        });
+      }
 
       await prisma.pC.updateMany({
         where: { hostId: host.id },
@@ -174,8 +209,9 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
       );
 
       offlineSinceByHost.delete(host.id);
+      offlineTransitions += 1;
     }),
   );
 
-  return hosts.length;
+  return offlineTransitions;
 }
