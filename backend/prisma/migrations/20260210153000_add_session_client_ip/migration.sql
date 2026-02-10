@@ -1,1 +1,1 @@
-﻿ALTER TABLE "Session" ADD COLUMN "clientIp" TEXT;
+ALTER TABLE "Session" ADD COLUMN "clientIp" TEXT;
