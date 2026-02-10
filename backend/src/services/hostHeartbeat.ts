@@ -20,7 +20,13 @@ export async function registerHeartbeat(params: {
       where: { id: hostId },
       data: { lastSeenAt: now },
     });
-    offlineSinceByHost.delete(hostId);
+    const hadOffline = offlineSinceByHost.delete(hostId);
+    if (hadOffline) {
+      console.warn('[HB][BACKEND] host recovered', {
+        hostId,
+        timestamp: now.toISOString(),
+      });
+    }
 
     if (status !== PCStatus.OFFLINE) {
       await recordHostOnlineMinute(prisma, hostId, now);
@@ -68,7 +74,6 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
   const now = new Date();
   const thresholdMs = config.hostHeartbeatTimeoutMs;
   const cutoff = new Date(now.getTime() - thresholdMs);
-  const graceMs = Math.max(0, config.hostOfflineGraceSeconds) * 1000;
 
   const hosts = await prisma.hostProfile.findMany({
     where: {
@@ -88,29 +93,59 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
   await Promise.all(
     hosts.map(async (host) => {
       const diffMs = host.lastSeenAt ? now.getTime() - host.lastSeenAt.getTime() : null;
-      console.warn('[HB][BACKEND] timeout derrubando host', {
-        hostId: host.id,
-        pcIds: host.pcs.map((pc) => pc.id),
-        lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
-        now: now.toISOString(),
-        diffMs,
-        thresholdMs,
+      const activeSessions = await prisma.session.count({
+        where: {
+          status: SessionStatus.ACTIVE,
+          pc: { hostId: host.id },
+        },
       });
+      const hasActiveSession = activeSessions > 0;
+      const timeoutMs = hasActiveSession
+        ? config.hostHeartbeatTimeoutActiveMs
+        : config.hostHeartbeatTimeoutMs;
+      const graceMs = Math.max(
+        0,
+        hasActiveSession ? config.hostOfflineGraceActiveSeconds : config.hostOfflineGraceSeconds,
+      ) * 1000;
 
-      await prisma.pC.updateMany({
-        where: { hostId: host.id },
-        data: { status: PCStatus.OFFLINE },
-      });
+      if (diffMs !== null && diffMs < timeoutMs) {
+        return;
+      }
 
       const offlineSince = offlineSinceByHost.get(host.id);
       if (!offlineSince) {
         offlineSinceByHost.set(host.id, now.getTime());
+        console.warn('[HB][BACKEND] host unstable', {
+          hostId: host.id,
+          pcIds: host.pcs.map((pc) => pc.id),
+          lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
+          now: now.toISOString(),
+          diffMs,
+          thresholdMs: timeoutMs,
+          activeSessions,
+        });
         return;
       }
       const offlineDuration = now.getTime() - offlineSince;
       if (offlineDuration < graceMs) {
         return;
       }
+
+      console.warn('[HB][BACKEND] host offline', {
+        hostId: host.id,
+        pcIds: host.pcs.map((pc) => pc.id),
+        lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
+        now: now.toISOString(),
+        diffMs,
+        thresholdMs: timeoutMs,
+        activeSessions,
+        offlineDurationMs: offlineDuration,
+      });
+
+      await prisma.pC.updateMany({
+        where: { hostId: host.id },
+        data: { status: PCStatus.OFFLINE },
+      });
 
       await recordReliabilityEvent(prisma, host.id, 'HOST_DOWN');
       await recordHostDrop(prisma, host.id, now);

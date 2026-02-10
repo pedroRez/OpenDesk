@@ -94,7 +94,7 @@ export default function HostDaemonManager() {
       hostId: user!.hostProfileId!,
       pcId,
       version: APP_VERSION,
-      intervalMs: 10000,
+      intervalMs: 20000,
     }).catch((error) => {
       console.warn('host-daemon: falha ao iniciar', error);
     });

@@ -286,9 +286,6 @@ export default function HostDashboard() {
       setHostLocked(true);
       setHostPinError('');
       console.log('[HOST_LOCK] locked');
-      import('@tauri-apps/api/window')
-        .then(({ appWindow }) => appWindow.hide())
-        .catch(() => undefined);
       return;
     }
     if (status && status !== 'BUSY') {
@@ -355,6 +352,9 @@ export default function HostDashboard() {
   }, [hostProfileId, toast, pcsPollingInterval]);
 
   useEffect(() => {
+    if (isTauriRuntime()) {
+      return;
+    }
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
