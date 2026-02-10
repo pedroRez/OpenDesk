@@ -23,9 +23,18 @@ export async function registerHeartbeat(params: {
 
   try {
     const now = new Date();
+    const previous = await prisma.hostProfile.findUnique({
+      where: { id: hostId },
+      select: { lastSeenAt: true },
+    });
     await prisma.hostProfile.update({
       where: { id: hostId },
       data: { lastSeenAt: now },
+    });
+    console.log('[HB][BACKEND] lastSeenAt updated', {
+      hostId,
+      previousLastSeenAt: previous?.lastSeenAt?.toISOString() ?? null,
+      newLastSeenAt: now.toISOString(),
     });
     const hadOffline = offlineSinceByHost.delete(hostId);
     hostStateByHost.set(hostId, 'ONLINE');
