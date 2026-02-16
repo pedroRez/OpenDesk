@@ -1,11 +1,12 @@
-import { z } from 'zod';
 import crypto from 'node:crypto';
 
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 
+
+import { requireUser } from '../utils/auth.js';
 import { hashPassword, normalizeUsername, verifyPassword } from '../utils/authHelpers.js';
 import { signAccessToken } from '../utils/jwt.js';
-import { requireUser } from '../utils/auth.js';
 
 function sanitizeUser<T extends { passwordHash?: string | null; googleSub?: string | null }>(user: T) {
   const { passwordHash, googleSub, ...safe } = user;
@@ -67,7 +68,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       password: z.string().min(6),
       username: z.string().min(3).max(20),
       displayName: z.string().max(40).optional(),
-      role: z.enum(['CLIENT', 'HOST', 'ADMIN']).default('CLIENT'),
+      role: z.enum(['CLIENT', 'HOST']).default('CLIENT'),
     });
 
     const body = schema.parse(request.body);

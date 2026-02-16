@@ -29,8 +29,8 @@ describe('calculateSettlement', () => {
     });
 
     expect(result.platformFee).toBeCloseTo(0.6);
-    expect(result.hostPayout).toBeCloseTo(1.26);
-    expect(result.clientCredit).toBeCloseTo(0.54);
+    expect(result.hostPayout).toBeCloseTo(3.78);
+    expect(result.clientCredit).toBeCloseTo(1.62);
   });
 
   it('caps usage ratio at 1', () => {

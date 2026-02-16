@@ -1,8 +1,8 @@
 ﻿import { randomBytes } from 'crypto';
-import { z } from 'zod';
-import { PCStatus, SessionStatus } from '@prisma/client';
 
+import { PCStatus, SessionStatus } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 
 import { requireUser } from '../utils/auth.js';
 
@@ -23,6 +23,12 @@ const TOKEN_TTL_MS = 60_000;
 
 function generateToken(): string {
   return randomBytes(24).toString('base64url');
+}
+
+
+function redactSecret(value: string): string {
+  if (value.length <= 8) return '[redacted]';
+  return `${value.slice(0, 4)}...[redacted]...${value.slice(-4)}`;
 }
 
 export async function streamRoutes(fastify: FastifyInstance) {
@@ -78,7 +84,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
     });
 
     fastify.log.info(
-      { token, pcId: pc.id, userId: user.id, expiresAt: expiresAt.toISOString() },
+      { token: redactSecret(token), pcId: pc.id, userId: user.id, expiresAt: expiresAt.toISOString() },
       'Stream token created',
     );
 
@@ -105,7 +111,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
     });
 
     if (!record) {
-      fastify.log.warn({ token: body.token }, 'Stream token resolve error: not found');
+      fastify.log.warn({ token: redactSecret(body.token) }, 'Stream token resolve error: not found');
       return reply.status(404).send({ error: 'Token nao encontrado' });
     }
 
@@ -119,21 +125,21 @@ export async function streamRoutes(fastify: FastifyInstance) {
     });
     if (!activeSession) {
       fastify.log.warn(
-        { token: body.token, pcId: record.pcId, userId: record.userId },
+        { token: redactSecret(body.token), pcId: record.pcId, userId: record.userId },
         'Stream token resolve error: session not active',
       );
       return reply.status(409).send({ error: 'Sessao nao esta ativa', code: 'SESSION_NOT_ACTIVE' });
     }
 
     if (record.consumedAt) {
-      fastify.log.warn({ token: body.token }, 'Stream token resolve error: already used');
+      fastify.log.warn({ token: redactSecret(body.token) }, 'Stream token resolve error: already used');
       return reply.status(409).send({ error: 'Token ja utilizado' });
     }
 
     const now = new Date();
     if (record.expiresAt.getTime() <= now.getTime()) {
       fastify.log.warn(
-        { token: body.token, expiresAt: record.expiresAt.toISOString() },
+        { token: redactSecret(body.token), expiresAt: record.expiresAt.toISOString() },
         'Stream token resolve error: expired',
       );
       return reply.status(410).send({ error: 'Token expirado' });
@@ -143,6 +149,16 @@ export async function streamRoutes(fastify: FastifyInstance) {
       const fallbackHost = record.pc.connectionHost ?? null;
       const fallbackPort = record.pc.connectionPort ?? null;
       if (fallbackHost && fallbackPort) {
+        await fastify.prisma.streamConnectToken.update({
+          where: { token: body.token },
+          data: { consumedAt: now },
+        });
+
+        fastify.log.info(
+          { token: redactSecret(body.token), pcId: record.pcId, consumedAt: now.toISOString() },
+          'Stream token consumed',
+        );
+
         return reply.send({
           connectAddress: `${fallbackHost}:${fallbackPort}`,
           connectHint: record.pc.connectHint,
@@ -152,7 +168,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
 
       fastify.log.warn(
         {
-          token: body.token,
+          token: redactSecret(body.token),
           pcId: record.pcId,
           connectAddress: record.pc.connectAddress ?? null,
           connectionHost: fallbackHost,
@@ -176,7 +192,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
     });
 
     fastify.log.info(
-      { token: body.token, pcId: record.pcId, consumedAt: now.toISOString() },
+      { token: redactSecret(body.token), pcId: record.pcId, consumedAt: now.toISOString() },
       'Stream token consumed',
     );
 
@@ -215,7 +231,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
     }
 
     fastify.log.info(
-      { pcId: pc.id, pcName: pc.name, userId: user.id, pin: body.pin },
+      { pcId: pc.id, pcName: pc.name, userId: user.id, pin: '[redacted]' },
       'Stream pairing PIN received',
     );
 
