@@ -55,13 +55,13 @@ async function createSessionInternal(params: {
 
   const pc = pcRows[0];
   if (!pc) {
-    throw new SessionError('PC nÃ£o encontrado', 'PC_NOT_FOUND', 404);
+    throw new SessionError('PC não encontrado', 'PC_NOT_FOUND', 404);
   }
   if (pc.status === PCStatus.BUSY) {
-    throw new SessionError('PC estÃ¡ ocupado', 'PC_BUSY', 409);
+    throw new SessionError('PC está ocupado', 'PC_BUSY', 409);
   }
   if (pc.status !== PCStatus.ONLINE) {
-    throw new SessionError('PC indisponÃ­vel', 'PC_OFFLINE', 409);
+    throw new SessionError('PC indisponível', 'PC_OFFLINE', 409);
   }
 
   const existingSession = await prisma.session.findFirst({
@@ -72,7 +72,7 @@ async function createSessionInternal(params: {
   });
 
   if (existingSession) {
-    throw new SessionError('PC jÃ¡ reservado', 'PC_BUSY', 409);
+    throw new SessionError('PC já reservado', 'PC_BUSY', 409);
   }
 
   const existingClientSession = await prisma.session.findFirst({
@@ -83,7 +83,7 @@ async function createSessionInternal(params: {
   });
 
   if (existingClientSession) {
-    throw new SessionError('Usuario jÃ¡ possui uma sessao ativa', 'SESSION_EXISTS', 409);
+    throw new SessionError('Usuário já possui uma sessão ativa', 'SESSION_EXISTS', 409);
   }
 
   const priceTotal = (pc.pricePerHour * minutesPurchased) / 60;
@@ -139,10 +139,10 @@ async function startSessionInternal(params: {
 
   const session = await prisma.session.findUnique({ where: { id: sessionId } });
   if (!session) {
-    throw new SessionError('SessÃ£o nÃ£o encontrada', 'SESSION_NOT_FOUND', 404);
+    throw new SessionError('Sessão não encontrada', 'SESSION_NOT_FOUND', 404);
   }
   if (session.status !== SessionStatus.PENDING) {
-    throw new SessionError('SessÃ£o nÃ£o estÃ¡ pendente', 'INVALID_STATUS', 409);
+    throw new SessionError('Sessão não está pendente', 'INVALID_STATUS', 409);
   }
 
   const pcRows = await prisma.$queryRaw<{
@@ -155,7 +155,7 @@ async function startSessionInternal(params: {
 
   const pc = pcRows[0];
   if (!pc || pc.status !== PCStatus.ONLINE) {
-    throw new SessionError('PC indisponÃ­vel', 'PC_BUSY', 409);
+    throw new SessionError('PC indisponível', 'PC_BUSY', 409);
   }
 
   await prisma.pC.update({
@@ -409,10 +409,8 @@ export async function endSession(params: {
 
     const endTime = new Date();
     const startTime = session.startAt ?? endTime;
-    const minutesUsed = Math.min(
-      Math.ceil((endTime.getTime() - startTime.getTime()) / 60000),
-      session.minutesPurchased,
-    );
+    const elapsedMinutes = Math.ceil((endTime.getTime() - startTime.getTime()) / 60000);
+    const minutesUsed = Math.max(0, Math.min(elapsedMinutes, session.minutesPurchased));
 
     const normalizedFailure = normalizeFailureReason(failureReason, hostFault);
 
@@ -426,9 +424,10 @@ export async function endSession(params: {
     });
 
     if (settlement.clientCredit > 0) {
-      await tx.wallet.update({
+      await tx.wallet.upsert({
         where: { userId: session.clientUserId },
-        data: { balance: { increment: settlement.clientCredit } },
+        create: { userId: session.clientUserId, balance: settlement.clientCredit },
+        update: { balance: { increment: settlement.clientCredit } },
       });
       await tx.walletTx.create({
         data: {
