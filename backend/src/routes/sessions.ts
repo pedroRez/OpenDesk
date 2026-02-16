@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 import { SessionStatus } from '@prisma/client';
 
 import { endSession, startSession, createSession, SessionError } from '../services/sessionService.js';
