@@ -6,12 +6,13 @@ import { createSession } from '../services/sessionService.js';
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 
 describe.skipIf(!hasDatabase)('session lock', () => {
-  const prisma = new PrismaClient();
+  let prisma: PrismaClient;
   let pcId = '';
   let clientUserId = '';
   let hostUserId = '';
 
   beforeAll(async () => {
+    prisma = new PrismaClient();
     await prisma.$connect();
 
     const timestamp = Date.now();
