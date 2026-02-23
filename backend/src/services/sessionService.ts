@@ -1,4 +1,4 @@
-import { PCStatus, QueueEntryStatus, SessionStatus, WalletTxType, type PrismaClient } from '@prisma/client';
+import { PCStatus, QueueEntryStatus, SessionStatus, WalletTxType, type Prisma, type PrismaClient } from '@prisma/client';
 import { addMinutes } from 'date-fns';
 
 import { config } from '../config.js';

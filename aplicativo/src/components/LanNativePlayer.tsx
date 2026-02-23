@@ -85,11 +85,127 @@ type InputEventBase =
     }
   | { type: 'disconnect_hotkey' };
 
+type RelayInputEventPayload =
+  | { type: 'mouse_move'; seq: number; tsUs: number; dx: number; dy: number }
+  | { type: 'mouse_button'; seq: number; tsUs: number; button: number; down: boolean }
+  | { type: 'mouse_wheel'; seq: number; tsUs: number; deltaX: number; deltaY: number }
+  | {
+      type: 'key';
+      seq: number;
+      tsUs: number;
+      scancode: string;
+      down: boolean;
+      ctrl?: boolean;
+      alt?: boolean;
+      shift?: boolean;
+      meta?: boolean;
+    }
+  | { type: 'disconnect_hotkey'; seq: number; tsUs: number };
+
+type RelayInputEnvelope = {
+  type: 'input_event';
+  version: 1;
+  token: string;
+  sessionId: string;
+  streamId: string;
+  event: RelayInputEventPayload;
+};
+
+type StreamHealthStatus = 'ok' | 'degraded' | 'reconnecting';
+
+type StreamFeedbackMessage =
+  | {
+      type: 'request_keyframe' | 'reconnect';
+      lossPct?: number;
+      jitterMs?: number;
+      freezeMs?: number;
+      requestedBitrateKbps?: number;
+      reason?: string;
+      fpsDecode?: number;
+      rttMs?: number;
+      dropRatePct?: number;
+      bufferLevel?: number;
+      bitrateKbps?: number;
+      status?: StreamHealthStatus;
+    }
+  | {
+      type: 'report_stats';
+      lossPct?: number;
+      jitterMs?: number;
+      freezeMs?: number;
+      requestedBitrateKbps?: number;
+      reason?: string;
+      fpsDecode?: number;
+      rttMs?: number;
+      dropRatePct?: number;
+      bufferLevel?: number;
+      bitrateKbps?: number;
+      status?: StreamHealthStatus;
+    };
+
+type RelayControlMessage =
+  | {
+      type: 'request_keyframe' | 'reconnect';
+      token?: string;
+      sessionId?: string;
+      streamId?: string;
+      lossPct?: number;
+      jitterMs?: number;
+      freezeMs?: number;
+      requestedBitrateKbps?: number;
+      reason?: string;
+      sentAtUs?: number;
+    }
+  | {
+      type: 'report_stats';
+      token?: string;
+      sessionId?: string;
+      streamId?: string;
+      lossPct?: number;
+      jitterMs?: number;
+      requestedBitrateKbps?: number;
+      reason?: string;
+      sentAtUs?: number;
+      fpsDecode?: number;
+      rttMs?: number;
+      dropRatePct?: number;
+      bufferLevel?: number;
+      bitrateKbps?: number;
+      status?: StreamHealthStatus;
+    }
+  | {
+      type: 'stream_ping';
+      token?: string;
+      sessionId?: string;
+      streamId?: string;
+      pingId: number;
+      sentAtUs: number;
+    };
+
+type RelayPongMessage = {
+  type: 'stream_pong';
+  pingId: number;
+  sentAtUs?: number;
+  receivedAtUs?: number;
+  hostTsUs?: number;
+  sessionId?: string;
+  streamId?: string;
+};
+
 const STREAM_FLAG_KEYFRAME = 1;
 const RELAY_FLAG_KEYFRAME = 1;
 const RELAY_FRAME_HEADER_BYTES = 9;
 const DEFAULT_LISTEN_PORT = 5004;
 const DEFAULT_INPUT_PORT = 5505;
+const RELAY_PING_INTERVAL_MS = 5000;
+const RELAY_PONG_TIMEOUT_MS = 12_000;
+const RELAY_DEGRADED_FREEZE_MS = 1800;
+const RELAY_DEGRADED_FRAME_GAP_MS = 2500;
+const RELAY_RECONNECT_FREEZE_MS = 4500;
+const RELAY_RECONNECT_FRAME_GAP_MS = 3200;
+const RELAY_REPORT_STATS_INTERVAL_MS = 2500;
+const RELAY_KEYFRAME_REQUEST_COOLDOWN_MS = 900;
+const RELAY_RECONNECT_BACKOFF_MS = [1000, 2000, 5000, 10000] as const;
 
 function formatNumber(value: number, fractionDigits = 2): string {
   if (!Number.isFinite(value)) return '0';
@@ -98,6 +214,65 @@ function formatNumber(value: number, fractionDigits = 2): string {
 
 function nowUs(): number {
   return Math.trunc(Date.now() * 1000);
+}
+
+function isTokenExpired(expiresAtRaw?: string | null): boolean {
+  if (!expiresAtRaw?.trim()) return false;
+  const expiresAtMs = Date.parse(expiresAtRaw);
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now();
+}
+
+function toRelayInputEnvelope(
+  token: string,
+  sessionId: string,
+  streamId: string,
+  event: LanInputSendEvent,
+): RelayInputEnvelope {
+  const relayEvent: RelayInputEventPayload =
+    event.type === 'mouse_move'
+      ? { type: 'mouse_move', seq: event.seq, tsUs: event.tsUs, dx: event.dx, dy: event.dy }
+      : event.type === 'mouse_button'
+        ? {
+            type: 'mouse_button',
+            seq: event.seq,
+            tsUs: event.tsUs,
+            button: event.button,
+            down: event.down,
+          }
+        : event.type === 'mouse_wheel'
+          ? {
+              type: 'mouse_wheel',
+              seq: event.seq,
+              tsUs: event.tsUs,
+              deltaX: event.deltaX,
+              deltaY: event.deltaY,
+            }
+          : event.type === 'key'
+            ? {
+                type: 'key',
+                seq: event.seq,
+                tsUs: event.tsUs,
+                scancode: event.code,
+                down: event.down,
+                ctrl: event.ctrl,
+                alt: event.alt,
+                shift: event.shift,
+                meta: event.meta,
+              }
+            : {
+                type: 'disconnect_hotkey',
+                seq: event.seq,
+                tsUs: event.tsUs,
+              };
+
+  return {
+    type: 'input_event',
+    version: 1,
+    token,
+    sessionId,
+    streamId,
+    event: relayEvent,
+  };
 }
 
 function parseRelayFramePayload(input: Blob | ArrayBuffer | Uint8Array): {
@@ -160,8 +335,29 @@ export default function LanNativePlayer({
   const lastPayloadAtRef = useRef(performance.now());
   const lastKeyframeRequestAtRef = useRef(0);
   const lastNetworkReportAtRef = useRef(0);
-  const lastReconnectAtRef = useRef(0);
+  const lastPingSentAtRef = useRef(0);
+  const lastPongAtRef = useRef(0);
+  const lastPingIdRef = useRef(0);
+  const relayRttMsRef = useRef(0);
+  const relayConnectionIdRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const manualDisconnectRef = useRef(false);
+  const connectFnRef = useRef<((options?: { isReconnect?: boolean }) => Promise<void>) | null>(null);
+  const healthStatusRef = useRef<StreamHealthStatus>('ok');
+  const packetsAcceptedRef = useRef(0);
+  const droppedBufferFramesRef = useRef(0);
+  const decodeErrorsRef = useRef(0);
+  const renderedFramesTotalRef = useRef(0);
+  const statsSampleRef = useRef({
+    packetsAccepted: 0,
+    droppedFrames: 0,
+    decodeErrors: 0,
+    renderedFrames: 0,
+    sampledAtMs: performance.now(),
+  });
   const reconnectInFlightRef = useRef(false);
+  const requestKeyframeRef = useRef<(reason: string, freezeMs?: number) => void>(() => undefined);
   const latestNetworkRef = useRef({
     lossPct: 0,
     jitterMs: 0,
@@ -207,10 +403,26 @@ export default function LanNativePlayer({
   const [keyframeRequestsSent, setKeyframeRequestsSent] = useState(0);
   const [networkReportsSent, setNetworkReportsSent] = useState(0);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [relayRttMs, setRelayRttMs] = useState(0);
+  const [streamHealth, setStreamHealth] = useState<StreamHealthStatus>('ok');
 
   const isAvailable = useMemo(() => isTauriRuntime(), []);
   const effectiveTransportMode = transportMode === 'relay' ? 'relay' : 'lan';
   const isSessionConnectAllowed = sessionState === 'ACTIVE' || sessionState === 'STARTING';
+
+  const applyStreamHealth = useCallback((next: StreamHealthStatus) => {
+    if (healthStatusRef.current === next) return;
+    healthStatusRef.current = next;
+    setStreamHealth(next);
+  }, []);
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    reconnectInFlightRef.current = false;
+  }, []);
 
   useEffect(() => {
     if (connectedRef.current) return;
@@ -253,6 +465,12 @@ export default function LanNativePlayer({
     } catch {
       // ignore
     }
+  }, []);
+
+  const clearDecoderBufferShort = useCallback(async () => {
+    const decoder = decoderRef.current;
+    if (!decoder) return;
+    await decoder.flush().catch(() => undefined);
   }, []);
 
   const clearListeners = useCallback(() => {
@@ -320,12 +538,15 @@ export default function LanNativePlayer({
               }
               videoFrame.close();
               countersRef.current.renderedFrames += 1;
+              renderedFramesTotalRef.current += 1;
               lastRenderAtRef.current = performance.now();
             },
             error: (error: unknown) => {
               countersRef.current.decodeErrors += 1;
-              setDecodeErrors(countersRef.current.decodeErrors);
+              decodeErrorsRef.current += 1;
+              setDecodeErrors(decodeErrorsRef.current);
               setStatus(`Erro de decode: ${error instanceof Error ? error.message : String(error)}`);
+              requestKeyframeRef.current('decoder_error');
             },
           });
           decoder.configure(config);
@@ -357,11 +578,15 @@ export default function LanNativePlayer({
     setInputStatus('Input parado.');
   }, []);
 
-  const disconnect = useCallback(async () => {
-    reconnectInFlightRef.current = false;
+  const disconnect = useCallback(async (options: { silent?: boolean } = {}) => {
+    clearReconnectTimer();
+    relayConnectionIdRef.current += 1;
     connectedRef.current = false;
     setConnected(false);
     activeTransportRef.current = 'lan';
+    applyStreamHealth('ok');
+    relayRttMsRef.current = 0;
+    setRelayRttMs(0);
     clearListeners();
     const relaySocket = relaySocketRef.current;
     relaySocketRef.current = null;
@@ -375,19 +600,23 @@ export default function LanNativePlayer({
     await stopInputChannel();
     await stopUdpLanReceiver().catch(() => undefined);
     await closeDecoder();
-    setStatus('Desconectado.');
-  }, [clearListeners, closeDecoder, stopInputChannel]);
+    if (!options.silent) {
+      setStatus('Desconectado.');
+    }
+  }, [applyStreamHealth, clearListeners, clearReconnectTimer, closeDecoder, stopInputChannel]);
 
   useEffect(() => {
     if (!lockConnectionToSession) return;
     if (!connectedRef.current) return;
     if (isSessionConnectAllowed) return;
+    manualDisconnectRef.current = true;
     disconnect().catch(() => undefined);
     setStatus('Conexao encerrada: sessao nao esta ACTIVE/STARTING.');
   }, [disconnect, isSessionConnectAllowed, lockConnectionToSession, sessionState]);
 
   useEffect(() => {
     if (!connectedRef.current) return;
+    manualDisconnectRef.current = true;
     disconnect().catch(() => undefined);
     setStatus('Conexao encerrada pelo ciclo da sessao.');
   }, [disconnect, forceDisconnectKey]);
@@ -395,6 +624,20 @@ export default function LanNativePlayer({
   const sendInput = useCallback(
     (event: InputEventBase, options: { dropIfBusy?: boolean } = {}) => {
       if (!inputConnectedRef.current) return;
+      if (activeTransportRef.current === 'relay') {
+        if (sessionState !== 'ACTIVE') {
+          setInputEventsDropped((prev) => prev + 1);
+          return;
+        }
+        if (isTokenExpired(inputTokenExpiresAt)) {
+          inputConnectedRef.current = false;
+          setInputStatus('Input bloqueado: token expirado.');
+          setInputEventsDropped((prev) => prev + 1);
+          manualDisconnectRef.current = true;
+          disconnect().catch(() => undefined);
+          return;
+        }
+      }
       if (options.dropIfBusy && inputPendingRef.current > 6) {
         setInputEventsDropped((prev) => prev + 1);
         return;
@@ -425,7 +668,24 @@ export default function LanNativePlayer({
 
       inputPendingRef.current += 1;
       inputSendChainRef.current = inputSendChainRef.current
-        .then(() => sendLanInputEvent(payload))
+        .then(() => {
+          if (activeTransportRef.current !== 'relay') {
+            return sendLanInputEvent(payload);
+          }
+          const socket = relaySocketRef.current;
+          if (!socket || socket.readyState !== WebSocket.OPEN) {
+            throw new Error('relay websocket nao conectado.');
+          }
+          const tokenScope = inputToken.trim();
+          const sessionScope = sessionId?.trim() ?? '';
+          const streamScope = streamId.trim();
+          if (!tokenScope || !sessionScope || !streamScope) {
+            throw new Error('escopo input relay invalido.');
+          }
+          const envelope = toRelayInputEnvelope(tokenScope, sessionScope, streamScope, payload);
+          socket.send(JSON.stringify(envelope));
+          return undefined;
+        })
         .then(() => {
           setInputEventsSent((prev) => prev + 1);
           countersRef.current.inputEventsWindow += 1;
@@ -438,33 +698,178 @@ export default function LanNativePlayer({
           inputPendingRef.current = Math.max(0, inputPendingRef.current - 1);
         });
     },
-    [],
+    [disconnect, inputToken, inputTokenExpiresAt, sessionId, sessionState, streamId],
   );
 
+  const startMouseMovePump = useCallback(() => {
+    if (mouseMoveTimerRef.current) {
+      clearInterval(mouseMoveTimerRef.current);
+    }
+    mouseMoveTimerRef.current = setInterval(() => {
+      if (!inputConnectedRef.current || !inputFocusedRef.current) return;
+      const delta = mouseDeltaRef.current;
+      if (delta.dx === 0 && delta.dy === 0) return;
+      const dx = delta.dx;
+      const dy = delta.dy;
+      mouseDeltaRef.current = { dx: 0, dy: 0 };
+      sendInput({ type: 'mouse_move', dx, dy }, { dropIfBusy: true });
+    }, 8);
+  }, [sendInput]);
+
   const sendFeedback = useCallback(
-    async (
-      message: Omit<UdpLanFeedbackMessage, 'token' | 'sessionId' | 'streamId'>,
-    ): Promise<void> => {
+    async (message: StreamFeedbackMessage): Promise<void> => {
       const token = inputToken.trim();
       if (!token) return;
-      const payload: UdpLanFeedbackMessage = {
-        ...message,
-        token,
-        sessionId: sessionId ?? undefined,
-        streamId: streamId.trim() || undefined,
-      };
+      const sessionScope = sessionId?.trim() ?? '';
+      const streamScope = streamId.trim();
+
       if (activeTransportRef.current === 'relay') {
         const socket = relaySocketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
+        if (!socket || socket.readyState !== WebSocket.OPEN || !sessionScope || !streamScope) {
           return;
         }
+        const payload = {
+          ...message,
+          token,
+          sessionId: sessionScope,
+          streamId: streamScope,
+          sentAtUs: nowUs(),
+        };
         socket.send(JSON.stringify(payload));
         return;
       }
-      await sendUdpLanFeedback(payload);
+
+      const lanType: UdpLanFeedbackMessage['type'] =
+        message.type === 'request_keyframe'
+          ? 'keyframe_request'
+          : message.type === 'report_stats'
+            ? 'network_report'
+            : 'reconnect';
+      await sendUdpLanFeedback({
+        type: lanType,
+        token,
+        sessionId: sessionScope || undefined,
+        streamId: streamScope || undefined,
+        lossPct: message.lossPct,
+        jitterMs: message.jitterMs,
+        freezeMs: message.freezeMs,
+        requestedBitrateKbps: message.requestedBitrateKbps,
+        reason: message.reason,
+      });
     },
     [inputToken, sessionId, streamId],
   );
+
+  const sendStreamPing = useCallback(() => {
+    if (activeTransportRef.current !== 'relay') return;
+    const socket = relaySocketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const token = inputToken.trim();
+    const sessionScope = sessionId?.trim() ?? '';
+    const streamScope = streamId.trim();
+    if (!token || !sessionScope || !streamScope) return;
+
+    const pingId = ++lastPingIdRef.current;
+    const sentAtUs = nowUs();
+    lastPingSentAtRef.current = performance.now();
+    socket.send(
+      JSON.stringify({
+        type: 'stream_ping',
+        token,
+        sessionId: sessionScope,
+        streamId: streamScope,
+        pingId,
+        sentAtUs,
+      } satisfies RelayControlMessage),
+    );
+  }, [inputToken, sessionId, streamId]);
+
+  const requestKeyframe = useCallback(
+    (reason: string, freezeMs = 0) => {
+      const now = performance.now();
+      if (now - lastKeyframeRequestAtRef.current < RELAY_KEYFRAME_REQUEST_COOLDOWN_MS) {
+        return;
+      }
+      lastKeyframeRequestAtRef.current = now;
+      const network = latestNetworkRef.current;
+      sendFeedback({
+        type: 'request_keyframe',
+        freezeMs: Math.max(0, Math.trunc(freezeMs)),
+        lossPct: network.lossPct,
+        jitterMs: network.jitterMs,
+        reason,
+      })
+        .then(() => {
+          setKeyframeRequestsSent((prev) => prev + 1);
+        })
+        .catch((error) => {
+          setStatus(
+            `Falha ao solicitar keyframe: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
+    },
+    [sendFeedback],
+  );
+
+  useEffect(() => {
+    requestKeyframeRef.current = requestKeyframe;
+  }, [requestKeyframe]);
+
+  const scheduleReconnect = useCallback(
+    (reason: string) => {
+      if (effectiveTransportMode !== 'relay') return;
+      if (manualDisconnectRef.current) return;
+      if (lockConnectionToSession && !isSessionConnectAllowed) return;
+      if (isTokenExpired(inputTokenExpiresAt)) {
+        setStatus('Reconexao automatica bloqueada: token expirado.');
+        return;
+      }
+      if (reconnectTimerRef.current) return;
+
+      const index = Math.min(reconnectAttemptRef.current, RELAY_RECONNECT_BACKOFF_MS.length - 1);
+      const delayMs = RELAY_RECONNECT_BACKOFF_MS[index];
+      reconnectAttemptRef.current += 1;
+      reconnectInFlightRef.current = true;
+      setReconnectAttempts((prev) => prev + 1);
+      applyStreamHealth('reconnecting');
+      setStatus(`Relay instavel (${reason}). Reconectando em ${delayMs}ms...`);
+
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        const runner = connectFnRef.current;
+        if (!runner) {
+          reconnectInFlightRef.current = false;
+          return;
+        }
+        runner({ isReconnect: true })
+          .catch((error) => {
+            setStatus(
+              `Falha na reconexao automatica: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            scheduleReconnect('retry_failed');
+          })
+          .finally(() => {
+            reconnectInFlightRef.current = false;
+          });
+      }, delayMs);
+    },
+    [
+      applyStreamHealth,
+      effectiveTransportMode,
+      inputTokenExpiresAt,
+      isSessionConnectAllowed,
+      lockConnectionToSession,
+    ],
+  );
+
+  const markPacketAccepted = useCallback(() => {
+    packetsAcceptedRef.current += 1;
+    setPacketsAccepted(packetsAcceptedRef.current);
+  }, []);
 
   const decodeEncodedChunk = useCallback((chunk: { flags: number; timestampUs: number; payload: Uint8Array }) => {
     if (!connectedRef.current) return;
@@ -480,7 +885,8 @@ export default function LanNativePlayer({
 
     if (!keyframe && queueSize > 2) {
       countersRef.current.droppedBufferFrames += 1;
-      setDroppedBufferFrames(countersRef.current.droppedBufferFrames);
+      droppedBufferFramesRef.current += 1;
+      setDroppedBufferFrames(droppedBufferFramesRef.current);
       return;
     }
 
@@ -493,10 +899,13 @@ export default function LanNativePlayer({
       decoder.decode(encoded);
     } catch (error) {
       countersRef.current.decodeErrors += 1;
-      setDecodeErrors(countersRef.current.decodeErrors);
+      decodeErrorsRef.current += 1;
+      setDecodeErrors(decodeErrorsRef.current);
       setStatus(`Falha ao decodificar chunk: ${error instanceof Error ? error.message : String(error)}`);
+      void clearDecoderBufferShort();
+      requestKeyframeRef.current('decode_exception');
     }
-  }, []);
+  }, [clearDecoderBufferShort]);
 
   const handleStats = useCallback((payload: UdpLanStatsEvent) => {
     if (activeTransportRef.current !== 'lan') return;
@@ -506,6 +915,7 @@ export default function LanNativePlayer({
     setJitterMs(payload.jitterMs);
     setPendingFrames(payload.pendingFrames);
     setPacketsAccepted(payload.packetsAccepted);
+    packetsAcceptedRef.current = payload.packetsAccepted;
     latestNetworkRef.current = {
       lossPct: payload.lossPct,
       jitterMs: payload.jitterMs,
@@ -521,11 +931,17 @@ export default function LanNativePlayer({
     }
     lastNetworkReportAtRef.current = now;
     sendFeedback({
-      type: 'network_report',
+      type: 'report_stats',
       lossPct: payload.lossPct,
       jitterMs: payload.jitterMs,
       requestedBitrateKbps: Math.max(600, Math.trunc(payload.bitrateKbps * 0.9)),
       reason: 'network_degraded',
+      fpsDecode: fpsRender,
+      dropRatePct: 0,
+      rttMs: relayRttMsRef.current,
+      bufferLevel: payload.pendingFrames,
+      bitrateKbps: payload.bitrateKbps,
+      status: healthStatusRef.current,
     })
       .then(() => {
         setNetworkReportsSent((prev) => prev + 1);
@@ -537,19 +953,22 @@ export default function LanNativePlayer({
           }`,
         );
       });
-  }, [sendFeedback]);
+  }, [fpsRender, sendFeedback]);
 
   const handleFrame = useCallback((payload: UdpLanFrameEvent) => {
     if (activeTransportRef.current !== 'lan') return;
+    markPacketAccepted();
     const bytes = decodeBase64ToBytes(payload.payloadBase64);
     decodeEncodedChunk({
       flags: payload.flags,
       timestampUs: payload.timestampUs,
       payload: bytes,
     });
-  }, [decodeEncodedChunk]);
+  }, [decodeEncodedChunk, markPacketAccepted]);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (options: { isReconnect?: boolean } = {}) => {
+    const isReconnectAttempt = options.isReconnect === true;
+
     if (!isAvailable) {
       setStatus('Player nativo disponivel apenas no runtime Tauri.');
       return;
@@ -558,12 +977,9 @@ export default function LanNativePlayer({
       setStatus('Conexao bloqueada: sessao precisa estar ACTIVE ou STARTING.');
       return;
     }
-    if (inputTokenExpiresAt?.trim()) {
-      const expiresAtMs = Date.parse(inputTokenExpiresAt);
-      if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
-        setStatus('Token de stream expirado. Atualize a sinalizacao da sessao.');
-        return;
-      }
+    if (isTokenExpired(inputTokenExpiresAt)) {
+      setStatus('Token de stream expirado. Atualize a sinalizacao da sessao.');
+      return;
     }
 
     const token = inputToken.trim();
@@ -579,7 +995,10 @@ export default function LanNativePlayer({
       setStatus('Porta UDP invalida.');
       return;
     }
-    if (needsLanValidation && (!Number.isFinite(inputPortParsed) || inputPortParsed <= 0 || inputPortParsed > 65535)) {
+    if (
+      needsLanValidation
+      && (!Number.isFinite(inputPortParsed) || inputPortParsed <= 0 || inputPortParsed > 65535)
+    ) {
       setStatus('Porta de input invalida.');
       return;
     }
@@ -604,8 +1023,15 @@ export default function LanNativePlayer({
       return;
     }
 
+    if (!isReconnectAttempt) {
+      manualDisconnectRef.current = false;
+      reconnectAttemptRef.current = 0;
+      setReconnectAttempts(0);
+    }
+    clearReconnectTimer();
+
     try {
-      await disconnect();
+      await disconnect({ silent: true });
 
       countersRef.current = {
         renderedFrames: 0,
@@ -619,6 +1045,19 @@ export default function LanNativePlayer({
         inputEventsWindow: 0,
         inputEventsWindowStartMs: performance.now(),
       };
+      packetsAcceptedRef.current = 0;
+      droppedBufferFramesRef.current = 0;
+      decodeErrorsRef.current = 0;
+      renderedFramesTotalRef.current = 0;
+      statsSampleRef.current = {
+        packetsAccepted: 0,
+        droppedFrames: 0,
+        decodeErrors: 0,
+        renderedFrames: 0,
+        sampledAtMs: performance.now(),
+      };
+      relayRttMsRef.current = 0;
+      setRelayRttMs(0);
       setDroppedBufferFrames(0);
       setDecodeErrors(0);
       setFpsRender(0);
@@ -634,7 +1073,6 @@ export default function LanNativePlayer({
       setInputEventsPerSec(0);
       setKeyframeRequestsSent(0);
       setNetworkReportsSent(0);
-      setReconnectAttempts(0);
       inputSeqRef.current = 0;
       inputPendingRef.current = 0;
       inputSendChainRef.current = Promise.resolve();
@@ -643,6 +1081,10 @@ export default function LanNativePlayer({
       lastPayloadAtRef.current = performance.now();
       lastKeyframeRequestAtRef.current = 0;
       lastNetworkReportAtRef.current = 0;
+      lastPingSentAtRef.current = 0;
+      lastPongAtRef.current = 0;
+      lastPingIdRef.current = 0;
+      applyStreamHealth('ok');
 
       const decoderSetup = await setupDecoder();
       decoderRef.current = decoderSetup.decoder;
@@ -698,15 +1140,7 @@ export default function LanNativePlayer({
         inputConnectedRef.current = true;
         setInputStatus('Input conectado.');
 
-        mouseMoveTimerRef.current = setInterval(() => {
-          if (!inputConnectedRef.current || !inputFocusedRef.current) return;
-          const delta = mouseDeltaRef.current;
-          if (delta.dx === 0 && delta.dy === 0) return;
-          const dx = delta.dx;
-          const dy = delta.dy;
-          mouseDeltaRef.current = { dx: 0, dy: 0 };
-          sendInput({ type: 'mouse_move', dx, dy }, { dropIfBusy: true });
-        }, 8);
+        startMouseMovePump();
 
         connectedRef.current = true;
         setConnected(true);
@@ -715,7 +1149,7 @@ export default function LanNativePlayer({
       }
 
       inputConnectedRef.current = false;
-      setInputStatus('Input remoto via relay ainda nao habilitado neste MVP.');
+      setInputStatus('Conectando input via relay...');
       const relayEndpoint = new URL(relayUrl!.trim());
       relayEndpoint.searchParams.set('role', 'client');
       relayEndpoint.searchParams.set('sessionId', sessionId!.trim());
@@ -725,27 +1159,89 @@ export default function LanNativePlayer({
       const relaySocket = new WebSocket(relayEndpoint.toString());
       relaySocket.binaryType = 'arraybuffer';
       relaySocketRef.current = relaySocket;
+      const connectionId = ++relayConnectionIdRef.current;
 
       relaySocket.onopen = () => {
+        if (connectionId !== relayConnectionIdRef.current) return;
         connectedRef.current = true;
         setConnected(true);
-        setStatus('Conectado via relay websocket. Aguardando frames...');
+        reconnectAttemptRef.current = 0;
+        reconnectInFlightRef.current = false;
+        const now = performance.now();
+        lastPongAtRef.current = now;
+        lastPingSentAtRef.current = 0;
+        lastNetworkReportAtRef.current = 0;
+        const relayInputAllowed = sessionState === 'ACTIVE' && !isTokenExpired(inputTokenExpiresAt);
+        inputConnectedRef.current = relayInputAllowed;
+        setInputStatus(
+          relayInputAllowed
+            ? 'Input conectado via relay WS.'
+            : sessionState !== 'ACTIVE'
+              ? 'Input relay bloqueado: sessao nao esta ACTIVE.'
+              : 'Input relay bloqueado: token expirado.',
+        );
+        startMouseMovePump();
+        applyStreamHealth('ok');
+        setStatus(
+          isReconnectAttempt
+            ? 'Relay reconectado. Sincronizando keyframe...'
+            : 'Conectado via relay websocket. Aguardando frames...',
+        );
+        if (isReconnectAttempt) {
+          requestKeyframe('post_reconnect');
+        }
       };
       relaySocket.onclose = (event) => {
+        if (connectionId !== relayConnectionIdRef.current) return;
         relaySocketRef.current = null;
-        if (!connectedRef.current) return;
+        inputConnectedRef.current = false;
+        setInputStatus('Input parado.');
+        const wasConnected = connectedRef.current;
         connectedRef.current = false;
         setConnected(false);
+        if (manualDisconnectRef.current) {
+          setStatus(`Relay encerrado (code=${event.code}).`);
+          return;
+        }
+        if (!wasConnected && event.code === 1000) {
+          return;
+        }
         setStatus(`Relay desconectado (code=${event.code}).`);
+        scheduleReconnect(`ws_close_${event.code}`);
       };
       relaySocket.onerror = () => {
+        if (connectionId !== relayConnectionIdRef.current) return;
         setStatus('Erro no websocket relay.');
       };
       relaySocket.onmessage = (event) => {
+        if (connectionId !== relayConnectionIdRef.current) return;
         if (typeof event.data === 'string') {
           try {
-            const parsed = JSON.parse(event.data) as { type?: string };
+            const parsed = JSON.parse(event.data) as { type?: string; [key: string]: unknown };
             if (parsed.type === 'relay.welcome') {
+              return;
+            }
+            if (parsed.type === 'stream_pong') {
+              const pong = parsed as RelayPongMessage;
+              if (typeof pong.pingId !== 'number') return;
+              if (pong.sessionId && sessionId?.trim() && pong.sessionId !== sessionId.trim()) return;
+              if (
+                pong.streamId
+                && streamId.trim()
+                && pong.streamId.trim().toLowerCase() !== streamId.trim().toLowerCase()
+              ) {
+                return;
+              }
+              lastPongAtRef.current = performance.now();
+              const receivedNowUs = nowUs();
+              const rttMs = typeof pong.sentAtUs === 'number'
+                ? Math.max(0, (receivedNowUs - pong.sentAtUs) / 1000)
+                : Math.max(0, performance.now() - lastPingSentAtRef.current);
+              relayRttMsRef.current = rttMs;
+              setRelayRttMs(rttMs);
+              if (!reconnectInFlightRef.current) {
+                applyStreamHealth('ok');
+              }
               return;
             }
           } catch {
@@ -758,9 +1254,10 @@ export default function LanNativePlayer({
           event.data
             .arrayBuffer()
             .then((arrayBuffer) => {
+              if (connectionId !== relayConnectionIdRef.current) return;
               const parsed = parseRelayFramePayload(arrayBuffer);
               if (!parsed) return;
-              setPacketsAccepted((prev) => prev + 1);
+              markPacketAccepted();
               decodeEncodedChunk({
                 flags: parsed.flags & RELAY_FLAG_KEYFRAME ? STREAM_FLAG_KEYFRAME : 0,
                 timestampUs: parsed.timestampUs,
@@ -774,7 +1271,7 @@ export default function LanNativePlayer({
         if (event.data instanceof ArrayBuffer) {
           const parsed = parseRelayFramePayload(event.data);
           if (!parsed) return;
-          setPacketsAccepted((prev) => prev + 1);
+          markPacketAccepted();
           decodeEncodedChunk({
             flags: parsed.flags & RELAY_FLAG_KEYFRAME ? STREAM_FLAG_KEYFRAME : 0,
             timestampUs: parsed.timestampUs,
@@ -807,9 +1304,14 @@ export default function LanNativePlayer({
       });
     } catch (error) {
       setStatus(`Falha ao conectar player nativo: ${error instanceof Error ? error.message : String(error)}`);
-      await disconnect();
+      await disconnect({ silent: true });
+      if (isReconnectAttempt) {
+        scheduleReconnect('connect_failed');
+      }
     }
   }, [
+    applyStreamHealth,
+    clearReconnectTimer,
     decodeEncodedChunk,
     disconnect,
     effectiveTransportMode,
@@ -821,15 +1323,75 @@ export default function LanNativePlayer({
     isAvailable,
     listenPort,
     lockConnectionToSession,
-    sendInput,
+    markPacketAccepted,
+    requestKeyframe,
+    scheduleReconnect,
     sessionId,
+    sessionState,
+    setupDecoder,
+    startMouseMovePump,
+    streamId,
     relayUrl,
     relayUserId,
     inputTokenExpiresAt,
     isSessionConnectAllowed,
-    setupDecoder,
-    streamId,
   ]);
+
+  useEffect(() => {
+    connectFnRef.current = connect;
+    return () => {
+      if (connectFnRef.current === connect) {
+        connectFnRef.current = null;
+      }
+    };
+  }, [connect]);
+
+  const handleManualDisconnect = useCallback(() => {
+    manualDisconnectRef.current = true;
+    disconnect().catch(() => undefined);
+  }, [disconnect]);
+
+  useEffect(() => {
+    if (!connectedRef.current) return;
+    if (activeTransportRef.current !== 'relay') return;
+    if (sessionState !== 'ACTIVE') {
+      inputConnectedRef.current = false;
+      setInputStatus('Input relay bloqueado: sessao nao esta ACTIVE.');
+      return;
+    }
+    if (isTokenExpired(inputTokenExpiresAt)) {
+      inputConnectedRef.current = false;
+      setInputStatus('Input bloqueado: token expirado.');
+      manualDisconnectRef.current = true;
+      disconnect().catch(() => undefined);
+      return;
+    }
+    inputConnectedRef.current = true;
+    setInputStatus('Input conectado via relay WS.');
+  }, [disconnect, inputTokenExpiresAt, sessionState]);
+
+  useEffect(() => {
+    if (!connected) return;
+    if (!inputTokenExpiresAt?.trim()) return;
+    const expiresAtMs = Date.parse(inputTokenExpiresAt);
+    if (!Number.isFinite(expiresAtMs)) return;
+    if (expiresAtMs <= Date.now()) {
+      inputConnectedRef.current = false;
+      setInputStatus('Input bloqueado: token expirado.');
+      manualDisconnectRef.current = true;
+      disconnect().catch(() => undefined);
+      return;
+    }
+    const timeoutMs = Math.max(0, expiresAtMs - Date.now());
+    const timer = setTimeout(() => {
+      if (!connectedRef.current) return;
+      inputConnectedRef.current = false;
+      setInputStatus('Input bloqueado: token expirado.');
+      manualDisconnectRef.current = true;
+      disconnect().catch(() => undefined);
+    }, timeoutMs + 10);
+    return () => clearTimeout(timer);
+  }, [connected, disconnect, inputTokenExpiresAt]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -840,7 +1402,8 @@ export default function LanNativePlayer({
       if (event.ctrlKey && event.shiftKey && event.code === 'KeyQ') {
         event.preventDefault();
         sendInput({ type: 'disconnect_hotkey' });
-        disconnect();
+        manualDisconnectRef.current = true;
+        disconnect().catch(() => undefined);
         return;
       }
 
@@ -889,72 +1452,104 @@ export default function LanNativePlayer({
       const freezeMs = now - lastRenderAtRef.current;
       const payloadGapMs = now - lastPayloadAtRef.current;
       const network = latestNetworkRef.current;
-      const shouldAskKeyframe = freezeMs >= 1200 && payloadGapMs <= 2500;
-      if (shouldAskKeyframe && now - lastKeyframeRequestAtRef.current >= 900) {
-        lastKeyframeRequestAtRef.current = now;
-        sendFeedback({
-          type: 'keyframe_request',
-          freezeMs: Math.max(0, Math.trunc(freezeMs)),
-          lossPct: network.lossPct,
-          jitterMs: network.jitterMs,
-          reason: 'decoder_freeze',
-        })
-          .then(() => {
-            setKeyframeRequestsSent((prev) => prev + 1);
-          })
-          .catch((error) => {
-            setStatus(
-              `Falha ao solicitar keyframe: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            );
-          });
-      }
 
-      const shouldReconnect = freezeMs >= 4500 && payloadGapMs >= 3000;
-      if (!shouldReconnect) return;
-      if (reconnectInFlightRef.current) return;
-      if (now - lastReconnectAtRef.current < 7000) return;
-
-      if (inputTokenExpiresAt?.trim()) {
-        const expiresAtMs = Date.parse(inputTokenExpiresAt);
-        if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
-          setStatus('Reconexao automatica bloqueada: token expirado. Sincronize a sessao.');
+      if (activeTransportRef.current === 'relay') {
+        const socket = relaySocketRef.current;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          scheduleReconnect('socket_not_open');
           return;
         }
+
+        if (now - lastPingSentAtRef.current >= RELAY_PING_INTERVAL_MS) {
+          sendStreamPing();
+        }
+
+        const pongTimedOut =
+          lastPongAtRef.current > 0 && now - lastPongAtRef.current >= RELAY_PONG_TIMEOUT_MS;
+        const degraded =
+          freezeMs >= RELAY_DEGRADED_FREEZE_MS
+          || payloadGapMs >= RELAY_DEGRADED_FRAME_GAP_MS
+          || pongTimedOut;
+        const shouldReconnect =
+          freezeMs >= RELAY_RECONNECT_FREEZE_MS
+          || payloadGapMs >= RELAY_RECONNECT_FRAME_GAP_MS
+          || (lastPongAtRef.current > 0 && now - lastPongAtRef.current >= RELAY_PONG_TIMEOUT_MS + 3500);
+
+        if (degraded) {
+          applyStreamHealth(shouldReconnect ? 'reconnecting' : 'degraded');
+          if (now - lastKeyframeRequestAtRef.current >= RELAY_KEYFRAME_REQUEST_COOLDOWN_MS) {
+            void clearDecoderBufferShort();
+            requestKeyframe(
+              pongTimedOut ? 'heartbeat_timeout' : 'decoder_freeze',
+              Math.max(freezeMs, payloadGapMs),
+            );
+          }
+        } else if (!reconnectInFlightRef.current) {
+          applyStreamHealth('ok');
+        }
+
+        if (now - lastNetworkReportAtRef.current >= RELAY_REPORT_STATS_INTERVAL_MS) {
+          lastNetworkReportAtRef.current = now;
+          const sample = statsSampleRef.current;
+          const elapsedMs = Math.max(1, now - sample.sampledAtMs);
+          const deltaPackets = Math.max(0, packetsAcceptedRef.current - sample.packetsAccepted);
+          const deltaDropped = Math.max(0, droppedBufferFramesRef.current - sample.droppedFrames);
+          const deltaErrors = Math.max(0, decodeErrorsRef.current - sample.decodeErrors);
+          const deltaRendered = Math.max(0, renderedFramesTotalRef.current - sample.renderedFrames);
+          const totalObserved = Math.max(1, deltaPackets + deltaDropped + deltaErrors);
+          const dropRatePct = ((deltaDropped + deltaErrors) * 100) / totalObserved;
+          const fpsDecode = (deltaRendered * 1000) / elapsedMs;
+          sample.packetsAccepted = packetsAcceptedRef.current;
+          sample.droppedFrames = droppedBufferFramesRef.current;
+          sample.decodeErrors = decodeErrorsRef.current;
+          sample.renderedFrames = renderedFramesTotalRef.current;
+          sample.sampledAtMs = now;
+
+          sendFeedback({
+            type: 'report_stats',
+            reason: 'periodic',
+            lossPct: network.lossPct,
+            jitterMs: network.jitterMs,
+            fpsDecode,
+            rttMs: relayRttMsRef.current,
+            dropRatePct,
+            bufferLevel: network.pendingFrames,
+            bitrateKbps: network.bitrateKbps,
+            status: shouldReconnect ? 'reconnecting' : degraded ? 'degraded' : 'ok',
+          })
+            .then(() => {
+              setNetworkReportsSent((prev) => prev + 1);
+            })
+            .catch(() => undefined);
+        }
+
+        if (shouldReconnect) {
+          sendFeedback({
+            type: 'reconnect',
+            freezeMs: Math.max(0, Math.trunc(Math.max(freezeMs, payloadGapMs))),
+            lossPct: network.lossPct,
+            jitterMs: network.jitterMs,
+            reason: 'auto_reconnect',
+          }).catch(() => undefined);
+          scheduleReconnect('degraded_stream');
+        }
+        return;
       }
 
-      reconnectInFlightRef.current = true;
-      lastReconnectAtRef.current = now;
-      setReconnectAttempts((prev) => prev + 1);
-      setStatus('Oscilacao detectada. Tentando reconexao limpa...');
-      sendFeedback({
-        type: 'reconnect',
-        freezeMs: Math.max(0, Math.trunc(freezeMs)),
-        lossPct: network.lossPct,
-        jitterMs: network.jitterMs,
-        reason: 'auto_reconnect',
-      }).catch(() => undefined);
-
-      connect()
-        .catch((error) => {
-          setStatus(
-            `Falha na reconexao automatica: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        })
-        .finally(() => {
-          reconnectInFlightRef.current = false;
-        });
-    }, 400);
+      if (freezeMs >= 1200 && payloadGapMs <= 2500) {
+        requestKeyframe('decoder_freeze', freezeMs);
+      }
+    }, 350);
 
     return () => clearInterval(timer);
   }, [
-    connect,
-    inputTokenExpiresAt,
+    applyStreamHealth,
+    clearDecoderBufferShort,
     isSessionConnectAllowed,
     lockConnectionToSession,
+    requestKeyframe,
+    scheduleReconnect,
+    sendStreamPing,
     sendFeedback,
   ]);
 
@@ -998,7 +1593,8 @@ export default function LanNativePlayer({
 
   useEffect(() => {
     return () => {
-      disconnect();
+      manualDisconnectRef.current = true;
+      disconnect().catch(() => undefined);
     };
   }, [disconnect]);
 
@@ -1071,12 +1667,12 @@ export default function LanNativePlayer({
       <div className={styles.actions}>
         <button
           type="button"
-          onClick={connect}
+          onClick={() => connect().catch(() => undefined)}
           disabled={connected || !isAvailable || (lockConnectionToSession && !isSessionConnectAllowed)}
         >
           {effectiveTransportMode === 'lan' ? 'Conectar player nativo (LAN)' : 'Conectar player nativo (Relay)'}
         </button>
-        <button type="button" className={styles.ghost} onClick={disconnect} disabled={!connected}>
+        <button type="button" className={styles.ghost} onClick={handleManualDisconnect} disabled={!connected}>
           Desconectar
         </button>
       </div>
@@ -1101,7 +1697,6 @@ export default function LanNativePlayer({
       )}
       <p className={styles.status}>
         Hotkey de desconectar: Ctrl + Shift + Q (com foco no player).
-        {effectiveTransportMode === 'relay' ? ' Input remoto via relay sera adicionado em fase posterior.' : ''}
       </p>
 
       <div className={styles.canvasWrap}>
@@ -1146,6 +1741,22 @@ export default function LanNativePlayer({
             );
           }}
         />
+        {effectiveTransportMode === 'relay' && (
+          <div
+            className={`${styles.overlay} ${
+              streamHealth === 'ok'
+                ? styles.overlayOk
+                : streamHealth === 'degraded'
+                  ? styles.overlayDegraded
+                  : styles.overlayReconnecting
+            }`}
+          >
+            <span>status {streamHealth}</span>
+            <span>fps {formatNumber(fpsRender, 1)}</span>
+            <span>bitrate {formatNumber(bitrateKbps, 0)} kbps</span>
+            <span>rtt {formatNumber(relayRttMs, 1)} ms</span>
+          </div>
+        )}
       </div>
 
       <div className={styles.metrics}>
@@ -1164,6 +1775,14 @@ export default function LanNativePlayer({
         <div className={styles.metric}>
           <span className={styles.metricLabel}>Bitrate (kbps)</span>
           <span className={styles.metricValue}>{formatNumber(bitrateKbps)}</span>
+        </div>
+        <div className={styles.metric}>
+          <span className={styles.metricLabel}>Stream status</span>
+          <span className={styles.metricValue}>{streamHealth}</span>
+        </div>
+        <div className={styles.metric}>
+          <span className={styles.metricLabel}>RTT (ms)</span>
+          <span className={styles.metricValue}>{formatNumber(relayRttMs, 1)}</span>
         </div>
         <div className={styles.metric}>
           <span className={styles.metricLabel}>Loss (%)</span>

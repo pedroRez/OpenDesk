@@ -22,6 +22,11 @@ const getClientIp = (request: FastifyRequest): string | null => {
 const STREAM_TOKEN_TTL_MS = 60_000;
 const DEFAULT_INPUT_PORT = 5505;
 const DEFAULT_VIDEO_PORT = 5004;
+const STREAMABLE_SESSION_STATUSES = new Set<SessionStatus>([SessionStatus.PENDING, SessionStatus.ACTIVE]);
+
+function isStreamableStatus(status: SessionStatus): boolean {
+  return STREAMABLE_SESSION_STATUSES.has(status);
+}
 
 function generateStreamToken(): string {
   return randomBytes(24).toString('base64url');
@@ -174,7 +179,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Sem permissao' });
     }
 
-    if (![SessionStatus.PENDING, SessionStatus.ACTIVE].includes(sessionRecord.status)) {
+    if (!isStreamableStatus(sessionRecord.status)) {
       return reply.status(409).send({ error: 'Sessao fora de estado de streaming', code: 'SESSION_NOT_STREAMABLE' });
     }
 
@@ -233,7 +238,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       }
     }
 
-    if (![SessionStatus.PENDING, SessionStatus.ACTIVE].includes(effectiveSession.status)) {
+    if (!isStreamableStatus(effectiveSession.status)) {
       return reply.status(409).send({ error: 'Sessao fora de estado de streaming', code: 'SESSION_NOT_STREAMABLE' });
     }
 

@@ -1,6 +1,8 @@
-import { type PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 export type ReliabilityEventType = 'HOST_DOWN' | 'SESSION_FAILED' | 'SESSION_OK';
+
+type PrismaClientLike = PrismaClient | Prisma.TransactionClient;
 
 const reliabilityDelta: Record<ReliabilityEventType, number> = {
   HOST_DOWN: -10,
@@ -9,7 +11,7 @@ const reliabilityDelta: Record<ReliabilityEventType, number> = {
 };
 
 export async function recordReliabilityEvent(
-  prisma: PrismaClient,
+  prisma: PrismaClientLike,
   hostId: string,
   type: ReliabilityEventType,
 ): Promise<void> {

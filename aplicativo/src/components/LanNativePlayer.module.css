@@ -46,6 +46,7 @@
 }
 
 .canvasWrap {
+  position: relative;
   border: 1px solid var(--stroke);
   border-radius: 14px;
   background: #0b0f17;
@@ -58,6 +59,37 @@
   height: 100%;
   display: block;
   background: #0b0f17;
+}
+
+.overlay {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #f8fafc;
+  background: rgba(9, 12, 18, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  pointer-events: none;
+}
+
+.overlayOk {
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.overlayDegraded {
+  border-color: rgba(250, 204, 21, 0.6);
+}
+
+.overlayReconnecting {
+  border-color: rgba(251, 146, 60, 0.7);
 }
 
 .metrics {

@@ -126,6 +126,9 @@ export async function hostRoutes(fastify: FastifyInstance) {
     schema.parse(request.body);
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
+    if (!user.username) {
+      return reply.status(400).send({ error: 'Defina um username antes de virar host' });
+    }
 
     const hostProfile = await fastify.prisma.hostProfile.upsert({
       where: { userId: user.id },
