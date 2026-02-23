@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import websocket from '@fastify/websocket';
 
 import { config } from './config.js';
 import { prismaPlugin } from './plugins/prisma.js';
@@ -10,6 +11,7 @@ import { pcRoutes } from './routes/pcs.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { softwareRoutes } from './routes/software.js';
 import { streamRoutes } from './routes/stream.js';
+import { streamRelayRoutes } from './routes/streamRelay.js';
 import { walletRoutes } from './routes/wallet.js';
 import { handleHostTimeouts } from './services/hostHeartbeat.js';
 import { serverInstanceId } from './instance.js';
@@ -29,6 +31,11 @@ async function start() {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'x-dev-bypass-credits'],
     });
+    await app.register(websocket, {
+      options: {
+        maxPayload: 2 * 1024 * 1024,
+      },
+    });
 
     await app.register(prismaPlugin);
 
@@ -41,6 +48,7 @@ async function start() {
     await app.register(softwareRoutes);
     await app.register(sessionRoutes);
     await app.register(streamRoutes);
+    await app.register(streamRelayRoutes);
     await app.register(walletRoutes);
 
     app.addHook('onResponse', async (request, reply) => {

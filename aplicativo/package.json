@@ -9,7 +9,16 @@
     "build": "tauri build",
     "build:web": "vite build",
     "preview": "vite preview",
-    "host-daemon:build": "tsc -p host-daemon/tsconfig.json"
+    "host-daemon:build": "tsc -p host-daemon/tsconfig.json",
+    "host-daemon:capture-preview": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode capture-preview --fps 30 --duration-sec 300 --pixel-format nv12",
+    "host-daemon:capture-preview:quick": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode capture-preview --fps 30 --duration-sec 20 --pixel-format nv12",
+    "host-daemon:h264-selftest": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode h264-selftest --width 1280 --height 720 --fps 30 --duration-sec 15 --bitrate-kbps 6000 --profile baseline --pixel-format nv12",
+    "host-daemon:h264-selftest:quick": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode h264-selftest --width 640 --height 360 --fps 30 --duration-sec 5 --bitrate-kbps 2500 --profile baseline --pixel-format nv12",
+    "host-daemon:udp-lan:host": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode udp-lan-host --target-host 127.0.0.1 --target-port 5004 --width 1280 --height 720 --fps 30 --duration-sec 600 --bitrate-kbps 6000 --profile baseline --pixel-format nv12",
+    "host-daemon:udp-lan:host:quick": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode udp-lan-host --target-host 127.0.0.1 --target-port 5004 --width 640 --height 360 --fps 30 --duration-sec 20 --bitrate-kbps 2500 --profile baseline --pixel-format nv12",
+    "host-daemon:udp-lan:client": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode udp-lan-client --listen-host 0.0.0.0 --listen-port 5004 --decoder ffplay --duration-sec 600",
+    "host-daemon:udp-lan:client:quick": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode udp-lan-client --listen-host 0.0.0.0 --listen-port 5004 --decoder ffplay --duration-sec 25",
+    "host-daemon:relay:host": "pnpm host-daemon:build && node host-daemon/dist/index.js --mode relay-host --relay-url ws://localhost:3333/stream/relay --session-id SESSION_ID --user-id USER_ID --stream-id STREAM_ID --auth-token STREAM_TOKEN --width 1280 --height 720 --fps 30 --duration-sec 600 --bitrate-kbps 6000 --profile baseline --pixel-format nv12"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

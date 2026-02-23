@@ -10,6 +10,9 @@ use tauri::tray::TrayIcon;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use sysinfo::System;
 
+mod udp_lan;
+mod lan_input;
+
 #[tauri::command]
 fn validate_exe_path(path: String) -> bool {
   if !cfg!(windows) {
@@ -616,6 +619,15 @@ fn main() {
       is_process_running,
       launch_exe,
       launch_moonlight,
+      udp_lan::start_udp_lan_receiver,
+      udp_lan::stop_udp_lan_receiver,
+      udp_lan::send_udp_lan_feedback,
+      lan_input::start_lan_input_server,
+      lan_input::stop_lan_input_server,
+      lan_input::set_lan_input_server_session_active,
+      lan_input::start_lan_input_client,
+      lan_input::send_lan_input_event,
+      lan_input::stop_lan_input_client,
       get_local_pc_id,
       detect_local_ip,
       get_hardware_profile,

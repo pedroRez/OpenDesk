@@ -8,6 +8,10 @@ Marketplace de aluguel de PCs remotos por hora. Este monorepo contém o MVP com 
 - `client`: placeholder para app mobile/SDK.
 - `host`: placeholder para Host Agent (inclui heartbeat mock).
 - `aplicativo`: placeholder para app desktop (Tauri/Electron).
+- `docs`: documentação técnica interna (ex.: streaming próprio incremental).
+
+## Documentação interna
+- MVP de streaming próprio: `docs/streaming-mvp/README.md`
 
 ## Pré-requisitos
 - Node.js 20+

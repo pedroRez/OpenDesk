@@ -1,5 +1,11 @@
 import process from 'node:process';
 
+import { runCapturePreview } from './capturePreview.js';
+import { runH264SelfTest } from './encode/h264SelfTest.js';
+import { runRelayHost } from './transport/relayHost.js';
+import { runUdpLanClient } from './transport/udpLanClient.js';
+import { runUdpLanHost } from './transport/udpLanHost.js';
+
 const ARG_PREFIX = '--';
 
 type Config = {
@@ -39,6 +45,95 @@ async function getFetch() {
 }
 
 const args = parseArgs();
+const mode = (args.get('mode') ?? process.env.HOST_DAEMON_MODE ?? 'heartbeat').trim().toLowerCase();
+
+if (mode === 'capture-preview' || mode === 'capture_preview' || mode === 'capture') {
+  try {
+    await runCapturePreview(args);
+    process.exit(0);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'capture_failed',
+        message: error instanceof Error ? error.message : String(error ?? 'erro desconhecido'),
+      }),
+    );
+    process.exit(1);
+  }
+}
+
+if (mode === 'h264-selftest' || mode === 'h264_selftest' || mode === 'encoder-test') {
+  try {
+    await runH264SelfTest(args);
+    process.exit(0);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'h264_selftest_failed',
+        message: error instanceof Error ? error.message : String(error ?? 'erro desconhecido'),
+      }),
+    );
+    process.exit(1);
+  }
+}
+
+if (mode === 'udp-lan-host' || mode === 'udp_host' || mode === 'udp-send') {
+  try {
+    await runUdpLanHost(args);
+    process.exit(0);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'udp_lan_host_failed',
+        message: error instanceof Error ? error.message : String(error ?? 'erro desconhecido'),
+      }),
+    );
+    process.exit(1);
+  }
+}
+
+if (mode === 'udp-lan-client' || mode === 'udp_client' || mode === 'udp-recv') {
+  try {
+    await runUdpLanClient(args);
+    process.exit(0);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'udp_lan_client_failed',
+        message: error instanceof Error ? error.message : String(error ?? 'erro desconhecido'),
+      }),
+    );
+    process.exit(1);
+  }
+}
+
+if (mode === 'relay-host' || mode === 'relay_host' || mode === 'relay-send') {
+  try {
+    await runRelayHost(args);
+    process.exit(0);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'relay_host_failed',
+        message: error instanceof Error ? error.message : String(error ?? 'erro desconhecido'),
+      }),
+    );
+    process.exit(1);
+  }
+}
+
+if (mode !== 'heartbeat') {
+  console.error(
+    `host-daemon: modo invalido "${mode}". Use --mode heartbeat, capture-preview, h264-selftest, udp-lan-host, udp-lan-client ou relay-host.`,
+  );
+  process.exit(1);
+}
+
 const rawInterval = Number(
   args.get('interval-ms') ?? process.env.HEARTBEAT_INTERVAL_MS ?? '10000',
 );

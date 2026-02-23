@@ -35,3 +35,27 @@ Regras:
    - Marcar PCs como `OFFLINE`.
    - Encerrar sessões `ACTIVE` com falha `HOST`.
    - Aplicar penalidade e crédito conforme regra.
+
+## Signaling de stream proprio
+- Endpoint: `POST /sessions/:id/stream/start`
+- Regras:
+  - exige usuario autenticado;
+  - permite apenas cliente da sessao ou host dono do PC;
+  - aceita somente sessao em `PENDING`/`ACTIVE`;
+  - retorna `token` com expiracao, `streamId` derivado e host/portas de conexao.
+- Objetivo:
+  - garantir que stream/input so iniciem no ciclo de sessao;
+  - impedir conexao fora de sessao.
+
+## Relay WAN (MVP)
+- Endpoint websocket: `GET /stream/relay` (`@fastify/websocket`).
+- Query obrigatoria: `role`, `sessionId`, `streamId`, `token`, `userId`.
+- Seguranca:
+  - valida token ativo + sessao `PENDING/ACTIVE`;
+  - valida `streamId` derivado do token;
+  - valida papel (`client` ou `host`) contra a sessao.
+- Rate limit minimo:
+  - tentativas de conexao por IP/usuario/sessao;
+  - throughput host->relay por segundo;
+  - mensagens de controle client->host por segundo.
+- `POST /sessions/:id/stream/start` agora retorna `transport.relay` e `transport.lan`.

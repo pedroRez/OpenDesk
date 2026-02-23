@@ -2100,6 +2100,7 @@ dependencies = [
 name = "opendesk-desktop"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "serde",
  "serde_json",
  "sysinfo",
@@ -2107,6 +2108,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-shell",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

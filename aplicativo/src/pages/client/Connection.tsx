@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { request, requestWithStatus } from '../../lib/api';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../../lib/auth';
 import {
   isMoonlightAvailable,
   ensureMoonlightReady,
@@ -13,6 +14,7 @@ import {
 import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
+import LanNativePlayer from '../../components/LanNativePlayer';
 
 import styles from './Connection.module.css';
 
@@ -28,8 +30,46 @@ type SessionDetail = {
   };
 };
 
+type StreamStartSignal = {
+  sessionId: string;
+  sessionStatus: 'PENDING' | 'ACTIVE' | 'ENDED' | 'FAILED';
+  streamState: 'STARTING' | 'ACTIVE';
+  host: string;
+  videoPort: number;
+  inputPort: number;
+  streamId: string;
+  token: string;
+  tokenExpiresAt: string;
+  connectAddress: string;
+  transport?: {
+    recommended?: 'RELAY_WS' | 'UDP_LAN';
+    relay?: {
+      mode: 'RELAY_WS';
+      url: string;
+      roleClient: 'client';
+      roleHost: 'host';
+      sessionId: string;
+      streamId: string;
+      token: string;
+      tokenExpiresAt: string;
+    } | null;
+    lan?: {
+      mode: 'UDP_LAN';
+      host: string;
+      videoPort: number;
+      inputPort: number;
+    } | null;
+  } | null;
+  fallback?: {
+    provider: string;
+    connectAddress?: string | null;
+    connectHint?: string | null;
+  } | null;
+};
+
 export default function Connection() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -48,19 +88,95 @@ export default function Connection() {
   const [showMoonlightHelp, setShowMoonlightHelp] = useState(false);
   const [moonlightHelpStatus, setMoonlightHelpStatus] = useState('');
   const [showPairingModal, setShowPairingModal] = useState(false);
+  const [streamSignal, setStreamSignal] = useState<StreamStartSignal | null>(null);
+  const [streamSignalLoading, setStreamSignalLoading] = useState(false);
+  const [streamSignalError, setStreamSignalError] = useState('');
+  const [forceNativeDisconnectKey, setForceNativeDisconnectKey] = useState(0);
+  const lastSessionStatusRef = useRef<SessionDetail['status'] | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
 
+  const requestStreamSignal = async (sessionId: string): Promise<StreamStartSignal | null> => {
+    setStreamSignalLoading(true);
+    setStreamSignalError('');
+    try {
+      const signalResult = await requestWithStatus<StreamStartSignal>(`/sessions/${sessionId}/stream/start`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      if (!signalResult.ok || !signalResult.data) {
+        setStreamSignal(null);
+        setStreamSignalError(
+          signalResult.errorMessage ?? `Falha ao iniciar stream proprio (status ${signalResult.status}).`,
+        );
+        return null;
+      }
+      setStreamSignal(signalResult.data);
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              status: signalResult.data?.sessionStatus ?? current.status,
+            }
+          : current,
+      );
+      return signalResult.data;
+    } finally {
+      setStreamSignalLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!id) return;
-    request<{ session: SessionDetail }>(`/sessions/${id}`)
-      .then((data) => {
+    let active = true;
+
+    const loadSession = async (showLoading = false) => {
+      if (showLoading) {
+        setLoading(true);
+      }
+      try {
+        const data = await request<{ session: SessionDetail }>(`/sessions/${id}`);
+        if (!active) return;
         setSession(data.session);
         setError('');
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Erro'))
-      .finally(() => setLoading(false));
-  }, [id]);
+
+        const previous = lastSessionStatusRef.current;
+        const current = data.session.status;
+        lastSessionStatusRef.current = current;
+        const streamable = current === 'PENDING' || current === 'ACTIVE';
+        const wasStreamable = previous === 'PENDING' || previous === 'ACTIVE';
+
+        if (!streamable) {
+          setStreamSignal(null);
+          if (wasStreamable) {
+            setForceNativeDisconnectKey((value) => value + 1);
+          }
+          return;
+        }
+
+        if (!streamSignal && !streamSignalLoading) {
+          await requestStreamSignal(data.session.id);
+        }
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : 'Erro');
+      } finally {
+        if (showLoading && active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadSession(true).catch(() => undefined);
+    const interval = setInterval(() => {
+      loadSession(false).catch(() => undefined);
+    }, 3000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [id, streamSignal, streamSignalLoading]);
 
   useEffect(() => {
     isMoonlightAvailable()
@@ -171,6 +287,34 @@ export default function Connection() {
       setInstalled(true);
       setShowMoonlightHelp(false);
 
+      if (session.status === 'PENDING') {
+        const startResult = await requestWithStatus<{
+          session: { status: SessionDetail['status'] };
+        }>(`/sessions/${session.id}/start`, { method: 'POST' });
+        if (!startResult.ok || !startResult.data?.session?.status) {
+          setProviderMessage(
+            `Nao foi possivel iniciar a sessao para fallback Moonlight. ${startResult.errorMessage ?? ''}`.trim(),
+          );
+          setConnectError('Sessao nao pode iniciar para conexao.');
+          setConnectErrorDetails(startResult.errorMessage ?? '');
+          setConnectFailed(true);
+          return;
+        }
+        setSession((current) =>
+          current
+            ? {
+                ...current,
+                status: startResult.data?.session?.status ?? current.status,
+              }
+            : current,
+        );
+      } else if (session.status !== 'ACTIVE') {
+        setProviderMessage('Sessao fora de estado de conexao.');
+        setConnectError('Conexao bloqueada fora da sessao.');
+        setConnectFailed(true);
+        return;
+      }
+
       setProviderMessage('Preparando conexao...');
       const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
         method: 'POST',
@@ -224,14 +368,6 @@ export default function Connection() {
         token: tokenResponse.token,
         connectAddress: resolveResult.data.connectAddress,
       });
-
-      if (session.status !== 'ACTIVE') {
-        try {
-          await request(`/sessions/${session.id}/start`, { method: 'POST' });
-        } catch (error) {
-          console.warn('[STREAM][CLIENT] start session fail', error);
-        }
-      }
 
       if (!resolveResult.data.connectAddress) {
         setProviderMessage('Endereco de conexao invalido.');
@@ -320,11 +456,63 @@ export default function Connection() {
       <h1>Conexao</h1>
       <p>PC: {session.pc.name}</p>
 
-      {session.status !== 'ACTIVE' && (
+      {!['PENDING', 'ACTIVE'].includes(session.status) && (
         <div className={styles.warning}>
-          Esta sessao ainda nao esta ativa. Aguarde ou volte depois.
+          Esta sessao nao esta em estado de conexao. Streaming proprio foi bloqueado.
         </div>
       )}
+
+      <div className={styles.panel}>
+        <h3>Player Nativo LAN (Experimental)</h3>
+        <p className={styles.muted}>
+          Recebe H.264 por UDP e reproduz dentro do OpenDesk. O host deve enviar para a porta configurada neste cliente.
+        </p>
+        <div className={styles.actionsRow}>
+          <button
+            type="button"
+            onClick={() => {
+              if (!session?.id) return;
+              requestStreamSignal(session.id).catch((cause) => {
+                setStreamSignalError(
+                  cause instanceof Error ? cause.message : 'Falha ao sincronizar stream proprio.',
+                );
+              });
+            }}
+            disabled={streamSignalLoading || !['PENDING', 'ACTIVE'].includes(session.status)}
+          >
+            {streamSignalLoading ? 'Sincronizando stream...' : 'Sincronizar stream proprio'}
+          </button>
+        </div>
+        {streamSignalError && <p className={styles.muted}>{streamSignalError}</p>}
+        {streamSignal && (
+          <p className={styles.muted}>
+            Stream sinalizado: {streamSignal.streamState} | host {streamSignal.host}:{streamSignal.videoPort} | transporte{' '}
+            {streamSignal.transport?.recommended ?? 'UDP_LAN'}
+          </p>
+        )}
+        <LanNativePlayer
+          transportMode={streamSignal?.transport?.recommended === 'RELAY_WS' ? 'relay' : 'lan'}
+          defaultPort={streamSignal?.videoPort ?? session.pc.connectionPort ?? 5004}
+          defaultInputHost={streamSignal?.host ?? session.pc.connectionHost ?? undefined}
+          defaultInputPort={streamSignal?.inputPort ?? 5505}
+          defaultStreamId={streamSignal?.streamId}
+          defaultInputToken={streamSignal?.token}
+          relayUrl={streamSignal?.transport?.relay?.url ?? null}
+          relayUserId={user?.id ?? null}
+          inputTokenExpiresAt={streamSignal?.tokenExpiresAt}
+          sessionId={session.id}
+          sessionState={
+            streamSignal?.streamState ??
+            (session.status === 'ACTIVE'
+              ? 'ACTIVE'
+              : session.status === 'PENDING'
+                ? 'STARTING'
+                : 'INACTIVE')
+          }
+          lockConnectionToSession
+          forceDisconnectKey={forceNativeDisconnectKey}
+        />
+      </div>
 
       <div className={styles.panel}>
         <h3>Instrucoes (MVP)</h3>

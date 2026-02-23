@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 
 import { useToast } from '../../components/Toast';
+import HostLanInputPanel from '../../components/HostLanInputPanel';
 import { request } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import {
@@ -219,6 +220,11 @@ export default function HostDashboard() {
     const anyOnline = pcs.find((pc) => pc.status === 'ONLINE');
     return anyOnline?.id ?? null;
   }, [pcs]);
+  const busySessionId = useMemo(
+    () => pcs.find((pc) => pc.status === 'BUSY' && pc.activeSession?.id)?.activeSession?.id ?? null,
+    [pcs],
+  );
+  const hasActiveBusySession = useMemo(() => pcs.some((pc) => pc.status === 'BUSY'), [pcs]);
 
   useEffect(() => {
     if (!hostProfileId) return;
@@ -1158,6 +1164,10 @@ export default function HostDashboard() {
               placeholder="Buscar por nome ou specs (ex: 16GB RTX SSD)"
             />
           </div>
+          <HostLanInputPanel
+            autoSessionActive={hasActiveBusySession}
+            defaultSessionId={busySessionId}
+          />
 
           {!hasPcs && (
             <div className={styles.localPcPanel}>
