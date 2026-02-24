@@ -15,6 +15,7 @@ import {
 import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings';
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
+import { devStreamingLog, getStreamingMode } from '../../lib/streamingMode';
 
 import styles from './Session.module.css';
 
@@ -41,6 +42,7 @@ export default function Session() {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
+  const streamingMode = useMemo(() => getStreamingMode(), []);
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -246,6 +248,17 @@ export default function Session() {
       console.log('[STREAM][CLIENT] connect lock active');
       return;
     }
+
+    if (streamingMode !== 'MOONLIGHT_ONLY') {
+      devStreamingLog('session_redirect_connection', {
+        mode: streamingMode,
+        sessionId: session.id,
+        source: 'session_page',
+      });
+      navigate(`/client/connection/${session.id}?auto=1`);
+      return;
+    }
+
     setConnecting(true);
     setConnectFailed(false);
     setConnectError('');
@@ -255,6 +268,11 @@ export default function Session() {
     setPairingRequired(false);
     setProviderMessage('Verificando Moonlight...');
     setConnectStage('checking');
+    devStreamingLog('mode', {
+      mode: streamingMode,
+      sessionId: session.id,
+      transport: 'moonlight',
+    });
     try {
       if (session.status === 'PENDING') {
         try {

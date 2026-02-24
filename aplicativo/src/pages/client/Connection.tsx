@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { request, requestWithStatus } from '../../lib/api';
 import { useToast } from '../../components/Toast';
@@ -15,6 +15,13 @@ import { getMoonlightPath, setMoonlightPath } from '../../lib/moonlightSettings'
 import { normalizeWindowsPath, pathExists } from '../../lib/pathUtils';
 import { open } from '@tauri-apps/plugin-dialog';
 import LanNativePlayer from '../../components/LanNativePlayer';
+import {
+  devStreamingLog,
+  getStreamingMode,
+  isMoonlightAllowed,
+  resolveNativeTransport,
+  type NativeTransportMode,
+} from '../../lib/streamingMode';
 
 import styles from './Connection.module.css';
 
@@ -69,7 +76,13 @@ type StreamStartSignal = {
 
 export default function Connection() {
   const { id } = useParams();
+  const location = useLocation();
   const { user } = useAuth();
+  const streamingMode = useMemo(() => getStreamingMode(), []);
+  const moonlightEnabled = useMemo(() => isMoonlightAllowed(streamingMode), [streamingMode]);
+  const autoConnect = useMemo(() => {
+    return new URLSearchParams(location.search).get('auto') === '1';
+  }, [location.search]);
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -92,6 +105,9 @@ export default function Connection() {
   const [streamSignalLoading, setStreamSignalLoading] = useState(false);
   const [streamSignalError, setStreamSignalError] = useState('');
   const [forceNativeDisconnectKey, setForceNativeDisconnectKey] = useState(0);
+  const [autoNativeConnectKey, setAutoNativeConnectKey] = useState(0);
+  const [selectedNativeTransport, setSelectedNativeTransport] = useState<NativeTransportMode | null>(null);
+  const [autoConnectRequested, setAutoConnectRequested] = useState(false);
   const lastSessionStatusRef = useRef<SessionDetail['status'] | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
@@ -106,11 +122,25 @@ export default function Connection() {
       });
       if (!signalResult.ok || !signalResult.data) {
         setStreamSignal(null);
+        setSelectedNativeTransport(null);
         setStreamSignalError(
           signalResult.errorMessage ?? `Falha ao iniciar stream proprio (status ${signalResult.status}).`,
         );
+        devStreamingLog('signal_error', {
+          mode: streamingMode,
+          status: signalResult.status,
+          error: signalResult.errorMessage ?? null,
+        });
         return null;
       }
+      devStreamingLog('signal_ok', {
+        mode: streamingMode,
+        sessionId: signalResult.data.sessionId,
+        streamState: signalResult.data.streamState,
+        recommended: signalResult.data.transport?.recommended ?? null,
+        relay: Boolean(signalResult.data.transport?.relay?.url),
+        lan: Boolean(signalResult.data.transport?.lan?.host ?? signalResult.data.host),
+      });
       setStreamSignal(signalResult.data);
       setSession((current) =>
         current
@@ -179,6 +209,11 @@ export default function Connection() {
   }, [id, streamSignal, streamSignalLoading]);
 
   useEffect(() => {
+    if (!moonlightEnabled) {
+      setInstalled(null);
+      setShowMoonlightHelp(false);
+      return;
+    }
     isMoonlightAvailable()
       .then((available) => {
         setInstalled(available);
@@ -190,7 +225,7 @@ export default function Connection() {
         setInstalled(false);
         setShowMoonlightHelp(true);
       });
-  }, []);
+  }, [moonlightEnabled]);
 
   const handleMoonlightBrowse = async () => {
     try {
@@ -254,8 +289,208 @@ export default function Connection() {
     }
   };
 
+  const describeNativeFailure = (reason: string): string => {
+    if (reason === 'session_not_streamable') return 'Sessao fora de estado de streaming.';
+    if (reason === 'signal_unavailable') return 'Falha ao sincronizar sinalizacao de stream.';
+    if (reason.includes('no_transport') || reason.includes('missing')) {
+      return 'Sinalizacao sem transporte interno valido (relay/lan).';
+    }
+    return 'Nao foi possivel iniciar o player interno.';
+  };
+
+  const prepareNativeConnection = async (
+    modeForChoice: 'AUTO' | 'OPENDESK_ONLY',
+  ): Promise<{ ok: boolean; reason: string }> => {
+    const sessionSnapshot = session;
+    if (!sessionSnapshot?.id) {
+      return { ok: false, reason: 'missing_session' };
+    }
+    if (sessionSnapshot.status !== 'PENDING' && sessionSnapshot.status !== 'ACTIVE') {
+      return { ok: false, reason: 'session_not_streamable' };
+    }
+
+    const signal = await requestStreamSignal(sessionSnapshot.id);
+    if (!signal) {
+      return { ok: false, reason: 'signal_unavailable' };
+    }
+
+    const transportDecision = resolveNativeTransport(signal, modeForChoice);
+    devStreamingLog('native_transport_decision', {
+      mode: modeForChoice,
+      transport: transportDecision.transport,
+      reason: transportDecision.reason,
+      recommended: signal.transport?.recommended ?? null,
+    });
+
+    if (!transportDecision.transport) {
+      return { ok: false, reason: transportDecision.reason };
+    }
+
+    setSelectedNativeTransport(transportDecision.transport);
+    setConnectHint(signal.fallback?.connectHint ?? null);
+    setConnectStage('opening');
+    setProviderMessage(
+      transportDecision.transport === 'relay'
+        ? 'Player interno selecionado: Relay WS.'
+        : 'Player interno selecionado: LAN UDP.',
+    );
+    setForceNativeDisconnectKey((value) => value + 1);
+    setAutoNativeConnectKey((value) => value + 1);
+
+    devStreamingLog('transport_selected', {
+      mode: modeForChoice,
+      transport: transportDecision.transport,
+      reason: transportDecision.reason,
+    });
+    return { ok: true, reason: transportDecision.reason };
+  };
+
+  const runMoonlightFlow = async (sessionSnapshot: SessionDetail) => {
+    setProviderMessage('Verificando Moonlight...');
+    setConnectStage('checking');
+
+    const moonlightReady = await ensureMoonlightReady();
+    if (!moonlightReady.ok) {
+      setInstalled(false);
+      if (moonlightReady.reason === 'path_missing') {
+        setProviderMessage('Moonlight nao encontrado. Configure o caminho em Configuracoes.');
+        setConnectError('Moonlight nao encontrado. Configure o caminho.');
+        setShowMoonlightHelp(true);
+      } else {
+        setProviderMessage('Nao foi possivel iniciar o Moonlight.');
+        setConnectError('Nao foi possivel iniciar o Moonlight.');
+      }
+      setConnectFailed(true);
+      return;
+    }
+    setInstalled(true);
+    setShowMoonlightHelp(false);
+
+    if (sessionSnapshot.status === 'PENDING') {
+      const startResult = await requestWithStatus<{
+        session: { status: SessionDetail['status'] };
+      }>(`/sessions/${sessionSnapshot.id}/start`, { method: 'POST' });
+      if (!startResult.ok || !startResult.data?.session?.status) {
+        setProviderMessage(
+          `Nao foi possivel iniciar a sessao para fallback Moonlight. ${startResult.errorMessage ?? ''}`.trim(),
+        );
+        setConnectError('Sessao nao pode iniciar para conexao.');
+        setConnectErrorDetails(startResult.errorMessage ?? '');
+        setConnectFailed(true);
+        return;
+      }
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              status: startResult.data?.session?.status ?? current.status,
+            }
+          : current,
+      );
+    } else if (sessionSnapshot.status !== 'ACTIVE') {
+      setProviderMessage('Sessao fora de estado de conexao.');
+      setConnectError('Conexao bloqueada fora da sessao.');
+      setConnectFailed(true);
+      return;
+    }
+
+    setProviderMessage('Preparando conexao...');
+    const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
+      method: 'POST',
+      body: JSON.stringify({ pcId: sessionSnapshot.pc.id }),
+    });
+    console.log('[STREAM][CLIENT] token created', { pcId: sessionSnapshot.pc.id, expiresAt: tokenResponse.expiresAt });
+
+    const resolveResult = await requestWithStatus<{
+      connectAddress: string;
+      connectHint?: string | null;
+      pcName: string;
+    }>('/stream/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ token: tokenResponse.token }),
+    });
+    if (!resolveResult.ok || !resolveResult.data) {
+      console.error('[STREAM][CLIENT] resolve fail', {
+        status: resolveResult.status,
+        error: resolveResult.errorMessage,
+      });
+      if (resolveResult.status === 409 && resolveResult.errorMessage?.toLowerCase().includes('endereco')) {
+        setProviderMessage(
+          'PC sem conexao cadastrada (host/porta). Abra o painel do host e salve a conexao.',
+        );
+        setConnectError('PC sem conexao cadastrada (host/porta).');
+      } else {
+        setProviderMessage(
+          `Falha ao resolver conexao (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
+        );
+        setConnectError('Nao foi possivel conectar. Verifique se o host esta ONLINE.');
+      }
+      setConnectErrorDetails(
+        `Resolve falhou (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
+      );
+      toast.show(
+        `Resolve falhou (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
+        'error',
+      );
+      setConnectFailed(true);
+      return;
+    }
+
+    console.log('[STREAM][CLIENT] resolve ok', {
+      pcName: resolveResult.data.pcName,
+      status: resolveResult.status,
+    });
+    setConnectHint(resolveResult.data.connectHint ?? null);
+
+    console.log('[STREAM][CLIENT] resolve payload', {
+      pcId: sessionSnapshot.pc.id,
+      token: tokenResponse.token,
+      connectAddress: resolveResult.data.connectAddress,
+    });
+
+    if (!resolveResult.data.connectAddress) {
+      setProviderMessage('Endereco de conexao invalido.');
+      setConnectError('Endereco de conexao invalido.');
+      setConnectErrorDetails('connectAddress vazio/invalid.');
+      setConnectFailed(true);
+      return;
+    }
+
+    setConnectStage('pairing');
+    setProviderMessage('Verificando pareamento...');
+    devStreamingLog('transport_selected', {
+      mode: streamingMode,
+      transport: 'moonlight',
+      reason: 'moonlight_flow',
+    });
+    console.log('[STREAM][CLIENT] launching moonlight...');
+    setLastConnectAddress(resolveResult.data.connectAddress);
+    const launchResult = await launchMoonlight(resolveResult.data.connectAddress);
+    if (launchResult.ok) {
+      console.log('[STREAM][CLIENT] launch ok');
+      setProviderMessage('Abrindo conexao...');
+      setConnectStage('opening');
+      setPairAvailable(false);
+      return;
+    }
+
+    console.error('[STREAM][CLIENT] launch fail');
+    setPairAvailable(launchResult.needsPair);
+    if (launchResult.needsPair) {
+      setProviderMessage('Este host ainda nao esta pareado. Siga as instrucoes.');
+      setConnectError('Host nao pareado. Digite o PIN exibido no host.');
+      setShowPairingModal(true);
+    } else {
+      setProviderMessage(launchResult.message ?? 'Nao foi possivel abrir o Moonlight automaticamente.');
+      setConnectError('Nao foi possivel conectar. Verifique se o host esta ONLINE.');
+    }
+    setConnectErrorDetails(launchResult.message ?? '');
+    setConnectFailed(true);
+  };
+
   const handleConnect = async () => {
-    if (!id || !session?.pc?.id) return;
+    const sessionSnapshot = session;
+    if (!id || !sessionSnapshot?.pc?.id) return;
     if (connecting) {
       console.log('[STREAM][CLIENT] connect lock active');
       return;
@@ -267,140 +502,58 @@ export default function Connection() {
     setShowConnectDetails(false);
     setPairAvailable(false);
     setShowPairingModal(false);
-    setProviderMessage('Verificando Moonlight...');
-    setConnectStage('checking');
+    setConnectStage('idle');
+    setProviderMessage('');
+
+    devStreamingLog('mode', {
+      mode: streamingMode,
+      sessionId: sessionSnapshot.id,
+      sessionStatus: sessionSnapshot.status,
+    });
+
     try {
-      const moonlightReady = await ensureMoonlightReady();
-      if (!moonlightReady.ok) {
-        setInstalled(false);
-        if (moonlightReady.reason === 'path_missing') {
-          setProviderMessage('Moonlight nao encontrado. Configure o caminho em Configuracoes.');
-          setConnectError('Moonlight nao encontrado. Configure o caminho.');
-          setShowMoonlightHelp(true);
-        } else {
-          setProviderMessage('Nao foi possivel iniciar o Moonlight.');
-          setConnectError('Nao foi possivel iniciar o Moonlight.');
+      if (streamingMode === 'OPENDESK_ONLY') {
+        const nativeResult = await prepareNativeConnection('OPENDESK_ONLY');
+        if (!nativeResult.ok) {
+          const message = describeNativeFailure(nativeResult.reason);
+          setProviderMessage(message);
+          setConnectError(message);
+          setConnectErrorDetails(`Motivo: ${nativeResult.reason}`);
+          setConnectFailed(true);
         }
-        setConnectFailed(true);
         return;
       }
-      setInstalled(true);
-      setShowMoonlightHelp(false);
 
-      if (session.status === 'PENDING') {
-        const startResult = await requestWithStatus<{
-          session: { status: SessionDetail['status'] };
-        }>(`/sessions/${session.id}/start`, { method: 'POST' });
-        if (!startResult.ok || !startResult.data?.session?.status) {
-          setProviderMessage(
-            `Nao foi possivel iniciar a sessao para fallback Moonlight. ${startResult.errorMessage ?? ''}`.trim(),
-          );
-          setConnectError('Sessao nao pode iniciar para conexao.');
-          setConnectErrorDetails(startResult.errorMessage ?? '');
+      if (streamingMode === 'AUTO') {
+        const nativeResult = await prepareNativeConnection('AUTO');
+        if (nativeResult.ok) return;
+
+        if (nativeResult.reason === 'session_not_streamable') {
+          const message = describeNativeFailure(nativeResult.reason);
+          setProviderMessage(message);
+          setConnectError(message);
+          setConnectErrorDetails(`Motivo: ${nativeResult.reason}`);
           setConnectFailed(true);
           return;
         }
-        setSession((current) =>
-          current
-            ? {
-                ...current,
-                status: startResult.data?.session?.status ?? current.status,
-              }
-            : current,
-        );
-      } else if (session.status !== 'ACTIVE') {
-        setProviderMessage('Sessao fora de estado de conexao.');
-        setConnectError('Conexao bloqueada fora da sessao.');
-        setConnectFailed(true);
-        return;
-      }
 
-      setProviderMessage('Preparando conexao...');
-      const tokenResponse = await request<{ token: string; expiresAt: string }>('/stream/connect-token', {
-        method: 'POST',
-        body: JSON.stringify({ pcId: session.pc.id }),
-      });
-      console.log('[STREAM][CLIENT] token created', { pcId: session.pc.id, expiresAt: tokenResponse.expiresAt });
-
-      const resolveResult = await requestWithStatus<{
-        connectAddress: string;
-        connectHint?: string | null;
-        pcName: string;
-      }>('/stream/resolve', {
-        method: 'POST',
-        body: JSON.stringify({ token: tokenResponse.token }),
-      });
-      if (!resolveResult.ok || !resolveResult.data) {
-        console.error('[STREAM][CLIENT] resolve fail', {
-          status: resolveResult.status,
-          error: resolveResult.errorMessage,
+        devStreamingLog('fallback_reason', {
+          mode: streamingMode,
+          reason: nativeResult.reason,
+          fallback: 'moonlight',
         });
-        if (resolveResult.status === 409 && resolveResult.errorMessage?.toLowerCase().includes('endereco')) {
-          setProviderMessage(
-            'PC sem conexao cadastrada (host/porta). Abra o painel do host e salve a conexao.',
-          );
-          setConnectError('PC sem conexao cadastrada (host/porta).');
-        } else {
-          setProviderMessage(
-            `Falha ao resolver conexao (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
-          );
-          setConnectError('Nao foi possivel conectar. Verifique se o host esta ONLINE.');
-        }
-        setConnectErrorDetails(
-          `Resolve falhou (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
-        );
-        toast.show(
-          `Resolve falhou (status ${resolveResult.status}). ${resolveResult.errorMessage ?? ''}`.trim(),
-          'error',
-        );
+      }
+
+      if (!moonlightEnabled) {
+        const message = 'Moonlight desativado para este modo de streaming.';
+        setProviderMessage(message);
+        setConnectError(message);
+        setConnectErrorDetails('fallback_blocked_moonlight_disabled');
         setConnectFailed(true);
         return;
       }
 
-      console.log('[STREAM][CLIENT] resolve ok', {
-        pcName: resolveResult.data.pcName,
-        status: resolveResult.status,
-      });
-      setConnectHint(resolveResult.data.connectHint ?? null);
-
-      console.log('[STREAM][CLIENT] resolve payload', {
-        pcId: session.pc.id,
-        token: tokenResponse.token,
-        connectAddress: resolveResult.data.connectAddress,
-      });
-
-      if (!resolveResult.data.connectAddress) {
-        setProviderMessage('Endereco de conexao invalido.');
-        setConnectError('Endereco de conexao invalido.');
-        setConnectErrorDetails('connectAddress vazio/invalid.');
-        setConnectFailed(true);
-        return;
-      }
-
-      setConnectStage('pairing');
-      setProviderMessage('Verificando pareamento...');
-      console.log('[STREAM][CLIENT] launching moonlight...');
-      setLastConnectAddress(resolveResult.data.connectAddress);
-      const launchResult = await launchMoonlight(resolveResult.data.connectAddress);
-      if (launchResult.ok) {
-        console.log('[STREAM][CLIENT] launch ok');
-        setProviderMessage('Abrindo conexao...');
-        setConnectStage('opening');
-        setPairAvailable(false);
-      } else {
-        console.error('[STREAM][CLIENT] launch fail');
-        setPairAvailable(launchResult.needsPair);
-        if (launchResult.needsPair) {
-          setProviderMessage('Este host ainda nao esta pareado. Siga as instrucoes.');
-          setConnectError('Host nao pareado. Digite o PIN exibido no host.');
-          setShowPairingModal(true);
-        } else {
-          setProviderMessage(launchResult.message ?? 'Nao foi possivel abrir o Moonlight automaticamente.');
-          setConnectError('Nao foi possivel conectar. Verifique se o host esta ONLINE.');
-        }
-        setConnectErrorDetails(launchResult.message ?? '');
-        setConnectFailed(true);
-      }
+      await runMoonlightFlow(sessionSnapshot);
     } catch (err) {
       console.error('[STREAM][CLIENT] token/resolve fail', err);
       setProviderMessage(err instanceof Error ? err.message : 'Nao foi possivel iniciar a conexao.');
@@ -411,6 +564,17 @@ export default function Connection() {
       setConnecting(false);
     }
   };
+
+  useEffect(() => {
+    setAutoConnectRequested(false);
+  }, [session?.id]);
+
+  useEffect(() => {
+    if (!autoConnect || !session || autoConnectRequested) return;
+    if (session.status !== 'PENDING' && session.status !== 'ACTIVE') return;
+    setAutoConnectRequested(true);
+    handleConnect();
+  }, [autoConnect, autoConnectRequested, session, handleConnect]);
 
   const handlePairMoonlight = async () => {
     if (!lastConnectAddress || pairing) return;
@@ -442,6 +606,21 @@ export default function Connection() {
     return styles.stepPending;
   };
 
+  const effectiveNativeTransport = useMemo<NativeTransportMode>(() => {
+    if (selectedNativeTransport) return selectedNativeTransport;
+    if (!streamSignal) return 'lan';
+    const decision = resolveNativeTransport(streamSignal, 'AUTO');
+    return decision.transport ?? 'lan';
+  }, [selectedNativeTransport, streamSignal]);
+
+  const connectButtonLabel = connecting
+    ? 'Conectando...'
+    : streamingMode === 'OPENDESK_ONLY'
+      ? 'Conectar com player interno'
+      : streamingMode === 'MOONLIGHT_ONLY'
+        ? 'Conectar com Moonlight'
+        : 'Conectar (AUTO)';
+
   if (loading) {
     return <div className={styles.container}>Carregando...</div>;
   }
@@ -455,6 +634,7 @@ export default function Connection() {
       <Link to={`/client/session/${session.id}`}>Voltar para sessao</Link>
       <h1>Conexao</h1>
       <p>PC: {session.pc.name}</p>
+      <p className={styles.muted}>Modo de streaming: {streamingMode}</p>
 
       {!['PENDING', 'ACTIVE'].includes(session.status) && (
         <div className={styles.warning}>
@@ -463,9 +643,9 @@ export default function Connection() {
       )}
 
       <div className={styles.panel}>
-        <h3>Player Nativo LAN (Experimental)</h3>
+        <h3>Player Interno OpenDesk</h3>
         <p className={styles.muted}>
-          Recebe H.264 por UDP e reproduz dentro do OpenDesk. O host deve enviar para a porta configurada neste cliente.
+          Streaming interno via Relay WS ou LAN UDP, sem abrir cliente externo.
         </p>
         <div className={styles.actionsRow}>
           <button
@@ -486,12 +666,12 @@ export default function Connection() {
         {streamSignalError && <p className={styles.muted}>{streamSignalError}</p>}
         {streamSignal && (
           <p className={styles.muted}>
-            Stream sinalizado: {streamSignal.streamState} | host {streamSignal.host}:{streamSignal.videoPort} | transporte{' '}
-            {streamSignal.transport?.recommended ?? 'UDP_LAN'}
+            Stream sinalizado: {streamSignal.streamState} | host {streamSignal.host}:{streamSignal.videoPort} |
+            recomendado {streamSignal.transport?.recommended ?? 'UDP_LAN'} | selecionado {effectiveNativeTransport.toUpperCase()}
           </p>
         )}
         <LanNativePlayer
-          transportMode={streamSignal?.transport?.recommended === 'RELAY_WS' ? 'relay' : 'lan'}
+          transportMode={effectiveNativeTransport}
           defaultPort={streamSignal?.videoPort ?? session.pc.connectionPort ?? 5004}
           defaultInputHost={streamSignal?.host ?? session.pc.connectionHost ?? undefined}
           defaultInputPort={streamSignal?.inputPort ?? 5505}
@@ -511,24 +691,37 @@ export default function Connection() {
           }
           lockConnectionToSession
           forceDisconnectKey={forceNativeDisconnectKey}
+          autoConnectKey={autoNativeConnectKey}
         />
       </div>
 
       <div className={styles.panel}>
-        <h3>Instrucoes (MVP)</h3>
-        <ol>
-          <li>Abra o Moonlight (ou outro cliente compativel).</li>
-          <li>Selecione o host e inicie a conexao.</li>
-          <li>Complete o pareamento se necessario.</li>
-          <li>Inicie a conexao.</li>
-        </ol>
+        <h3>Conectar</h3>
+        {streamingMode === 'OPENDESK_ONLY' && (
+          <p className={styles.muted}>
+            Este modo usa somente o player interno. Nao abre Moonlight automaticamente.
+          </p>
+        )}
+        {streamingMode === 'AUTO' && (
+          <p className={styles.muted}>
+            AUTO: tenta player interno primeiro e usa Moonlight apenas como fallback.
+          </p>
+        )}
+        {streamingMode === 'MOONLIGHT_ONLY' && (
+          <ol>
+            <li>Abra o Moonlight (ou outro cliente compativel).</li>
+            <li>Selecione o host e inicie a conexao.</li>
+            <li>Complete o pareamento se necessario.</li>
+            <li>Inicie a conexao.</li>
+          </ol>
+        )}
         <button type="button" onClick={handleConnect} disabled={connecting}>
-          {connecting ? 'Conectando...' : 'Tentar conectar'}
+          {connectButtonLabel}
         </button>
-        {installed === false && (
+        {moonlightEnabled && installed === false && (
           <p className={styles.muted}>Moonlight nao detectado. Instale antes de conectar.</p>
         )}
-        {connectStage !== 'idle' && (
+        {moonlightEnabled && connectStage !== 'idle' && (
           <ul className={styles.stepList}>
             <li className={`${styles.stepItem} ${stepClass(0)}`}>
               <span className={styles.stepDot} />
@@ -549,6 +742,11 @@ export default function Connection() {
         {connectFailed && connectError && (
           <div className={styles.errorBox}>
             <p>{connectError}</p>
+            <div className={styles.actionsRow}>
+              <button type="button" onClick={handleConnect}>
+                Tentar novamente
+              </button>
+            </div>
             {import.meta.env.DEV && connectErrorDetails && (
               <>
                 <button
@@ -565,7 +763,7 @@ export default function Connection() {
         )}
       </div>
 
-      {showMoonlightHelp && (
+      {moonlightEnabled && showMoonlightHelp && (
         <div className={styles.panel}>
           <strong>Moonlight nao detectado.</strong>
           <p className={styles.muted}>
@@ -589,7 +787,7 @@ export default function Connection() {
         </div>
       )}
 
-      {showPairingModal && (
+      {moonlightEnabled && showPairingModal && (
         <div className={styles.modalOverlay} role="dialog" aria-modal="true">
           <div className={styles.modal}>
             <div>

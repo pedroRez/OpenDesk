@@ -160,6 +160,92 @@ select {
   background: rgba(255, 255, 255, 0.95);
 }
 
+.quickGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.quickCard {
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.quickCard h4 {
+  margin: 0;
+  font-size: 0.94rem;
+}
+
+.quickName {
+  margin: 0;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.quickPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quickBadge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid rgba(100, 116, 139, 0.35);
+}
+
+.quickBadgeLan {
+  color: #1a7f5a;
+  background: rgba(26, 127, 90, 0.15);
+  border-color: rgba(26, 127, 90, 0.35);
+}
+
+.quickBadgeRelay {
+  color: #1e3a8a;
+  background: rgba(30, 58, 138, 0.1);
+  border-color: rgba(30, 58, 138, 0.28);
+}
+
+.quickBadgeUnknown {
+  color: #5c5c66;
+  background: rgba(92, 92, 102, 0.12);
+  border-color: rgba(92, 92, 102, 0.32);
+}
+
+.quickLine {
+  margin: 0;
+  font-size: 0.86rem;
+  color: #334155;
+}
+
+.quickHint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.quickActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quickActions button {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff7ef;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .listHint {
   margin: 4px 0 0;
   color: var(--muted);

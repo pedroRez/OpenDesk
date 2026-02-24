@@ -38,6 +38,7 @@ type PC = {
   activeSession?: {
     id: string;
     startAt?: string | null;
+    endAt?: string | null;
     client?: { username?: string | null } | null;
   } | null;
   pricePerHour: number;
@@ -126,6 +127,50 @@ const formatDuration = (startAt?: string | null) => {
   const minutes = totalMinutes % 60;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+};
+
+const formatRemainingDuration = (endAt?: string | null) => {
+  if (!endAt) return 'Nao informado';
+  const endAtMs = new Date(endAt).getTime();
+  if (Number.isNaN(endAtMs)) return 'Nao informado';
+  const diffMs = endAtMs - Date.now();
+  if (diffMs <= 0) return 'Encerrando...';
+  const totalMinutes = Math.ceil(diffMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+};
+
+const parseIpv4 = (host: string): number[] | null => {
+  const segments = host.split('.');
+  if (segments.length !== 4) return null;
+  const values = segments.map((segment) => Number.parseInt(segment, 10));
+  if (values.some((value) => !Number.isFinite(value) || value < 0 || value > 255)) {
+    return null;
+  }
+  return values;
+};
+
+const isLanHost = (hostRaw?: string | null) => {
+  const host = hostRaw?.trim().toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.local')) return true;
+
+  const ipv4 = parseIpv4(host);
+  if (!ipv4) return false;
+  const [a, b] = ipv4;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
+};
+
+const inferTransportLabel = (hostRaw?: string | null): 'LAN' | 'RELAY' | 'NAO_PUBLICADO' => {
+  if (!hostRaw?.trim()) return 'NAO_PUBLICADO';
+  return isLanHost(hostRaw) ? 'LAN' : 'RELAY';
 };
 
 export default function HostDashboard() {
@@ -225,6 +270,31 @@ export default function HostDashboard() {
     [pcs],
   );
   const hasActiveBusySession = useMemo(() => pcs.some((pc) => pc.status === 'BUSY'), [pcs]);
+  const quickPc = useMemo(() => {
+    if (localPcRecord) return localPcRecord;
+    const primaryId = getPrimaryPcId();
+    if (primaryId) {
+      const primaryPc = pcs.find((pc) => pc.id === primaryId);
+      if (primaryPc) return primaryPc;
+    }
+    return pcs[0] ?? null;
+  }, [localPcRecord, pcs]);
+  const quickSessionPc = useMemo(
+    () => pcs.find((pc) => pc.status === 'BUSY' && pc.activeSession?.id) ?? null,
+    [pcs],
+  );
+  const quickSessionDuration = useMemo(
+    () => formatDuration(quickSessionPc?.activeSession?.startAt ?? null),
+    [quickSessionPc?.activeSession?.startAt],
+  );
+  const quickSessionRemaining = useMemo(
+    () => formatRemainingDuration(quickSessionPc?.activeSession?.endAt ?? null),
+    [quickSessionPc?.activeSession?.endAt],
+  );
+  const quickTransport = useMemo(
+    () => inferTransportLabel(quickPc?.connectionHost ?? null),
+    [quickPc?.connectionHost],
+  );
 
   useEffect(() => {
     if (!hostProfileId) return;
@@ -294,7 +364,7 @@ export default function HostDashboard() {
       console.log('[HOST_LOCK] locked');
       return;
     }
-    if (status && status !== 'BUSY') {
+    if (status) {
       setHostLocked(false);
       setHostPin('');
       setHostPinConfirm('');
@@ -480,6 +550,8 @@ export default function HostDashboard() {
       await startOnlineFlow(pc);
       return;
     }
+    const confirmed = window.confirm(`Colocar o PC "${pc.name}" OFFLINE agora?`);
+    if (!confirmed) return;
     const nextStatus = 'OFFLINE';
     setOperationMessage('Colocando PC offline...');
     setPcs((prev) => prev.map((item) => (item.id === pc.id ? { ...item, status: nextStatus } : item)));
@@ -1164,6 +1236,135 @@ export default function HostDashboard() {
               placeholder="Buscar por nome ou specs (ex: 16GB RTX SSD)"
             />
           </div>
+
+          {hasPcs && (
+            <div className={styles.quickGrid}>
+              <div className={styles.quickCard}>
+                <h4 title="Situacao atual do PC principal neste host">Status do PC</h4>
+                {quickPc ? (
+                  <>
+                    <p className={styles.quickName}>{quickPc.name}</p>
+                    <div className={styles.quickPills}>
+                      <span
+                        className={`${styles.statusBadge} ${
+                          quickPc.status === 'ONLINE'
+                            ? styles.statusOnline
+                            : quickPc.status === 'OFFLINE'
+                              ? styles.statusOffline
+                              : styles.statusBusy
+                        }`}
+                      >
+                        {quickPc.status}
+                      </span>
+                      <span
+                        className={`${styles.quickBadge} ${
+                          quickTransport === 'LAN'
+                            ? styles.quickBadgeLan
+                            : quickTransport === 'RELAY'
+                              ? styles.quickBadgeRelay
+                              : styles.quickBadgeUnknown
+                        }`}
+                      >
+                        Rede: {quickTransport === 'NAO_PUBLICADO' ? 'Nao publicado' : quickTransport}
+                      </span>
+                    </div>
+                    <p className={styles.quickHint} title="LAN = rede local/overlay. Relay = rota publica.">
+                      {quickTransport === 'NAO_PUBLICADO'
+                        ? 'Conexao ainda nao publicada.'
+                        : quickTransport === 'LAN'
+                          ? 'Transporte LAN/overlay detectado.'
+                          : 'Transporte relay/publico detectado.'}
+                    </p>
+                  </>
+                ) : (
+                  <p className={styles.quickHint}>Cadastre um PC para acompanhar o status.</p>
+                )}
+              </div>
+
+              <div className={styles.quickCard}>
+                <h4 title="Resumo da sessao ativa">Sessao atual</h4>
+                {quickSessionPc?.activeSession ? (
+                  <>
+                    <p className={styles.quickName}>{quickSessionPc.name}</p>
+                    <p className={styles.quickLine}>
+                      Cliente: {quickSessionPc.activeSession.client?.username ?? 'cliente'}
+                    </p>
+                    <p className={styles.quickLine}>Tempo restante: {quickSessionRemaining}</p>
+                    {quickSessionDuration && (
+                      <p className={styles.quickLine}>Tempo em uso: {quickSessionDuration}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDisconnect(quickSessionPc)}
+                      disabled={disconnectingPcId === quickSessionPc.id}
+                      className={`${styles.dangerButton} ${
+                        disconnectingPcId === quickSessionPc.id ? styles.disabled : ''
+                      }`}
+                      title="Encerra a sessao e libera o PC"
+                    >
+                      {disconnectingPcId === quickSessionPc.id ? 'Encerrando...' : 'Encerrar sessao'}
+                    </button>
+                  </>
+                ) : (
+                  <p className={styles.quickHint}>Nenhuma sessao ativa no momento.</p>
+                )}
+              </div>
+
+              <div className={styles.quickCard}>
+                <h4 title="Acoes essenciais">Acoes</h4>
+                {quickPc ? (
+                  <div className={styles.quickActions}>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStatus(quickPc)}
+                      className={quickPc.status === 'BUSY' ? styles.disabled : ''}
+                      disabled={quickPc.status === 'BUSY' || Boolean(operationMessage)}
+                      title={
+                        quickPc.status === 'ONLINE'
+                          ? 'Torna o PC indisponivel para novas reservas'
+                          : 'Torna o PC disponivel para novas reservas'
+                      }
+                    >
+                      {quickPc.status === 'BUSY'
+                        ? 'PC em sessao'
+                        : quickPc.status === 'ONLINE'
+                          ? 'Ficar OFFLINE'
+                          : 'Ficar ONLINE'}
+                    </button>
+                    {quickSessionPc?.activeSession && (
+                      <button
+                        type="button"
+                        onClick={() => handleDisconnect(quickSessionPc)}
+                        disabled={disconnectingPcId === quickSessionPc.id}
+                        className={`${styles.dangerButton} ${
+                          disconnectingPcId === quickSessionPc.id ? styles.disabled : ''
+                        }`}
+                        title="Encerrar sessao ativa imediatamente"
+                      >
+                        {disconnectingPcId === quickSessionPc.id ? 'Encerrando...' : 'Encerrar sessao'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDetailsOpenPcId((current) => (current === quickPc.id ? null : quickPc.id))
+                      }
+                      className={styles.ghost}
+                      title="Abre os detalhes completos deste PC"
+                    >
+                      Ver detalhes
+                    </button>
+                  </div>
+                ) : (
+                  <p className={styles.quickHint}>Sem acoes disponiveis ate cadastrar um PC.</p>
+                )}
+                <p className={styles.quickHint} title="Pausar/retomar input fica no bloco de Input LAN abaixo.">
+                  Pausar/retomar input fica no bloco de Input LAN abaixo.
+                </p>
+              </div>
+            </div>
+          )}
+
           <HostLanInputPanel
             autoSessionActive={hasActiveBusySession}
             defaultSessionId={busySessionId}
@@ -1535,7 +1736,7 @@ export default function HostDashboard() {
                       </div>
                     )}
                     <div className={styles.modalActions}>
-                      <button type="button" onClick={handleConfirmAuto} disabled={autoStep === 'creating'}>
+                      <button type="button" onClick={handleConfirmAuto}>
                         Confirmar cadastro
                       </button>
                       <button type="button" onClick={handleFinishPreview} className={styles.ghost}>

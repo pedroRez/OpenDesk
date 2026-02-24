@@ -39,6 +39,7 @@ type NativeLanPlayerProps = {
   sessionId?: string | null;
   sessionState?: 'STARTING' | 'ACTIVE' | 'INACTIVE';
   forceDisconnectKey?: number;
+  autoConnectKey?: number;
   lockConnectionToSession?: boolean;
 };
 
@@ -315,6 +316,7 @@ export default function LanNativePlayer({
   sessionId,
   sessionState = 'INACTIVE',
   forceDisconnectKey = 0,
+  autoConnectKey = 0,
   lockConnectionToSession = false,
 }: NativeLanPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1336,6 +1338,11 @@ export default function LanNativePlayer({
     inputTokenExpiresAt,
     isSessionConnectAllowed,
   ]);
+
+  useEffect(() => {
+    if (!autoConnectKey) return;
+    connect().catch(() => undefined);
+  }, [autoConnectKey, connect]);
 
   useEffect(() => {
     connectFnRef.current = connect;

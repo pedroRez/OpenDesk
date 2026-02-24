@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
 import { requestWithStatus } from '../lib/api';
@@ -120,7 +120,6 @@ export default function HostLanInputPanel({
         setStreamId(signal.streamId);
         setAuthToken(signal.token);
         setTokenExpiresAt(signal.tokenExpiresAt);
-        setBindHost(signal.host || DEFAULT_BIND_HOST);
         if (signal.inputPort > 0) {
           setBindPort(String(signal.inputPort));
         }
@@ -134,47 +133,6 @@ export default function HostLanInputPanel({
     },
     [sessionId],
   );
-
-  useEffect(() => {
-    setSessionActive(autoSessionActive);
-    if (!isAvailable || !activeRef.current) return;
-
-    if (!autoSessionActive) {
-      stopLanInputServer()
-        .then(() => {
-          setActive(false);
-          setStats(null);
-          setStatus('Sessao finalizada. Servidor de input parado automaticamente.');
-        })
-        .catch((cause) => {
-          setError(
-            `Falha ao parar servidor de input no fim da sessao: ${
-              cause instanceof Error ? cause.message : String(cause)
-            }`,
-          );
-        });
-      return;
-    }
-
-    setLanInputServerSessionActive(true).catch((cause) => {
-      setError(
-        `Falha ao sincronizar session ACTIVE: ${
-          cause instanceof Error ? cause.message : String(cause)
-        }`,
-      );
-    });
-  }, [autoSessionActive, isAvailable]);
-
-  useEffect(() => {
-    if (!isAvailable || !defaultSessionId || !autoSessionActive) return;
-    syncSessionCredentials(defaultSessionId).catch((cause) => {
-      setError(
-        `Falha ao sincronizar credenciais automaticamente: ${
-          cause instanceof Error ? cause.message : String(cause)
-        }`,
-      );
-    });
-  }, [autoSessionActive, defaultSessionId, isAvailable, syncSessionCredentials]);
 
   useEffect(() => {
     if (!isAvailable) return;
@@ -240,61 +198,83 @@ export default function HostLanInputPanel({
     return parsed;
   }, []);
 
-  const startServer = useCallback(async () => {
-    const normalizedHost = bindHost.trim() || DEFAULT_BIND_HOST;
-    const normalizedToken = authToken.trim();
-    const parsedPort = parsePort(bindPort);
-    const parsedMaxEvents = parsePositive(maxEventsPerSecond);
-    const parsedStatsInterval = parsePositive(statsIntervalMs);
-    const parsedExpiresAtMs = tokenExpiresAt.trim()
-      ? Date.parse(tokenExpiresAt.trim())
-      : Number.NaN;
+  type StartServerOverrides = {
+    bindHost?: string;
+    bindPort?: number;
+    authToken?: string;
+    tokenExpiresAt?: string;
+    sessionId?: string;
+    streamId?: string;
+    sessionActive?: boolean;
+  };
+
+  const startServer = useCallback(async (
+    overrides?: StartServerOverrides,
+    options?: { auto?: boolean; restartIfActive?: boolean },
+  ): Promise<boolean> => {
+    const normalizedHost = (overrides?.bindHost ?? bindHost).trim() || DEFAULT_BIND_HOST;
+    const normalizedToken = (overrides?.authToken ?? authToken).trim();
+    const parsedPort = overrides?.bindPort ?? parsePort(bindPort);
+    const parsedMaxEvents = parsePositive(maxEventsPerSecond) ?? DEFAULT_EVENTS_PER_SEC;
+    const parsedStatsInterval = parsePositive(statsIntervalMs) ?? DEFAULT_STATS_INTERVAL_MS;
+    const effectiveTokenExpiresAt = (overrides?.tokenExpiresAt ?? tokenExpiresAt).trim();
+    const parsedExpiresAtMs = effectiveTokenExpiresAt ? Date.parse(effectiveTokenExpiresAt) : Number.NaN;
     const authExpiresAtMs = Number.isFinite(parsedExpiresAtMs)
       ? Math.trunc(parsedExpiresAtMs)
       : undefined;
 
     if (!parsedPort) {
       setError('Porta de bind invalida.');
-      return;
+      return false;
     }
     if (!normalizedToken) {
       setError('Token de input obrigatorio.');
-      return;
-    }
-    if (!parsedMaxEvents) {
-      setError('Rate limit invalido.');
-      return;
-    }
-    if (!parsedStatsInterval) {
-      setError('Intervalo de metricas invalido.');
-      return;
+      return false;
     }
     if (authExpiresAtMs && authExpiresAtMs <= Date.now()) {
       setError('Token de input expirado. Sincronize novamente a sessao.');
-      return;
+      return false;
     }
 
     setError('');
     try {
+      if (options?.restartIfActive && activeRef.current) {
+        await stopLanInputServer();
+        setActive(false);
+        setStats(null);
+      }
+
       await startLanInputServer({
         bindHost: normalizedHost,
         bindPort: parsedPort,
         authToken: normalizedToken,
         authExpiresAtMs,
-        sessionId: sessionId.trim() || undefined,
-        streamId: streamId.trim() || undefined,
-        sessionActive,
+        sessionId: (overrides?.sessionId ?? sessionId).trim() || undefined,
+        streamId: (overrides?.streamId ?? streamId).trim() || undefined,
+        sessionActive: overrides?.sessionActive ?? sessionActive,
         maxEventsPerSecond: parsedMaxEvents,
         statsIntervalMs: parsedStatsInterval,
       });
       setActive(true);
-      setStatus(`Servidor de input ativo em ${normalizedHost}:${parsedPort}.`);
+      if (options?.auto) {
+        const targetSessionId = (overrides?.sessionId ?? sessionId).trim();
+        setSessionActive(true);
+        setStatus(
+          targetSessionId
+            ? `Input iniciado automaticamente para sessao ${targetSessionId}.`
+            : 'Input iniciado automaticamente para sessao ativa.',
+        );
+      } else {
+        setStatus(`Servidor de input ativo em ${normalizedHost}:${parsedPort}.`);
+      }
+      return true;
     } catch (cause) {
       setError(
         `Falha ao iniciar servidor de input: ${
           cause instanceof Error ? cause.message : String(cause)
         }`,
       );
+      return false;
     }
   }, [
     authToken,
@@ -310,13 +290,18 @@ export default function HostLanInputPanel({
     tokenExpiresAt,
   ]);
 
-  const stopServer = useCallback(async () => {
+  const stopServer = useCallback(async (reason: 'manual' | 'automatic' = 'manual') => {
     setError('');
     try {
       await stopLanInputServer();
       setActive(false);
       setStats(null);
-      setStatus('Servidor de input parado.');
+      setSessionActive(false);
+      setStatus(
+        reason === 'automatic'
+          ? 'Sessao finalizada. Servidor de input parado automaticamente.'
+          : 'Servidor de input parado.',
+      );
     } catch (cause) {
       setError(
         `Falha ao parar servidor de input: ${
@@ -326,14 +311,25 @@ export default function HostLanInputPanel({
     }
   }, []);
 
+  const stopServerWithConfirm = useCallback(() => {
+    if (!active) return;
+    const confirmed = window.confirm('Parar o servidor de input agora?');
+    if (!confirmed) return;
+    void stopServer('manual');
+  }, [active, stopServer]);
+
   const toggleSessionActive = useCallback(async () => {
     if (!active) return;
     const next = !sessionActive;
+    if (!next) {
+      const confirmed = window.confirm('Pausar input para a sessao atual?');
+      if (!confirmed) return;
+    }
     setError('');
     try {
       await setLanInputServerSessionActive(next);
       setSessionActive(next);
-      setStatus(next ? 'Input habilitado para sessao ACTIVE.' : 'Input bloqueado (sessao INACTIVE).');
+      setStatus(next ? 'Input habilitado para sessao ACTIVE.' : 'Input pausado para a sessao atual.');
     } catch (cause) {
       setError(
         `Falha ao alterar session ACTIVE: ${
@@ -343,12 +339,117 @@ export default function HostLanInputPanel({
     }
   }, [active, sessionActive]);
 
+  useEffect(() => {
+    if (!isAvailable) return;
+
+    let cancelled = false;
+    const synchronizeAutoSession = async () => {
+      if (!autoSessionActive || !defaultSessionId) {
+        if (activeRef.current) {
+          await stopServer('automatic');
+        } else {
+          setSessionActive(false);
+        }
+        setSessionId(defaultSessionId ?? '');
+        setStreamId('');
+        setTokenExpiresAt('');
+        return;
+      }
+
+      const signal = await syncSessionCredentials(defaultSessionId);
+      if (!signal || cancelled) return;
+
+      const targetHost = bindHost.trim() || DEFAULT_BIND_HOST;
+      const targetPort = signal.inputPort > 0 ? signal.inputPort : DEFAULT_BIND_PORT;
+      const currentHost = bindHost.trim() || DEFAULT_BIND_HOST;
+      const currentPort = parsePort(bindPort) ?? DEFAULT_BIND_PORT;
+      const currentSessionId = sessionId.trim();
+      const currentStreamId = streamId.trim();
+      const currentToken = authToken.trim();
+
+      const needsRestart =
+        !activeRef.current
+        || currentHost !== targetHost
+        || currentPort !== targetPort
+        || currentSessionId !== signal.sessionId
+        || currentStreamId !== signal.streamId
+        || currentToken !== signal.token;
+
+      if (needsRestart) {
+        await startServer(
+          {
+            bindHost: targetHost,
+            bindPort: targetPort,
+            authToken: signal.token,
+            tokenExpiresAt: signal.tokenExpiresAt,
+            sessionId: signal.sessionId,
+            streamId: signal.streamId,
+            sessionActive: true,
+          },
+          {
+            auto: true,
+            restartIfActive: activeRef.current,
+          },
+        );
+        return;
+      }
+
+      try {
+        await setLanInputServerSessionActive(true);
+        setSessionActive(true);
+        setStatus(`Input sincronizado automaticamente para sessao ${signal.sessionId}.`);
+      } catch (cause) {
+        setError(
+          `Falha ao sincronizar session ACTIVE: ${
+            cause instanceof Error ? cause.message : String(cause)
+          }`,
+        );
+      }
+    };
+
+    synchronizeAutoSession().catch((cause) => {
+      if (cancelled) return;
+      setError(
+        `Falha ao sincronizar credenciais automaticamente: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`,
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authToken,
+    autoSessionActive,
+    bindHost,
+    bindPort,
+    defaultSessionId,
+    isAvailable,
+    parsePort,
+    sessionId,
+    startServer,
+    stopServer,
+    streamId,
+    syncSessionCredentials,
+  ]);
+
   if (!isAvailable) {
     return null;
   }
 
   const eventsDroppedTotal = (stats?.eventsDroppedInactive ?? 0) + (stats?.eventsDroppedRate ?? 0);
   const droppedPct = stats && stats.eventsReceived > 0 ? (eventsDroppedTotal / stats.eventsReceived) * 100 : 0;
+  const tokenExpiresLabel = useMemo(() => {
+    if (!tokenExpiresAt.trim()) return 'Nao definido';
+    const parsed = Date.parse(tokenExpiresAt);
+    if (!Number.isFinite(parsed)) return 'Formato invalido';
+    return new Date(parsed).toLocaleString();
+  }, [tokenExpiresAt]);
+  const endpointHost = bindHost.trim() || DEFAULT_BIND_HOST;
+  const endpointPort = parsePort(bindPort) ?? DEFAULT_BIND_PORT;
+  const sessionScopeLabel = sessionId.trim() || 'Nenhuma sessao ativa';
+  const transportHint = autoSessionActive ? 'Sessao ACTIVE detectada' : 'Sem sessao ACTIVE';
 
   return (
     <div className={styles.panel}>
@@ -359,154 +460,198 @@ export default function HostLanInputPanel({
         </span>
       </div>
       <p className={styles.description}>
-        Canal dedicado de input cliente -&gt; host via TCP, separado do video UDP.
-        Input so e aceito com token valido, nao expirado e sessao ACTIVE.
+        Input iniciado automaticamente quando houver sessao ativa. Ajustes tecnicos ficam em
+        Diagnostico (Avancado).
       </p>
 
-      <div className={styles.grid}>
-        <label>
-          Bind host
-          <input
-            value={bindHost}
-            onChange={(event) => setBindHost(event.target.value)}
-            disabled={active}
-            placeholder="0.0.0.0"
-          />
-        </label>
-        <label>
-          Bind port
-          <input
-            value={bindPort}
-            onChange={(event) => setBindPort(event.target.value)}
-            disabled={active}
-            placeholder="5505"
-          />
-        </label>
-        <label>
-          Rate limit (events/s)
-          <input
-            value={maxEventsPerSecond}
-            onChange={(event) => setMaxEventsPerSecond(event.target.value)}
-            disabled={active}
-            placeholder="700"
-          />
-        </label>
-        <label>
-          Stats interval (ms)
-          <input
-            value={statsIntervalMs}
-            onChange={(event) => setStatsIntervalMs(event.target.value)}
-            disabled={active}
-            placeholder="1000"
-          />
-        </label>
-        <label className={styles.spanTwo}>
-          Token
-          <input
-            value={authToken}
-            onChange={(event) => setAuthToken(event.target.value)}
-            disabled={active}
-            placeholder="token da sessao"
-          />
-        </label>
-        <label>
-          Token expiresAt (ISO)
-          <input
-            value={tokenExpiresAt}
-            onChange={(event) => setTokenExpiresAt(event.target.value)}
-            disabled={active}
-            placeholder="2026-02-23T00:00:00.000Z"
-          />
-        </label>
-        <label>
-          Session ID
-          <input
-            value={sessionId}
-            onChange={(event) => setSessionId(event.target.value)}
-            disabled={active}
-            placeholder="sessao ativa"
-          />
-        </label>
-        <label>
-          Stream ID
-          <input
-            value={streamId}
-            onChange={(event) => setStreamId(event.target.value)}
-            disabled={active}
-            placeholder="stream filtrado"
-          />
-        </label>
+      <div className={styles.summaryGrid}>
+        <div className={styles.summaryCard}>
+          <span className={styles.summaryLabel}>Endpoint</span>
+          <strong className={styles.summaryValue}>{endpointHost}:{endpointPort}</strong>
+          <span className={styles.summaryHint} title="Canal de input LAN dedicado">
+            Transporte: LAN TCP
+          </span>
+        </div>
+        <div className={styles.summaryCard}>
+          <span className={styles.summaryLabel}>Sessao</span>
+          <strong className={styles.summaryValue}>{sessionScopeLabel}</strong>
+          <span className={styles.summaryHint} title={transportHint}>
+            {transportHint}
+          </span>
+        </div>
+        <div className={styles.summaryCard}>
+          <span className={styles.summaryLabel}>Token</span>
+          <strong className={styles.summaryValue}>{tokenExpiresLabel}</strong>
+          <span className={styles.summaryHint}>Expiracao atual</span>
+        </div>
       </div>
 
       <div className={styles.actions}>
-        <button type="button" onClick={startServer} disabled={active || syncBusy}>
-          Iniciar input
-        </button>
-        <button type="button" className={styles.ghost} onClick={stopServer} disabled={!active}>
-          Parar input
-        </button>
         <button
           type="button"
-          className={styles.ghost}
-          onClick={() => setAuthToken(createInputToken())}
-          disabled={active}
-        >
-          Gerar token
-        </button>
-        <button
-          type="button"
-          className={styles.ghost}
-          onClick={() => syncSessionCredentials()}
-          disabled={active || syncBusy}
+          onClick={() => void syncSessionCredentials(defaultSessionId ?? undefined)}
+          disabled={syncBusy}
+          title="Atualiza token/sessionId/streamId da sessao atual"
         >
           {syncBusy ? 'Sincronizando...' : 'Sincronizar sessao'}
         </button>
-        <button type="button" className={styles.ghost} onClick={toggleSessionActive} disabled={!active}>
-          Session ACTIVE: {sessionActive ? 'ON' : 'OFF'}
+        <button
+          type="button"
+          className={styles.ghost}
+          onClick={toggleSessionActive}
+          disabled={!active}
+          title="Pausa/retoma apenas a injecao de input"
+        >
+          {sessionActive ? 'Pausar input' : 'Retomar input'}
+        </button>
+        <button
+          type="button"
+          className={styles.danger}
+          onClick={stopServerWithConfirm}
+          disabled={!active}
+          title="Use apenas para diagnostico"
+        >
+          Parar input
         </button>
       </div>
 
       <p className={styles.status}>{status}</p>
       {error && <p className={styles.error}>{error}</p>}
 
-      <div className={styles.metrics}>
-        <div>
-          <strong>Clients auth:</strong> {stats?.authenticatedClients ?? 0}
+      <details className={styles.diagnostics}>
+        <summary title="Campos tecnicos para debug/dev">Diagnostico (Avancado)</summary>
+        <p className={styles.diagnosticHint}>
+          Use esta area apenas para testes. O fluxo normal e automatico.
+        </p>
+
+        <div className={styles.grid}>
+          <label>
+            Bind host
+            <input
+              value={bindHost}
+              onChange={(event) => setBindHost(event.target.value)}
+              disabled={active}
+              placeholder="0.0.0.0"
+            />
+          </label>
+          <label>
+            Bind port
+            <input
+              value={bindPort}
+              onChange={(event) => setBindPort(event.target.value)}
+              disabled={active}
+              placeholder="5505"
+            />
+          </label>
+          <label>
+            Rate limit (events/s)
+            <input
+              value={maxEventsPerSecond}
+              onChange={(event) => setMaxEventsPerSecond(event.target.value)}
+              disabled={active}
+              placeholder="700"
+            />
+          </label>
+          <label>
+            Stats interval (ms)
+            <input
+              value={statsIntervalMs}
+              onChange={(event) => setStatsIntervalMs(event.target.value)}
+              disabled={active}
+              placeholder="1000"
+            />
+          </label>
+          <label className={styles.spanTwo}>
+            Token
+            <input
+              value={authToken}
+              readOnly
+              className={styles.readOnlyInput}
+              placeholder="token da sessao"
+            />
+          </label>
+          <label>
+            Token expiresAt (ISO)
+            <input
+              value={tokenExpiresAt}
+              readOnly
+              className={styles.readOnlyInput}
+              placeholder="2026-02-23T00:00:00.000Z"
+            />
+          </label>
+          <label>
+            Session ID
+            <input
+              value={sessionId}
+              readOnly
+              className={styles.readOnlyInput}
+              placeholder="sessao ativa"
+            />
+          </label>
+          <label>
+            Stream ID
+            <input
+              value={streamId}
+              readOnly
+              className={styles.readOnlyInput}
+              placeholder="stream filtrado"
+            />
+          </label>
         </div>
-        <div>
-          <strong>Auth fail:</strong> {stats?.authFailures ?? 0}
+
+        <div className={styles.actions}>
+          <button type="button" onClick={() => void startServer()} disabled={active || syncBusy}>
+            Iniciar input (manual)
+          </button>
+          <button
+            type="button"
+            className={styles.ghost}
+            onClick={() => setAuthToken(createInputToken())}
+            disabled={active}
+          >
+            Gerar token local
+          </button>
         </div>
-        <div>
-          <strong>Events recv:</strong> {stats?.eventsReceived ?? 0}
+
+        <div className={styles.metrics}>
+          <div>
+            <strong>Clients auth:</strong> {stats?.authenticatedClients ?? 0}
+          </div>
+          <div>
+            <strong>Auth fail:</strong> {stats?.authFailures ?? 0}
+          </div>
+          <div>
+            <strong>Events recv:</strong> {stats?.eventsReceived ?? 0}
+          </div>
+          <div>
+            <strong>Events inj:</strong> {stats?.eventsInjected ?? 0}
+          </div>
+          <div>
+            <strong>Dropped rate:</strong> {stats?.eventsDroppedRate ?? 0}
+          </div>
+          <div>
+            <strong>Dropped inactive:</strong> {stats?.eventsDroppedInactive ?? 0}
+          </div>
+          <div>
+            <strong>Dropped %:</strong> {formatNumber(droppedPct)}%
+          </div>
+          <div>
+            <strong>Inject errors:</strong> {stats?.injectErrors ?? 0}
+          </div>
+          <div>
+            <strong>Mouse move:</strong> {stats?.mouseMoves ?? 0}
+          </div>
+          <div>
+            <strong>Mouse buttons:</strong> {stats?.mouseButtons ?? 0}
+          </div>
+          <div>
+            <strong>Mouse wheel:</strong> {stats?.mouseWheels ?? 0}
+          </div>
+          <div>
+            <strong>Key events:</strong> {stats?.keyEvents ?? 0}
+          </div>
         </div>
-        <div>
-          <strong>Events inj:</strong> {stats?.eventsInjected ?? 0}
-        </div>
-        <div>
-          <strong>Dropped rate:</strong> {stats?.eventsDroppedRate ?? 0}
-        </div>
-        <div>
-          <strong>Dropped inactive:</strong> {stats?.eventsDroppedInactive ?? 0}
-        </div>
-        <div>
-          <strong>Dropped %:</strong> {formatNumber(droppedPct)}%
-        </div>
-        <div>
-          <strong>Inject errors:</strong> {stats?.injectErrors ?? 0}
-        </div>
-        <div>
-          <strong>Mouse move:</strong> {stats?.mouseMoves ?? 0}
-        </div>
-        <div>
-          <strong>Mouse buttons:</strong> {stats?.mouseButtons ?? 0}
-        </div>
-        <div>
-          <strong>Mouse wheel:</strong> {stats?.mouseWheels ?? 0}
-        </div>
-        <div>
-          <strong>Key events:</strong> {stats?.keyEvents ?? 0}
-        </div>
-      </div>
+      </details>
     </div>
   );
 }

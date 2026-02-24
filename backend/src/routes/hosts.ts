@@ -35,6 +35,7 @@ export async function hostRoutes(fastify: FastifyInstance) {
             id: true,
             pcId: true,
             startAt: true,
+            endAt: true,
             clientIp: true,
             client: { select: { username: true } },
           },
