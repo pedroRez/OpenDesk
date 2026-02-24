@@ -18,10 +18,25 @@ type Config = {
   status?: 'ONLINE' | 'OFFLINE' | 'BUSY';
 };
 
-const REQUEST_TIMEOUT_MS = Number(process.env.HEARTBEAT_REQUEST_TIMEOUT_MS ?? 5000);
-const FAILURE_ALERT_THRESHOLD = Number(process.env.HEARTBEAT_FAILURE_ALERT_THRESHOLD ?? 3);
-const PING_INTERVAL_MS = Number(process.env.HEARTBEAT_PING_INTERVAL_MS ?? 300000);
-const PING_TIMEOUT_MS = Number(process.env.HEARTBEAT_PING_TIMEOUT_MS ?? REQUEST_TIMEOUT_MS);
+function readIntEnv(raw: string | undefined, fallback: number, min: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.trunc(parsed));
+}
+
+function shouldSampleLog(counter: number, every: number): boolean {
+  if (counter <= 2) return true;
+  return counter % every === 0;
+}
+
+const REQUEST_TIMEOUT_MS = readIntEnv(process.env.HEARTBEAT_REQUEST_TIMEOUT_MS, 5000, 1);
+const FAILURE_ALERT_THRESHOLD = readIntEnv(process.env.HEARTBEAT_FAILURE_ALERT_THRESHOLD, 3, 1);
+const HEARTBEAT_RETRY_DELAY_MS = readIntEnv(process.env.HEARTBEAT_RETRY_DELAY_MS, 2000, 250);
+const HEARTBEAT_MAX_RETRIES = readIntEnv(process.env.HEARTBEAT_MAX_RETRIES, 3, 0);
+const HEARTBEAT_FAILURE_LOG_EVERY = readIntEnv(process.env.HEARTBEAT_FAILURE_LOG_EVERY, 5, 1);
+const HEARTBEAT_RETRY_LOG_EVERY = readIntEnv(process.env.HEARTBEAT_RETRY_LOG_EVERY, 3, 1);
+const PING_INTERVAL_MS = readIntEnv(process.env.HEARTBEAT_PING_INTERVAL_MS, 300000, 0);
+const PING_TIMEOUT_MS = readIntEnv(process.env.HEARTBEAT_PING_TIMEOUT_MS, REQUEST_TIMEOUT_MS, 1);
 
 type BackendErrorType = 'timeout' | 'refused' | 'dns' | 'network';
 
@@ -211,8 +226,7 @@ if (!config.userId || !config.hostId) {
   process.exit(1);
 }
 
-async function sendHeartbeat() {
-  const fetch = await getFetch();
+async function sendHeartbeat(): Promise<boolean> {
   const now = Date.now();
   const seq = ++heartbeatSeq;
   const sentAt = new Date(now).toISOString();
@@ -230,10 +244,11 @@ async function sendHeartbeat() {
     sentAtMs: now,
   };
 
-  const start = Date.now();
+  const startedAt = Date.now();
   const controller = new AbortController();
   let timeoutId: NodeJS.Timeout | null = null;
   try {
+    const fetch = await getFetch();
     timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     const response = await fetch(`${config.apiUrl}/hosts/${config.hostId}/heartbeat`, {
       method: 'POST',
@@ -247,27 +262,29 @@ async function sendHeartbeat() {
       signal: controller.signal,
     });
 
-    const durationMs = Date.now() - start;
+    const durationMs = Date.now() - startedAt;
     lastSentAt = now;
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       heartbeatFailures += 1;
-      console.error(
-        JSON.stringify({
-          tag: 'host-daemon',
-          event: 'heartbeat',
-          result: 'error',
-          errorType: 'http',
-          hostId: config.hostId,
-          seq,
-          sentAt,
-          durationMs,
-          statusCode: response.status,
-          errorMessage: text,
-          endpoint: `${config.apiUrl}/hosts/${config.hostId}/heartbeat`,
-          failures: heartbeatFailures,
-        }),
-      );
+      if (shouldSampleLog(heartbeatFailures, HEARTBEAT_FAILURE_LOG_EVERY)) {
+        console.error(
+          JSON.stringify({
+            tag: 'host-daemon',
+            event: 'heartbeat',
+            result: 'error',
+            errorType: 'http',
+            hostId: config.hostId,
+            seq,
+            sentAt,
+            durationMs,
+            statusCode: response.status,
+            errorMessage: text,
+            endpoint: `${config.apiUrl}/hosts/${config.hostId}/heartbeat`,
+            failures: heartbeatFailures,
+          }),
+        );
+      }
       if (!failureAlerted && heartbeatFailures >= FAILURE_ALERT_THRESHOLD) {
         failureAlerted = true;
         console.error(
@@ -282,7 +299,7 @@ async function sendHeartbeat() {
           }),
         );
       }
-      return;
+      return false;
     }
     let responsePayload: unknown = null;
     if ((response.headers.get('content-type') ?? '').toLowerCase().includes('application/json')) {
@@ -310,8 +327,9 @@ async function sendHeartbeat() {
         backendInstanceId,
       }),
     );
+    return true;
   } catch (error) {
-    const durationMs = Date.now() - now;
+    const durationMs = Date.now() - startedAt;
     heartbeatFailures += 1;
     const errorType = classifyBackendError(error);
     const errorCode = readErrorCode(error);
@@ -321,23 +339,25 @@ async function sendHeartbeat() {
         : error instanceof Error
           ? error.message
           : String(error ?? 'unknown');
-    console.error(
-      JSON.stringify({
-        tag: 'host-daemon',
-        event: 'heartbeat',
-        result: 'error',
-        errorType,
-        errorCode,
-        hostId: config.hostId,
-        seq,
-        sentAt,
-        durationMs,
-        statusCode: 0,
-        errorMessage,
-        endpoint: `${config.apiUrl}/hosts/${config.hostId}/heartbeat`,
-        failures: heartbeatFailures,
-      }),
-    );
+    if (shouldSampleLog(heartbeatFailures, HEARTBEAT_FAILURE_LOG_EVERY)) {
+      console.error(
+        JSON.stringify({
+          tag: 'host-daemon',
+          event: 'heartbeat',
+          result: 'error',
+          errorType,
+          errorCode,
+          hostId: config.hostId,
+          seq,
+          sentAt,
+          durationMs,
+          statusCode: 0,
+          errorMessage,
+          endpoint: `${config.apiUrl}/hosts/${config.hostId}/heartbeat`,
+          failures: heartbeatFailures,
+        }),
+      );
+    }
     if (!failureAlerted && heartbeatFailures >= FAILURE_ALERT_THRESHOLD) {
       failureAlerted = true;
       console.error(
@@ -353,6 +373,7 @@ async function sendHeartbeat() {
         }),
       );
     }
+    return false;
   } finally {
     if (timeoutId) {
       clearTimeout(timeoutId);
@@ -360,13 +381,16 @@ async function sendHeartbeat() {
   }
 }
 
-console.log(`host-daemon: iniciado (hostId=${config.hostId}, interval=${config.intervalMs}ms)`);
+console.log(
+  `host-daemon: iniciado (hostId=${config.hostId}, interval=${config.intervalMs}ms, retryDelay=${HEARTBEAT_RETRY_DELAY_MS}ms, maxRetries=${HEARTBEAT_MAX_RETRIES})`,
+);
 
 let loopTimer: NodeJS.Timeout | null = null;
 let watchdogTimer: NodeJS.Timeout | null = null;
 let pingTimer: NodeJS.Timeout | null = null;
 let heartbeatSeq = 0;
 let heartbeatFailures = 0;
+let heartbeatRetryAttempt = 0;
 let lastSentAt = 0;
 let lastLoopAt = 0;
 let failureAlerted = false;
@@ -380,8 +404,9 @@ const scheduleNext = (delayMs: number) => {
 
 const runLoop = async () => {
   lastLoopAt = Date.now();
+  let success = false;
   try {
-    await sendHeartbeat();
+    success = await sendHeartbeat();
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -391,9 +416,51 @@ const runLoop = async () => {
         errorMessage: error instanceof Error ? error.message : String(error ?? 'unknown'),
       }),
     );
-  } finally {
-    scheduleNext(config.intervalMs);
   }
+
+  if (success) {
+    heartbeatRetryAttempt = 0;
+    scheduleNext(config.intervalMs);
+    return;
+  }
+
+  const nextRetryAttempt = heartbeatRetryAttempt + 1;
+  if (nextRetryAttempt <= HEARTBEAT_MAX_RETRIES) {
+    heartbeatRetryAttempt = nextRetryAttempt;
+    if (
+      shouldSampleLog(nextRetryAttempt, HEARTBEAT_RETRY_LOG_EVERY)
+      || nextRetryAttempt === HEARTBEAT_MAX_RETRIES
+    ) {
+      console.warn(
+        JSON.stringify({
+          tag: 'host-daemon',
+          event: 'heartbeat_retry',
+          hostId: config.hostId,
+          retryAttempt: nextRetryAttempt,
+          maxRetries: HEARTBEAT_MAX_RETRIES,
+          retryInMs: HEARTBEAT_RETRY_DELAY_MS,
+          consecutiveFailures: heartbeatFailures,
+        }),
+      );
+    }
+    scheduleNext(HEARTBEAT_RETRY_DELAY_MS);
+    return;
+  }
+
+  if (HEARTBEAT_MAX_RETRIES > 0 && shouldSampleLog(heartbeatFailures, HEARTBEAT_FAILURE_LOG_EVERY)) {
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'heartbeat_retry_exhausted',
+        hostId: config.hostId,
+        attempts: HEARTBEAT_MAX_RETRIES + 1,
+        nextAttemptInMs: config.intervalMs,
+        consecutiveFailures: heartbeatFailures,
+      }),
+    );
+  }
+  heartbeatRetryAttempt = 0;
+  scheduleNext(config.intervalMs);
 };
 
 const pingBackend = async () => {
