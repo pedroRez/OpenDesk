@@ -139,6 +139,14 @@ type RelayControlMessage =
   | { kind: 'stream_ping'; payload: StreamPingControlMessage }
   | { kind: 'input_event'; payload: RelayInputEnvelope };
 
+type RelayWelcomeMessage = {
+  type: 'relay.welcome';
+  role: string;
+  sessionId: string;
+  streamId: string;
+  connectedAt?: string;
+};
+
 type EncoderControlState = {
   currentBitrateKbps: number;
   pendingBitrateKbps: number | null;
@@ -381,6 +389,28 @@ function parseJsonObject(rawText: string): Record<string, unknown> | null {
     return null;
   }
   return parsed as Record<string, unknown>;
+}
+
+function parseRelayWelcomeMessage(rawText: string): RelayWelcomeMessage | null {
+  const input = parseJsonObject(rawText);
+  if (!input) return null;
+
+  const typeRaw = typeof input.type === 'string' ? input.type.trim().toLowerCase() : '';
+  if (typeRaw !== 'relay.welcome') return null;
+
+  const role = typeof input.role === 'string' ? input.role.trim().toLowerCase() : '';
+  const sessionId = typeof input.sessionId === 'string' ? input.sessionId.trim() : '';
+  const streamId = typeof input.streamId === 'string' ? input.streamId.trim() : '';
+  const connectedAt = typeof input.connectedAt === 'string' ? input.connectedAt : undefined;
+  if (!role || !sessionId || !streamId) return null;
+
+  return {
+    type: 'relay.welcome',
+    role,
+    sessionId,
+    streamId,
+    connectedAt,
+  };
 }
 
 function parseRelayInputEvent(raw: unknown): RelayInputEvent | null {
@@ -871,6 +901,18 @@ function buildRelayConnectUrl(config: RelayHostConfig): string {
   return url.toString();
 }
 
+function sanitizeRelayConnectUrl(connectUrl: string): string {
+  try {
+    const url = new URL(connectUrl);
+    if (url.searchParams.has('token')) {
+      url.searchParams.set('token', '[redacted]');
+    }
+    return url.toString();
+  } catch {
+    return connectUrl;
+  }
+}
+
 async function waitForSocketOpen(socket: WebSocket, timeoutMs: number): Promise<void> {
   if (socket.readyState === WebSocket.OPEN) return;
   await new Promise<void>((resolve, reject) => {
@@ -900,6 +942,64 @@ async function waitForSocketOpen(socket: WebSocket, timeoutMs: number): Promise<
     socket.addEventListener('close', onClose);
     timeoutId = setTimeout(
       () => done(() => reject(new Error(`timeout ao conectar relay websocket (${timeoutMs}ms).`))),
+      timeoutMs,
+    );
+  });
+}
+
+async function waitForRelayWelcome(
+  socket: WebSocket,
+  config: RelayHostConfig,
+  timeoutMs: number,
+): Promise<RelayWelcomeMessage> {
+  return new Promise<RelayWelcomeMessage>((resolve, reject) => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      socket.removeEventListener('message', onMessage);
+      socket.removeEventListener('close', onClose);
+      socket.removeEventListener('error', onError);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+
+    const done = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn();
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (typeof event.data !== 'string') return;
+      const welcome = parseRelayWelcomeMessage(event.data);
+      if (!welcome) return;
+
+      const roleMatches = welcome.role === 'host';
+      const sessionMatches = welcome.sessionId === config.sessionId;
+      const streamMatches = normalizeStreamIdText(welcome.streamId) === normalizeStreamIdText(config.streamIdText);
+      if (!roleMatches || !sessionMatches || !streamMatches) {
+        done(() =>
+          reject(
+            new Error(
+              `relay.welcome invalido (role=${welcome.role}, sessionId=${welcome.sessionId}, streamId=${welcome.streamId}).`,
+            ),
+          ),
+        );
+        return;
+      }
+
+      done(() => resolve(welcome));
+    };
+    const onClose = () => done(() => reject(new Error('relay websocket fechou antes do relay.welcome.')));
+    const onError = () => done(() => reject(new Error('erro no relay websocket antes do relay.welcome.')));
+
+    socket.addEventListener('message', onMessage);
+    socket.addEventListener('close', onClose);
+    socket.addEventListener('error', onError);
+
+    timeoutId = setTimeout(
+      () => done(() => reject(new Error(`timeout aguardando relay.welcome (${timeoutMs}ms).`))),
       timeoutMs,
     );
   });
@@ -938,6 +1038,7 @@ function logStats(config: RelayHostConfig, stats: SenderStats): void {
   const fpsInput = stats.framesInput / elapsedSec;
   const fpsEncoded = stats.framesEncoded / elapsedSec;
   const kbps = ((stats.bytesSent * 8) / 1000) / elapsedSec;
+  const bytesPerSec = stats.bytesSent / elapsedSec;
   const msgRate = stats.messagesSent / elapsedSec;
 
   console.log(
@@ -956,6 +1057,8 @@ function logStats(config: RelayHostConfig, stats: SenderStats): void {
       fpsInput: Number(fpsInput.toFixed(2)),
       fpsEncoded: Number(fpsEncoded.toFixed(2)),
       sendKbps: Number(kbps.toFixed(2)),
+      bytesPerSec: Number(bytesPerSec.toFixed(2)),
+      hostBytesPerSec: Number(bytesPerSec.toFixed(2)),
       msgRate: Number(msgRate.toFixed(2)),
       pacingWaitMs: Number(stats.pacingWaitMs.toFixed(2)),
       pacingKbps: config.pacingKbps,
@@ -990,8 +1093,54 @@ function logStats(config: RelayHostConfig, stats: SenderStats): void {
 export async function runRelayHost(args: ArgsMap): Promise<void> {
   const config = parseConfig(args);
   const connectUrl = buildRelayConnectUrl(config);
+  const safeConnectUrl = sanitizeRelayConnectUrl(connectUrl);
+
+  console.log(
+    JSON.stringify({
+      tag: 'host-daemon',
+      event: 'relay_sender_start_signal',
+      sessionId: config.sessionId,
+      streamId: config.streamIdText,
+      relayUrl: config.relayUrl,
+      relayConnectUrl: safeConnectUrl,
+      authExpiresAtMs: config.authExpiresAtMs ?? null,
+    }),
+  );
+
+  console.log(
+    JSON.stringify({
+      tag: 'host-daemon',
+      event: 'relay_sender_ws_connect_attempt',
+      sessionId: config.sessionId,
+      streamId: config.streamIdText,
+      url: safeConnectUrl,
+    }),
+  );
+
   const socket = new WebSocket(connectUrl);
   await waitForSocketOpen(socket, 8000);
+  console.log(
+    JSON.stringify({
+      tag: 'host-daemon',
+      event: 'relay_sender_ws_connected',
+      sessionId: config.sessionId,
+      streamId: config.streamIdText,
+      url: safeConnectUrl,
+      readyState: socket.readyState,
+    }),
+  );
+
+  const welcome = await waitForRelayWelcome(socket, config, 4000);
+  console.log(
+    JSON.stringify({
+      tag: 'host-daemon',
+      event: 'relay_sender_room_joined',
+      role: welcome.role,
+      sessionId: welcome.sessionId,
+      streamId: welcome.streamId,
+      connectedAt: welcome.connectedAt ?? null,
+    }),
+  );
 
   const pacer = new BytePacer(config.pacingKbps);
   let encoder: H264Encoder = createH264Encoder({
@@ -1121,14 +1270,47 @@ export async function runRelayHost(args: ArgsMap): Promise<void> {
     socketClosed = true;
     socketCloseCode = event.code;
     socketCloseReason = event.reason;
+    console.warn(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'relay_sender_ws_closed',
+        sessionId: config.sessionId,
+        streamId: config.streamIdText,
+        code: event.code,
+        reason: event.reason || null,
+        wasClean: event.wasClean,
+      }),
+    );
   });
 
   socket.addEventListener('error', () => {
     socketClosed = true;
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'relay_sender_ws_error',
+        sessionId: config.sessionId,
+        streamId: config.streamIdText,
+      }),
+    );
   });
 
   socket.addEventListener('message', (event) => {
     if (typeof event.data !== 'string') {
+      return;
+    }
+    const welcome = parseRelayWelcomeMessage(event.data);
+    if (welcome) {
+      console.log(
+        JSON.stringify({
+          tag: 'host-daemon',
+          event: 'relay_sender_welcome_ack',
+          role: welcome.role,
+          sessionId: welcome.sessionId,
+          streamId: welcome.streamId,
+          connectedAt: welcome.connectedAt ?? null,
+        }),
+      );
       return;
     }
     stats.controlMessages += 1;
@@ -1499,6 +1681,8 @@ export async function runRelayHost(args: ArgsMap): Promise<void> {
       inputDroppedRate: stats.inputDroppedRate,
       inputDroppedBackpressure: stats.inputDroppedBackpressure,
       inputForwardErrors: stats.inputForwardErrors,
+      socketCloseCode,
+      socketCloseReason: socketCloseReason || null,
       durationSec: Number(((Date.now() - stats.startedAtMs) / 1000).toFixed(2)),
     }),
   );

@@ -39,7 +39,7 @@ async function start() {
 
     await app.register(prismaPlugin);
 
-    app.get('/health', async () => ({ status: 'ok' }));
+    app.get('/health', async () => ({ status: 'ok', serverInstanceId }));
 
     await app.register(authRoutes);
     await app.register(favoriteRoutes);

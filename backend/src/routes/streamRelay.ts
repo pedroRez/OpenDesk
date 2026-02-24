@@ -134,6 +134,13 @@ type RelaySocketMeta = {
   windowMessages: number;
 };
 
+type RelayRoomCloseContext = {
+  reason: string;
+  triggerRole?: RelayRole;
+  disconnectCode?: number;
+  disconnectReason?: string | null;
+};
+
 const STREAMABLE_STATES = new Set<SessionStatus>([SessionStatus.PENDING, SessionStatus.ACTIVE]);
 const WS_CLOSE_POLICY_VIOLATION = 1008;
 const WS_CLOSE_RATE_LIMIT = 1013;
@@ -252,13 +259,21 @@ function getOrCreateRoom(sessionId: string, streamId: string, sessionStatus: Ses
   return room;
 }
 
-function cleanupRoomIfIdle(fastify: FastifyInstance, room: RelayRoom): void {
+function cleanupRoomIfIdle(
+  fastify: FastifyInstance,
+  room: RelayRoom,
+  closeContext?: RelayRoomCloseContext,
+): void {
   const isEmpty = room.host === null && room.clients.size === 0;
   if (!isEmpty) return;
   rooms.delete(room.key);
   fastify.log.info(
     {
       event: 'relay_room_closed',
+      closeReason: closeContext?.reason ?? 'no_host_no_client',
+      triggerRole: closeContext?.triggerRole ?? null,
+      disconnectCode: closeContext?.disconnectCode ?? null,
+      disconnectReason: closeContext?.disconnectReason ?? null,
       sessionId: room.sessionId,
       streamId: room.streamId,
       lifetimeMs: Date.now() - room.createdAtMs,
@@ -686,6 +701,21 @@ export async function streamRelayRoutes(fastify: FastifyInstance) {
         },
         'Relay websocket connected',
       );
+      if (query.role === 'host') {
+        fastify.log.info(
+          {
+            event: 'relay_connect_host',
+            sessionId: session.id,
+            streamId: expectedStreamId,
+            userId: query.userId,
+            remoteIp,
+            clients: room.clients.size,
+            hasHost: Boolean(room.host && room.host.readyState === WS_OPEN),
+            roomStats: buildRoomSnapshot(room),
+          },
+          'Relay host connected',
+        );
+      }
 
       socket.send(
         JSON.stringify({
@@ -880,7 +910,12 @@ export async function streamRelayRoutes(fastify: FastifyInstance) {
           'Relay websocket disconnected',
         );
 
-        cleanupRoomIfIdle(fastify, activeRoom);
+        cleanupRoomIfIdle(fastify, activeRoom, {
+          reason: 'no_host_no_client',
+          triggerRole: meta.role,
+          disconnectCode: code,
+          disconnectReason: reason || null,
+        });
       });
 
       socket.on('error', (error: Error) => {

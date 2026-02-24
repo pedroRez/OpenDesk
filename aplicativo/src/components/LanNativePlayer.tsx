@@ -1736,8 +1736,11 @@ export default function LanNativePlayer({
             mouseDeltaRef.current.dy += Math.trunc(event.movementY);
           }}
           onWheel={(event) => {
+            if (connectedRef.current) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
             if (!inputConnectedRef.current || !inputFocusedRef.current) return;
-            event.preventDefault();
             sendInput(
               {
                 type: 'mouse_wheel',

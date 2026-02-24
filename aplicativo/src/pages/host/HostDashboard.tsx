@@ -240,6 +240,7 @@ export default function HostDashboard() {
   const hasPcs = pcs.length > 0;
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastHeartbeatLogRef = useRef<number>(0);
+  const localPcAutoScrollRef = useRef<string | null>(null);
   const autoAbortRef = useRef<AbortController | null>(null);
   const onlineAbortRef = useRef<{ cancelled: boolean }>({ cancelled: false });
   const pcsPollingInterval = useMemo(() => {
@@ -310,8 +311,10 @@ export default function HostDashboard() {
   }, [hostProfileId, localMachineId]);
 
   useEffect(() => {
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
     if (!localMachineId) {
       setLocalPcRecord(null);
+      localPcAutoScrollRef.current = null;
       return;
     }
     const found = pcs.find((pc) => pc.localPcId === localMachineId) ?? null;
@@ -319,13 +322,24 @@ export default function HostDashboard() {
     if (found) {
       setLocalPcId(found.id);
       setPrimaryPcId(found.id);
-      setTimeout(() => {
-        const el = document.getElementById(`pc-card-${found.id}`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 200);
+      const shouldAutoScroll = localPcAutoScrollRef.current !== found.id;
+      if (shouldAutoScroll) {
+        localPcAutoScrollRef.current = found.id;
+        scrollTimer = setTimeout(() => {
+          const el = document.getElementById(`pc-card-${found.id}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 200);
+      }
+    } else {
+      localPcAutoScrollRef.current = null;
     }
+    return () => {
+      if (scrollTimer) {
+        clearTimeout(scrollTimer);
+      }
+    };
   }, [pcs, localMachineId]);
 
   useEffect(() => {

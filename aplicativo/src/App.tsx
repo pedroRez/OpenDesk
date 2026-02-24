@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -24,6 +25,27 @@ import Session from './pages/client/Session';
 import Connection from './pages/client/Connection';
 import HostDashboard from './pages/host/HostDashboard';
 import SetupUsername from './pages/SetupUsername';
+
+const SCROLL_DEBUG_ENABLED =
+  import.meta.env.DEV
+  && ['1', 'true', 'on', 'yes'].includes(
+    String(import.meta.env.VITE_DEBUG_SCROLL_EVENTS ?? '').trim().toLowerCase(),
+  );
+
+function describeEventTarget(target: EventTarget | null): string {
+  if (!target) return 'null';
+  if (target === window) return 'window';
+  if (target === document) return 'document';
+  if (target instanceof HTMLElement) {
+    const id = target.id ? `#${target.id}` : '';
+    const classes = typeof target.className === 'string'
+      ? target.className.trim().split(/\s+/).filter(Boolean).slice(0, 3).join('.')
+      : '';
+    const classToken = classes ? `.${classes}` : '';
+    return `${target.tagName.toLowerCase()}${id}${classToken}`;
+  }
+  return Object.prototype.toString.call(target);
+}
 
 function HomeRedirect() {
   const { mode } = useMode();
@@ -152,6 +174,88 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    if (!SCROLL_DEBUG_ENABLED) return;
+
+    const wheelListener = (event: WheelEvent) => {
+      console.log('[SCROLL_DEBUG] wheel', {
+        ts: Date.now(),
+        target: describeEventTarget(event.target),
+        currentTarget: describeEventTarget(event.currentTarget),
+        deltaX: Number(event.deltaX.toFixed(2)),
+        deltaY: Number(event.deltaY.toFixed(2)),
+        deltaMode: event.deltaMode,
+        defaultPrevented: event.defaultPrevented,
+      });
+    };
+
+    const scrollListener = (event: Event) => {
+      const target = event.target as EventTarget | null;
+      const scrollTop =
+        target instanceof Document
+          ? target.scrollingElement?.scrollTop ?? null
+          : target instanceof HTMLElement
+            ? target.scrollTop
+            : null;
+      console.log('[SCROLL_DEBUG] scroll', {
+        ts: Date.now(),
+        target: describeEventTarget(target),
+        currentTarget: describeEventTarget(event.currentTarget),
+        scrollTop,
+      });
+    };
+
+    const originalWindowScrollTo = window.scrollTo;
+    const originalElementScrollIntoView = Element.prototype.scrollIntoView;
+    const originalElementScrollTo = Element.prototype.scrollTo;
+
+    window.scrollTo = ((...args: unknown[]) => {
+      console.warn('[SCROLL_DEBUG] programmatic window.scrollTo', {
+        ts: Date.now(),
+        args,
+        stack: new Error().stack ?? null,
+      });
+      return (originalWindowScrollTo as (...innerArgs: unknown[]) => void)(...args);
+    }) as typeof window.scrollTo;
+
+    Element.prototype.scrollIntoView = function scrollIntoViewPatched(
+      ...args: Parameters<Element['scrollIntoView']>
+    ): void {
+      console.warn('[SCROLL_DEBUG] programmatic element.scrollIntoView', {
+        ts: Date.now(),
+        target: describeEventTarget(this),
+        args,
+        stack: new Error().stack ?? null,
+      });
+      return originalElementScrollIntoView.apply(this, args);
+    };
+
+    Element.prototype.scrollTo = function scrollToPatched(
+      ...args: Parameters<Element['scrollTo']>
+    ): void {
+      console.warn('[SCROLL_DEBUG] programmatic element.scrollTo', {
+        ts: Date.now(),
+        target: describeEventTarget(this),
+        args,
+        stack: new Error().stack ?? null,
+      });
+      return originalElementScrollTo.apply(this, args);
+    };
+
+    window.addEventListener('wheel', wheelListener, { capture: true, passive: false });
+    window.addEventListener('scroll', scrollListener, { capture: true, passive: true });
+    console.info('[SCROLL_DEBUG] enabled');
+
+    return () => {
+      window.removeEventListener('wheel', wheelListener, { capture: true });
+      window.removeEventListener('scroll', scrollListener, { capture: true });
+      window.scrollTo = originalWindowScrollTo;
+      Element.prototype.scrollIntoView = originalElementScrollIntoView;
+      Element.prototype.scrollTo = originalElementScrollTo;
+      console.info('[SCROLL_DEBUG] disabled');
+    };
+  }, []);
+
   return (
     <ModeProvider>
       <AuthProvider>

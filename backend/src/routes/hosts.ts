@@ -6,6 +6,7 @@ import { endSession } from '../services/sessionService.js';
 import { getReliabilityBadge, getReliabilityStats, getReliabilityStatsMap } from '../services/hostReliabilityStats.js';
 import { sanitizeHost } from '../utils/hostPublic.js';
 import { requireUser } from '../utils/auth.js';
+import { serverInstanceId } from '../instance.js';
 import { PCStatus, QueueEntryStatus, SessionStatus } from '@prisma/client';
 
 import type { FastifyInstance } from 'fastify';
@@ -287,7 +288,8 @@ export async function hostRoutes(fastify: FastifyInstance) {
       throw error;
     }
 
-    return { ok: true };
+    reply.header('x-server-instance-id', serverInstanceId);
+    return { ok: true, serverInstanceId };
   });
 
   fastify.post('/host/pcs/:pcId/disconnect', async (request, reply) => {

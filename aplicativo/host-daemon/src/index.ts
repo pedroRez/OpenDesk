@@ -23,6 +23,59 @@ const FAILURE_ALERT_THRESHOLD = Number(process.env.HEARTBEAT_FAILURE_ALERT_THRES
 const PING_INTERVAL_MS = Number(process.env.HEARTBEAT_PING_INTERVAL_MS ?? 300000);
 const PING_TIMEOUT_MS = Number(process.env.HEARTBEAT_PING_TIMEOUT_MS ?? REQUEST_TIMEOUT_MS);
 
+type BackendErrorType = 'timeout' | 'refused' | 'dns' | 'network';
+
+function readErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const withCode = error as { code?: unknown; cause?: unknown };
+  if (typeof withCode.code === 'string' && withCode.code.trim()) {
+    return withCode.code.trim().toUpperCase();
+  }
+  if (withCode.cause && typeof withCode.cause === 'object') {
+    const cause = withCode.cause as { code?: unknown };
+    if (typeof cause.code === 'string' && cause.code.trim()) {
+      return cause.code.trim().toUpperCase();
+    }
+  }
+  return null;
+}
+
+function classifyBackendError(error: unknown): BackendErrorType {
+  if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+    return 'timeout';
+  }
+
+  const code = readErrorCode(error);
+  if (code === 'ECONNREFUSED') return 'refused';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'dns';
+  if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') return 'timeout';
+  return 'network';
+}
+
+function extractServerInstanceIdFromJson(input: unknown): string | null {
+  if (!input || typeof input !== 'object') return null;
+  const value = (input as { serverInstanceId?: unknown }).serverInstanceId;
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+let observedBackendInstanceId: string | null = null;
+
+function trackBackendInstance(endpoint: string, backendInstanceId: string | null): void {
+  if (!backendInstanceId) return;
+  if (observedBackendInstanceId && observedBackendInstanceId !== backendInstanceId) {
+    console.warn(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'backend_instance_changed',
+        previousServerInstanceId: observedBackendInstanceId,
+        serverInstanceId: backendInstanceId,
+        endpoint,
+      }),
+    );
+  }
+  observedBackendInstanceId = backendInstanceId;
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
   const map = new Map<string, string>();
@@ -231,6 +284,16 @@ async function sendHeartbeat() {
       }
       return;
     }
+    let responsePayload: unknown = null;
+    if ((response.headers.get('content-type') ?? '').toLowerCase().includes('application/json')) {
+      responsePayload = await response.json().catch(() => null);
+    }
+    const backendInstanceId =
+      extractServerInstanceIdFromJson(responsePayload)
+      ?? response.headers.get('x-server-instance-id')
+      ?? null;
+    trackBackendInstance(`${config.apiUrl}/hosts/${config.hostId}/heartbeat`, backendInstanceId);
+
     heartbeatFailures = 0;
     failureAlerted = false;
     console.log(
@@ -244,26 +307,27 @@ async function sendHeartbeat() {
         durationMs,
         statusCode: response.status,
         endpoint: `${config.apiUrl}/hosts/${config.hostId}/heartbeat`,
+        backendInstanceId,
       }),
     );
   } catch (error) {
     const durationMs = Date.now() - now;
     heartbeatFailures += 1;
-    const isTimeout =
-      error && typeof error === 'object' && 'name' in error && error.name === 'AbortError';
+    const errorType = classifyBackendError(error);
+    const errorCode = readErrorCode(error);
     const errorMessage =
-      isTimeout
+      errorType === 'timeout'
         ? 'timeout'
         : error instanceof Error
           ? error.message
           : String(error ?? 'unknown');
-    const errorType = isTimeout ? 'timeout' : 'network';
     console.error(
       JSON.stringify({
         tag: 'host-daemon',
         event: 'heartbeat',
         result: 'error',
         errorType,
+        errorCode,
         hostId: config.hostId,
         seq,
         sentAt,
@@ -357,6 +421,17 @@ const pingBackend = async () => {
       );
       return;
     }
+
+    let payload: unknown = null;
+    if ((response.headers.get('content-type') ?? '').toLowerCase().includes('application/json')) {
+      payload = await response.json().catch(() => null);
+    }
+    const backendInstanceId =
+      extractServerInstanceIdFromJson(payload)
+      ?? response.headers.get('x-server-instance-id')
+      ?? null;
+    trackBackendInstance(`${config.apiUrl}/health`, backendInstanceId);
+
     console.log(
       JSON.stringify({
         tag: 'host-daemon',
@@ -366,12 +441,15 @@ const pingBackend = async () => {
         statusCode: response.status,
         durationMs,
         endpoint: `${config.apiUrl}/health`,
+        backendInstanceId,
       }),
     );
   } catch (error) {
     const durationMs = Date.now() - started;
+    const errorType = classifyBackendError(error);
+    const errorCode = readErrorCode(error);
     const errorMessage =
-      error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+      errorType === 'timeout'
         ? 'timeout'
         : error instanceof Error
           ? error.message
@@ -382,6 +460,8 @@ const pingBackend = async () => {
         event: 'backend_ping',
         result: 'error',
         hostId: config.hostId,
+        errorType,
+        errorCode,
         statusCode: 0,
         durationMs,
         errorMessage,
