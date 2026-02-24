@@ -31,6 +31,10 @@ const SCROLL_DEBUG_ENABLED =
   && ['1', 'true', 'on', 'yes'].includes(
     String(import.meta.env.VITE_DEBUG_SCROLL_EVENTS ?? '').trim().toLowerCase(),
   );
+const BOOT_CONFIG_LOG_ENABLED =
+  import.meta.env.DEV
+  || ['1', 'true', 'on', 'yes'].includes(String(import.meta.env.VITE_LOG_BOOT_CONFIG ?? '').trim().toLowerCase());
+let bootConfigLogged = false;
 
 function describeEventTarget(target: EventTarget | null): string {
   if (!target) return 'null';
@@ -174,6 +178,22 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    if (!BOOT_CONFIG_LOG_ENABLED || bootConfigLogged) return;
+    bootConfigLogged = true;
+    const w = window as unknown as {
+      __TAURI__?: unknown;
+      __TAURI_INTERNALS__?: unknown;
+      __TAURI_INVOKE__?: unknown;
+    };
+    console.info('[APP_BOOT]', {
+      apiUrl: import.meta.env.VITE_API_URL ?? 'http://localhost:3333',
+      streamingMode: import.meta.env.VITE_STREAMING_MODE ?? 'AUTO',
+      hostDaemonEntry: import.meta.env.VITE_HOST_DAEMON_ENTRY ?? null,
+      runtime: (w.__TAURI__ || w.__TAURI_INTERNALS__ || w.__TAURI_INVOKE__) ? 'tauri' : 'web',
+    });
+  }, []);
+
   useEffect(() => {
     if (!SCROLL_DEBUG_ENABLED) return;
 

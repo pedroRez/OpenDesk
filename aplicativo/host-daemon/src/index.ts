@@ -382,7 +382,18 @@ async function sendHeartbeat(): Promise<boolean> {
 }
 
 console.log(
-  `host-daemon: iniciado (hostId=${config.hostId}, interval=${config.intervalMs}ms, retryDelay=${HEARTBEAT_RETRY_DELAY_MS}ms, maxRetries=${HEARTBEAT_MAX_RETRIES})`,
+  JSON.stringify({
+    tag: 'host-daemon',
+    event: 'startup',
+    mode: 'heartbeat',
+    hostId: config.hostId,
+    apiUrl: config.apiUrl,
+    intervalMs: config.intervalMs,
+    requestTimeoutMs: REQUEST_TIMEOUT_MS,
+    retryDelayMs: HEARTBEAT_RETRY_DELAY_MS,
+    maxRetries: HEARTBEAT_MAX_RETRIES,
+    pingIntervalMs: PING_INTERVAL_MS,
+  }),
 );
 
 let loopTimer: NodeJS.Timeout | null = null;

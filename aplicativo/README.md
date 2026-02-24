@@ -10,7 +10,7 @@ Este pacote contem o aplicativo desktop unico do OpenDesk, com escolha de modo C
 ## Como rodar (MVP)
 1) Configure a API:
 - copie `aplicativo/.env.example` para `aplicativo/.env`
-- ajuste `VITE_API_URL` (ex: `http://localhost:3333`)
+- ajuste `VITE_API_URL` (ex: `http://127.0.0.1:3333` no host local)
 - (DEV) Para ignorar creditos no fluxo de reserva: `VITE_DEV_BYPASS_CREDITS=true`
 
 2) Suba o backend (se necessario):

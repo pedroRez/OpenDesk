@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 
+import { getEnvBootstrapInfo } from './bootstrapEnv.js';
 import { config } from './config.js';
 import { prismaPlugin } from './plugins/prisma.js';
 import { authRoutes } from './routes/auth.js';
@@ -16,6 +17,34 @@ import { walletRoutes } from './routes/wallet.js';
 import { handleHostTimeouts } from './services/hostHeartbeat.js';
 import { serverInstanceId } from './instance.js';
 import { expirePromotedSlots, expireSessions } from './services/sessionService.js';
+
+function maskSecret(secret: string | undefined): string | null {
+  const value = secret?.trim();
+  if (!value) return null;
+  if (value.length <= 4) return '*'.repeat(value.length);
+  return `${value.slice(0, 2)}***${value.slice(-2)}`;
+}
+
+function summarizeDatabaseUrl(raw: string | undefined): {
+  host: string | null;
+  port: number | null;
+  database: string | null;
+} | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    const database = parsed.pathname.replace(/^\/+/, '').trim() || null;
+    const port = parsed.port.trim() ? Number(parsed.port) : null;
+    return {
+      host: parsed.hostname || null,
+      port: Number.isFinite(port ?? NaN) ? port : null,
+      database,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const app = Fastify({
   logger: {
@@ -105,6 +134,24 @@ async function start() {
       }
     }, config.hostHeartbeatCheckIntervalMs);
 
+    const envBootstrap = getEnvBootstrapInfo();
+    app.log.info({
+      envBootstrap,
+      env: {
+        PORT: config.port,
+        DATABASE_URL: summarizeDatabaseUrl(process.env.DATABASE_URL),
+        LOG_LEVEL: config.logLevel,
+        LOG_HEARTBEAT: config.logHeartbeat,
+        HEARTBEAT_LOG_SAMPLE_SECONDS: config.heartbeatLogSampleSeconds,
+        HOST_HEARTBEAT_TIMEOUT_MS: config.hostHeartbeatTimeoutMs,
+        HOST_HEARTBEAT_TIMEOUT_ACTIVE_MS: config.hostHeartbeatTimeoutActiveMs,
+        HOST_HEARTBEAT_CHECK_INTERVAL_MS: config.hostHeartbeatCheckIntervalMs,
+        HOST_OFFLINE_GRACE_SECONDS: config.hostOfflineGraceSeconds,
+        HOST_OFFLINE_GRACE_ACTIVE_SECONDS: config.hostOfflineGraceActiveSeconds,
+        JWT_SECRET_MASKED: maskSecret(process.env.JWT_SECRET),
+      },
+      serverInstanceId,
+    }, 'Backend env snapshot');
     app.log.info({ serverInstanceId }, 'Backend instance started');
     await app.listen({ port: config.port, host: '0.0.0.0' });
   } catch (error) {
