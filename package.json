@@ -15,6 +15,9 @@
     "firewall:status": "powershell -ExecutionPolicy Bypass -File scripts/windows/opendesk-firewall.ps1 -Action Status",
     "firewall:open": "powershell -ExecutionPolicy Bypass -File scripts/windows/opendesk-firewall.ps1 -Action Install",
     "firewall:close": "powershell -ExecutionPolicy Bypass -File scripts/windows/opendesk-firewall.ps1 -Action Remove",
+    "firewall:sunshine:status": "powershell -ExecutionPolicy Bypass -File scripts/windows/sunshine-firewall.ps1 -Action Status",
+    "firewall:sunshine:open": "powershell -ExecutionPolicy Bypass -File scripts/windows/sunshine-firewall.ps1 -Action Install -ClearManagedRules",
+    "firewall:sunshine:close": "powershell -ExecutionPolicy Bypass -File scripts/windows/sunshine-firewall.ps1 -Action Remove",
     "lint": "pnpm --filter backend lint && pnpm --filter web lint",
     "format": "prettier --write .",
     "test": "pnpm --filter backend test"
