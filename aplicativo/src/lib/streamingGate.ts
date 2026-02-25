@@ -12,6 +12,8 @@ type GatePortsSpec = {
   udp: string;
 };
 
+type CommandPayload = string | Uint8Array;
+
 export type StreamingGateOptions = {
   clientAddress?: string | null;
   extraPorts?: number[];
@@ -57,13 +59,24 @@ const buildPortSpec = (extraPorts: number[] = []): GatePortsSpec => {
 
 const buildRuleName = (pcId: string) => `${FIREWALL_RULE_PREFIX} ${pcId}`;
 
+const decodePayload = (value: CommandPayload | null | undefined): string => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  // netsh on Windows may emit non-UTF8 bytes; decode as windows-1252 when available.
+  try {
+    return new TextDecoder('windows-1252').decode(value);
+  } catch {
+    return new TextDecoder().decode(value);
+  }
+};
+
 const execNetsh = async (args: string[]) => {
-  const command = Command.create('netsh', args);
+  const command = Command.create('netsh', args, { encoding: 'raw' });
   const result = await command.execute();
   return {
     code: result.code ?? 0,
-    stdout: (result.stdout ?? '').toString().trim(),
-    stderr: (result.stderr ?? '').toString().trim(),
+    stdout: decodePayload(result.stdout).trim(),
+    stderr: decodePayload(result.stderr).trim(),
   };
 };
 

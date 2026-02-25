@@ -1,5 +1,6 @@
 import { once } from 'node:events';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
 import process from 'node:process';
 
 export type RawFramePixelFormat = 'nv12' | 'rgba';
@@ -109,10 +110,88 @@ function detectGpuVendor(adapters: string[]): GpuVendor {
   return 'unknown';
 }
 
+function resolveWindowsEnvPath(name: string): string | null {
+  const value = process.env[name];
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function collectWindowsFfmpegCandidatesFromBase(baseDir: string): string[] {
+  const candidates: string[] = [];
+  try {
+    const entries = readdirSync(baseDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const root = `${baseDir}\\${entry.name}`;
+      candidates.push(`${root}\\ffmpeg.exe`);
+      candidates.push(`${root}\\bin\\ffmpeg.exe`);
+      candidates.push(`${root}\\tools\\ffmpeg.exe`);
+    }
+  } catch {
+    // ignore directory read errors
+  }
+  return candidates;
+}
+
+function detectFfmpegPathOnWindows(): string | null {
+  const whereProbe = spawnSync('where', ['ffmpeg'], { encoding: 'utf8' });
+  if (!whereProbe.error && whereProbe.status === 0) {
+    const first = (whereProbe.stdout ?? '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0);
+    if (first) {
+      return first;
+    }
+  }
+
+  const explicitBases = [
+    resolveWindowsEnvPath('ProgramFiles'),
+    resolveWindowsEnvPath('ProgramW6432'),
+    resolveWindowsEnvPath('ProgramFiles(x86)'),
+  ].filter((value): value is string => Boolean(value));
+
+  const fallbackBases = ['C:\\Program Files', 'C:\\Program Files (x86)'];
+  const allBases = Array.from(new Set([...explicitBases, ...fallbackBases]));
+  for (const baseDir of allBases) {
+    for (const candidate of collectWindowsFfmpegCandidatesFromBase(baseDir)) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolveFfmpegPath(requestedPath: string | undefined): string {
+  const explicit = requestedPath?.trim() || process.env.FFMPEG_PATH?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  if (process.platform === 'win32') {
+    const detected = detectFfmpegPathOnWindows();
+    if (detected) {
+      console.log(
+        JSON.stringify({
+          tag: 'host-daemon',
+          event: 'ffmpeg_path_auto_detected',
+          ffmpegPath: detected,
+        }),
+      );
+      return detected;
+    }
+  }
+  return DEFAULT_FFMPEG_PATH;
+}
+
 function assertFfmpegAvailable(ffmpegPath: string): void {
   const probe = spawnSync(ffmpegPath, ['-version'], { encoding: 'utf8' });
   if (probe.error) {
-    throw new Error(`ffmpeg nao encontrado (${ffmpegPath}). ${probe.error.message}`);
+    throw new Error(
+      `ffmpeg nao encontrado (${ffmpegPath}). ${probe.error.message}. Configure FFMPEG_PATH com caminho absoluto do ffmpeg.exe.`,
+    );
   }
   if (probe.status !== 0) {
     throw new Error(`falha ao executar ffmpeg (${ffmpegPath}). ${(probe.stderr ?? probe.stdout ?? '').trim()}`);
@@ -131,7 +210,7 @@ function listAvailableEncoders(ffmpegPath: string): H264EncoderImplementation[] 
 }
 
 function resolveEncoderSelection(init: H264EncoderInit): H264EncoderSelection {
-  const ffmpegPath = init.ffmpegPath ?? process.env.FFMPEG_PATH ?? DEFAULT_FFMPEG_PATH;
+  const ffmpegPath = resolveFfmpegPath(init.ffmpegPath);
   assertFfmpegAvailable(ffmpegPath);
 
   const availableEncoders = listAvailableEncoders(ffmpegPath);
@@ -354,7 +433,7 @@ class FfmpegH264Encoder implements H264Encoder {
       throw new Error('fps invalido para encoder H.264.');
     }
 
-    const ffmpegPath = init.ffmpegPath ?? process.env.FFMPEG_PATH ?? DEFAULT_FFMPEG_PATH;
+    const ffmpegPath = resolveFfmpegPath(init.ffmpegPath);
     const normalized: H264EncoderInit = {
       ...init,
       ffmpegPath,
