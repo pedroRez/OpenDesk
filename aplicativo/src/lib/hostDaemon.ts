@@ -6,6 +6,14 @@ const DEFAULT_RELAY_DURATION_SEC = 36000;
 const DEFAULT_RELAY_STATS_INTERVAL_SEC = 1;
 const DEFAULT_LAN_DURATION_SEC = 36000;
 const DEFAULT_LAN_STATS_INTERVAL_SEC = 1;
+const DEFAULT_LAN_WIDTH = 960;
+const DEFAULT_LAN_HEIGHT = 540;
+const DEFAULT_LAN_FPS = 24;
+const DEFAULT_LAN_BITRATE_KBPS = 2200;
+const DEFAULT_LAN_MIN_BITRATE_KBPS = 700;
+const DEFAULT_LAN_KEYFRAME_INTERVAL = 48;
+const DEFAULT_LAN_BITRATE_STEP_PCT = 0.75;
+const DEFAULT_LAN_MAX_PAYLOAD_BYTES = 1100;
 
 type DaemonProcess = Child;
 
@@ -516,6 +524,22 @@ export async function startHostLanDaemon(
     streamId,
     '--auth-token',
     authToken,
+    '--width',
+    String(DEFAULT_LAN_WIDTH),
+    '--height',
+    String(DEFAULT_LAN_HEIGHT),
+    '--fps',
+    String(DEFAULT_LAN_FPS),
+    '--bitrate-kbps',
+    String(DEFAULT_LAN_BITRATE_KBPS),
+    '--min-bitrate-kbps',
+    String(DEFAULT_LAN_MIN_BITRATE_KBPS),
+    '--keyint',
+    String(DEFAULT_LAN_KEYFRAME_INTERVAL),
+    '--bitrate-step-pct',
+    String(DEFAULT_LAN_BITRATE_STEP_PCT),
+    '--max-payload-bytes',
+    String(DEFAULT_LAN_MAX_PAYLOAD_BYTES),
     '--duration-sec',
     String(Math.max(1, Math.trunc(config.durationSec ?? DEFAULT_LAN_DURATION_SEC))),
     '--stats-interval-sec',

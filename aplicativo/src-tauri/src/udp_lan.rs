@@ -14,8 +14,8 @@ const UDP_VERSION: u8 = 1;
 const UDP_HEADER_SIZE: usize = 38;
 const DEFAULT_LISTEN_HOST: &str = "0.0.0.0";
 const DEFAULT_LISTEN_PORT: u16 = 5004;
-const DEFAULT_MAX_FRAME_AGE_MS: u64 = 40;
-const DEFAULT_MAX_PENDING_FRAMES: usize = 96;
+const DEFAULT_MAX_FRAME_AGE_MS: u64 = 250;
+const DEFAULT_MAX_PENDING_FRAMES: usize = 128;
 const DEFAULT_STATS_INTERVAL_MS: u64 = 1000;
 
 #[derive(Deserialize, Clone)]

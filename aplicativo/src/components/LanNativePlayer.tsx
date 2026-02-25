@@ -199,6 +199,8 @@ const RELAY_FLAG_KEYFRAME = 1;
 const RELAY_FRAME_HEADER_BYTES = 9;
 const DEFAULT_LISTEN_PORT = 5004;
 const DEFAULT_INPUT_PORT = 5505;
+const DEFAULT_LAN_MAX_FRAME_AGE_MS = 250;
+const DEFAULT_LAN_MAX_PENDING_FRAMES = 128;
 const RELAY_PING_INTERVAL_MS = 5000;
 const RELAY_PONG_TIMEOUT_MS = 12_000;
 const RELAY_DEGRADED_FREEZE_MS = 1800;
@@ -1210,8 +1212,8 @@ export default function LanNativePlayer({
           listenHost: '0.0.0.0',
           listenPort: udpPort,
           streamId: streamId.trim() || undefined,
-          maxFrameAgeMs: 40,
-          maxPendingFrames: 96,
+          maxFrameAgeMs: DEFAULT_LAN_MAX_FRAME_AGE_MS,
+          maxPendingFrames: DEFAULT_LAN_MAX_PENDING_FRAMES,
           statsIntervalMs: 1000,
           probeHost: inputHost.trim() || undefined,
           probePort: udpPort,
