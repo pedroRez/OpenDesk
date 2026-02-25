@@ -291,7 +291,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       tokenExpiresAt: tokenRecord.expiresAt.toISOString(),
       connectAddress: `${fallbackHost}:${videoPort}`,
       transport: {
-        recommended: 'RELAY_WS',
+        recommended: 'UDP_LAN',
         relay: {
           mode: 'RELAY_WS',
           url: relayUrl,

@@ -66,19 +66,19 @@ export function resolveNativeTransport(
   const recommended = signal.transport?.recommended ?? null;
 
   if (mode === 'OPENDESK_ONLY') {
-    if (relayAvailable) return { transport: 'relay', reason: 'opendesk_only_relay' };
-    if (lanAvailable) return { transport: 'lan', reason: 'opendesk_only_lan_fallback' };
+    if (lanAvailable) return { transport: 'lan', reason: 'opendesk_only_lan' };
+    if (relayAvailable) return { transport: 'relay', reason: 'opendesk_only_relay_fallback' };
     return { transport: null, reason: 'opendesk_only_no_transport' };
   }
 
-  if (recommended === 'RELAY_WS' && relayAvailable) {
-    return { transport: 'relay', reason: 'auto_recommended_relay' };
-  }
   if (recommended === 'UDP_LAN' && lanAvailable) {
     return { transport: 'lan', reason: 'auto_recommended_lan' };
   }
-  if (relayAvailable) return { transport: 'relay', reason: 'auto_fallback_relay' };
+  if (recommended === 'RELAY_WS' && relayAvailable) {
+    return { transport: 'relay', reason: 'auto_recommended_relay' };
+  }
   if (lanAvailable) return { transport: 'lan', reason: 'auto_fallback_lan' };
+  if (relayAvailable) return { transport: 'relay', reason: 'auto_fallback_relay' };
 
   if (recommended === 'RELAY_WS') {
     return { transport: null, reason: 'auto_recommended_relay_missing' };

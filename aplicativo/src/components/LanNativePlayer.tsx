@@ -402,6 +402,8 @@ export default function LanNativePlayer({
   const reconnectInFlightRef = useRef(false);
   const requestKeyframeRef = useRef<(reason: string, freezeMs?: number) => void>(() => undefined);
   const decoderAwaitingKeyframeRef = useRef(true);
+  const hasRenderedFirstFrameRef = useRef(false);
+  const reconnectBlockedBeforeFirstFrameRef = useRef(false);
   const latestNetworkRef = useRef({
     lossPct: 0,
     jitterMs: 0,
@@ -593,6 +595,8 @@ export default function LanNativePlayer({
               videoFrame.close();
               countersRef.current.renderedFrames += 1;
               renderedFramesTotalRef.current += 1;
+              hasRenderedFirstFrameRef.current = true;
+              reconnectBlockedBeforeFirstFrameRef.current = false;
               lastRenderAtRef.current = performance.now();
             },
             error: (error: unknown) => {
@@ -877,6 +881,17 @@ export default function LanNativePlayer({
       if (effectiveTransportMode !== 'relay') return;
       if (manualDisconnectRef.current) return;
       if (lockConnectionToSession && !isSessionConnectAllowed) return;
+      if (!hasRenderedFirstFrameRef.current) {
+        if (!reconnectBlockedBeforeFirstFrameRef.current) {
+          reconnectBlockedBeforeFirstFrameRef.current = true;
+          applyStreamHealth('degraded');
+          setStatus(
+            `Reconexao automatica bloqueada (${reason}) antes do primeiro frame. Clique em "Tentar novamente".`,
+          );
+        }
+        return;
+      }
+      reconnectBlockedBeforeFirstFrameRef.current = false;
       if (isTokenExpired(inputTokenExpiresAt)) {
         setStatus('Reconexao automatica bloqueada: token expirado.');
         return;
@@ -1097,6 +1112,8 @@ export default function LanNativePlayer({
       manualDisconnectRef.current = false;
       reconnectAttemptRef.current = 0;
       setReconnectAttempts(0);
+      hasRenderedFirstFrameRef.current = false;
+      reconnectBlockedBeforeFirstFrameRef.current = false;
     }
     clearReconnectTimer();
 
