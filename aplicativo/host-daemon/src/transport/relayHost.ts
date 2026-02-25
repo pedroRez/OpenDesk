@@ -167,6 +167,8 @@ type BitrateProfileState = {
 
 const RELAY_FLAG_KEYFRAME = 1 << 0;
 const RELAY_FRAME_HEADER_SIZE = 9;
+const H264_NAL_SPS = 7;
+const H264_NAL_PPS = 8;
 const MAX_CONTROL_MESSAGE_BYTES = 4096;
 const DEFAULT_DURATION_SEC = 600;
 const DEFAULT_WIDTH = 1280;
@@ -849,8 +851,50 @@ function makeFrame(config: RelayHostConfig, frameIndex: number): RawVideoFrame {
   };
 }
 
-function buildRelayFrame(chunk: H264NaluChunk): Buffer {
-  const payload = chunk.annexB;
+function buildAnnexBFromNalus(nalus: Buffer[]): Buffer {
+  if (nalus.length === 0) return Buffer.alloc(0);
+  const startCodeSize = 4;
+  const total = nalus.reduce((sum, nalu) => sum + startCodeSize + nalu.length, 0);
+  const out = Buffer.allocUnsafe(total);
+  let offset = 0;
+  for (const nalu of nalus) {
+    out.writeUInt32BE(0x00000001, offset);
+    offset += startCodeSize;
+    nalu.copy(out, offset);
+    offset += nalu.length;
+  }
+  return out;
+}
+
+type CodecConfigState = {
+  sps: Buffer | null;
+  pps: Buffer | null;
+};
+
+function updateCodecConfigState(state: CodecConfigState, chunk: H264NaluChunk): void {
+  for (const nalu of chunk.nalus) {
+    if (nalu.length === 0) continue;
+    const nalType = nalu[0] & 0x1f;
+    if (nalType === H264_NAL_SPS) {
+      state.sps = Buffer.from(nalu);
+      continue;
+    }
+    if (nalType === H264_NAL_PPS) {
+      state.pps = Buffer.from(nalu);
+    }
+  }
+}
+
+function buildCodecConfigAnnexB(state: CodecConfigState): Buffer | null {
+  if (!state.sps || !state.pps) return null;
+  return buildAnnexBFromNalus([state.sps, state.pps]);
+}
+
+function buildRelayFrame(chunk: H264NaluChunk, codecConfigAnnexB?: Buffer | null): Buffer {
+  let payload = chunk.annexB;
+  if (chunk.isKeyframe && !chunk.hasSps && !chunk.hasPps && codecConfigAnnexB && codecConfigAnnexB.length > 0) {
+    payload = Buffer.concat([codecConfigAnnexB, payload]);
+  }
   const out = Buffer.allocUnsafe(RELAY_FRAME_HEADER_SIZE + payload.length);
   out[0] = chunk.isKeyframe ? RELAY_FLAG_KEYFRAME : 0;
   out.writeBigUInt64BE(chunk.producedAtUs >= 0 ? BigInt(chunk.producedAtUs) : 0n, 1);
@@ -1556,6 +1600,7 @@ export async function runRelayHost(args: ArgsMap): Promise<void> {
   const frameIntervalMs = 1000 / config.fps;
   const loopStartMs = Date.now();
   let lastStatsLogMs = loopStartMs;
+  const codecConfigState: CodecConfigState = { sps: null, pps: null };
 
   try {
     for (let frameIndex = 0; frameIndex < totalInputFrames; frameIndex += 1) {
@@ -1599,7 +1644,10 @@ export async function runRelayHost(args: ArgsMap): Promise<void> {
         if (chunk.isKeyframe) {
           stats.keyframes += 1;
         }
-        const payload = buildRelayFrame(chunk);
+        if (chunk.hasSps || chunk.hasPps) {
+          updateCodecConfigState(codecConfigState, chunk);
+        }
+        const payload = buildRelayFrame(chunk, buildCodecConfigAnnexB(codecConfigState));
 
         try {
           await pacer.pace(payload.length);
@@ -1624,7 +1672,10 @@ export async function runRelayHost(args: ArgsMap): Promise<void> {
 
     const tailChunks = await encoder.flush();
     for (const chunk of tailChunks) {
-      const payload = buildRelayFrame(chunk);
+      if (chunk.hasSps || chunk.hasPps) {
+        updateCodecConfigState(codecConfigState, chunk);
+      }
+      const payload = buildRelayFrame(chunk, buildCodecConfigAnnexB(codecConfigState));
       await pacer.pace(payload.length);
       await sendRelayFrame(socket, payload);
       stats.framesEncoded += 1;
