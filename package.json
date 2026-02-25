@@ -12,6 +12,9 @@
   "scripts": {
     "dev": "concurrently -k -n backend,web,desktop -c blue,green,magenta \"pnpm --filter backend dev\" \"pnpm --filter web dev\" \"pnpm --filter aplicativo dev\"",
     "dev:desktop": "node scripts/dev-desktop.mjs",
+    "firewall:status": "powershell -ExecutionPolicy Bypass -File scripts/windows/opendesk-firewall.ps1 -Action Status",
+    "firewall:open": "powershell -ExecutionPolicy Bypass -File scripts/windows/opendesk-firewall.ps1 -Action Install",
+    "firewall:close": "powershell -ExecutionPolicy Bypass -File scripts/windows/opendesk-firewall.ps1 -Action Remove",
     "lint": "pnpm --filter backend lint && pnpm --filter web lint",
     "format": "prettier --write .",
     "test": "pnpm --filter backend test"
