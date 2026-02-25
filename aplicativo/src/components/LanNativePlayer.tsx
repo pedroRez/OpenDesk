@@ -48,6 +48,7 @@ type DecoderSetup = {
     decode: (chunk: unknown) => void;
     close: () => void;
     flush: () => Promise<void>;
+    reset?: () => void;
     decodeQueueSize?: number;
   };
   encodedChunkCtor: new (options: {
@@ -303,6 +304,42 @@ function parseRelayFramePayload(input: Blob | ArrayBuffer | Uint8Array): {
   };
 }
 
+function hasH264IdrNalu(payload: Uint8Array): boolean {
+  const length = payload.byteLength;
+  let index = 0;
+  while (index + 4 < length) {
+    if (payload[index] !== 0 || payload[index + 1] !== 0) {
+      index += 1;
+      continue;
+    }
+
+    let naluStart = -1;
+    if (payload[index + 2] === 1) {
+      naluStart = index + 3;
+    } else if (index + 4 < length && payload[index + 2] === 0 && payload[index + 3] === 1) {
+      naluStart = index + 4;
+    }
+
+    if (naluStart <= 0 || naluStart >= length) {
+      index += 1;
+      continue;
+    }
+
+    const naluType = payload[naluStart] & 0x1f;
+    if (naluType === 5) {
+      return true;
+    }
+    index = naluStart + 1;
+  }
+  return false;
+}
+
+function isDecoderKeyframeRequiredError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const normalized = message.toLowerCase();
+  return normalized.includes('key frame is required') || normalized.includes('keyframe is required');
+}
+
 export default function LanNativePlayer({
   transportMode = 'lan',
   defaultPort,
@@ -360,6 +397,7 @@ export default function LanNativePlayer({
   });
   const reconnectInFlightRef = useRef(false);
   const requestKeyframeRef = useRef<(reason: string, freezeMs?: number) => void>(() => undefined);
+  const decoderAwaitingKeyframeRef = useRef(true);
   const latestNetworkRef = useRef({
     lossPct: 0,
     jitterMs: 0,
@@ -460,6 +498,7 @@ export default function LanNativePlayer({
     const decoder = decoderRef.current;
     decoderRef.current = null;
     encodedChunkCtorRef.current = null;
+    decoderAwaitingKeyframeRef.current = true;
     if (!decoder) return;
     try {
       await decoder.flush().catch(() => undefined);
@@ -472,6 +511,15 @@ export default function LanNativePlayer({
   const clearDecoderBufferShort = useCallback(async () => {
     const decoder = decoderRef.current;
     if (!decoder) return;
+    decoderAwaitingKeyframeRef.current = true;
+    if (typeof decoder.reset === 'function') {
+      try {
+        decoder.reset();
+        return;
+      } catch {
+        // fallback to flush
+      }
+    }
     await decoder.flush().catch(() => undefined);
   }, []);
 
@@ -548,6 +596,7 @@ export default function LanNativePlayer({
               decodeErrorsRef.current += 1;
               setDecodeErrors(decodeErrorsRef.current);
               setStatus(`Erro de decode: ${error instanceof Error ? error.message : String(error)}`);
+              decoderAwaitingKeyframeRef.current = true;
               requestKeyframeRef.current('decoder_error');
             },
           });
@@ -882,8 +931,17 @@ export default function LanNativePlayer({
     lastPayloadAtRef.current = performance.now();
     countersRef.current.receivedBytes += chunk.payload.byteLength;
     countersRef.current.assembledFrames += 1;
-    const keyframe = (chunk.flags & STREAM_FLAG_KEYFRAME) !== 0;
+    const keyframe = (chunk.flags & STREAM_FLAG_KEYFRAME) !== 0 || hasH264IdrNalu(chunk.payload);
     const queueSize = Number(decoder.decodeQueueSize ?? 0);
+    const awaitingKeyframe = decoderAwaitingKeyframeRef.current;
+
+    if (awaitingKeyframe && !keyframe) {
+      countersRef.current.droppedBufferFrames += 1;
+      droppedBufferFramesRef.current += 1;
+      setDroppedBufferFrames(droppedBufferFramesRef.current);
+      requestKeyframeRef.current('decoder_waiting_keyframe');
+      return;
+    }
 
     if (!keyframe && queueSize > 2) {
       countersRef.current.droppedBufferFrames += 1;
@@ -899,12 +957,18 @@ export default function LanNativePlayer({
         data: chunk.payload,
       });
       decoder.decode(encoded);
+      if (keyframe) {
+        decoderAwaitingKeyframeRef.current = false;
+      }
     } catch (error) {
       countersRef.current.decodeErrors += 1;
       decodeErrorsRef.current += 1;
       setDecodeErrors(decodeErrorsRef.current);
       setStatus(`Falha ao decodificar chunk: ${error instanceof Error ? error.message : String(error)}`);
-      void clearDecoderBufferShort();
+      decoderAwaitingKeyframeRef.current = true;
+      if (!isDecoderKeyframeRequiredError(error)) {
+        void clearDecoderBufferShort();
+      }
       requestKeyframeRef.current('decode_exception');
     }
   }, [clearDecoderBufferShort]);
@@ -1091,6 +1155,7 @@ export default function LanNativePlayer({
       const decoderSetup = await setupDecoder();
       decoderRef.current = decoderSetup.decoder;
       encodedChunkCtorRef.current = decoderSetup.encodedChunkCtor;
+      decoderAwaitingKeyframeRef.current = true;
       setDecoderMode(decoderSetup.description);
 
       activeTransportRef.current = effectiveTransportMode;
