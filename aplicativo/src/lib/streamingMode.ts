@@ -66,8 +66,8 @@ export function resolveNativeTransport(
   const recommended = signal.transport?.recommended ?? null;
 
   if (mode === 'OPENDESK_ONLY') {
-    if (lanAvailable) return { transport: 'lan', reason: 'opendesk_only_lan' };
-    if (relayAvailable) return { transport: 'relay', reason: 'opendesk_only_relay_fallback' };
+    if (relayAvailable) return { transport: 'relay', reason: 'opendesk_only_relay' };
+    if (lanAvailable) return { transport: 'lan', reason: 'opendesk_only_lan_fallback' };
     return { transport: null, reason: 'opendesk_only_no_transport' };
   }
 
