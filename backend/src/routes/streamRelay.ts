@@ -575,13 +575,60 @@ export async function streamRelayRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/stream/relay', { websocket: true }, async (socket, request) => {
+    const remoteIp = getClientIp(request);
+    const rawQuery =
+      request.query && typeof request.query === 'object' && !Array.isArray(request.query)
+        ? (request.query as Record<string, unknown>)
+        : null;
+    const baseOpenLog = {
+      remoteIp,
+      role: typeof rawQuery?.role === 'string' ? rawQuery.role : null,
+      sessionId: typeof rawQuery?.sessionId === 'string' ? rawQuery.sessionId : null,
+      streamId: typeof rawQuery?.streamId === 'string' ? rawQuery.streamId : null,
+      userId: typeof rawQuery?.userId === 'string' ? rawQuery.userId : null,
+      tokenPresent: typeof rawQuery?.token === 'string' && rawQuery.token.trim().length > 0,
+      hostHeader: request.headers.host ?? null,
+      forwardedHost: request.headers['x-forwarded-host'] ?? null,
+      forwardedProto: request.headers['x-forwarded-proto'] ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    };
+    fastify.log.info(
+      {
+        event: 'relay_socket_open',
+        ...baseOpenLog,
+      },
+      'Relay websocket opening',
+    );
+
+    const rejectSocket = (
+      reason: string,
+      code: number = WS_CLOSE_POLICY_VIOLATION,
+      extra: Record<string, unknown> = {},
+    ): void => {
+      fastify.log.warn(
+        {
+          event: 'relay_reject',
+          reason,
+          code,
+          ...baseOpenLog,
+          ...extra,
+        },
+        'Relay websocket rejected',
+      );
+      closeSocket(socket, code, reason);
+    };
+
     const parseResult = relayQuerySchema.safeParse(request.query);
     if (!parseResult.success) {
-      closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'invalid_query');
+      rejectSocket('invalid_query', WS_CLOSE_POLICY_VIOLATION, {
+        issues: parseResult.error.issues.slice(0, 4).map((issue) => ({
+          path: issue.path.join('.'),
+          code: issue.code,
+        })),
+      });
       return;
     }
     const query = parseResult.data;
-    const remoteIp = getClientIp(request);
     const connectionRateKey = `${remoteIp ?? 'unknown'}:${query.userId}:${query.sessionId}`;
     if (!allowConnectionAttempt(connectionRateKey)) {
       fastify.log.warn(
@@ -593,7 +640,7 @@ export async function streamRelayRoutes(fastify: FastifyInstance) {
         },
         'Relay websocket connection blocked by rate limiter',
       );
-      closeSocket(socket, WS_CLOSE_RATE_LIMIT, 'rate_limited');
+      rejectSocket('rate_limited', WS_CLOSE_RATE_LIMIT);
       return;
     }
 
@@ -609,11 +656,11 @@ export async function streamRelayRoutes(fastify: FastifyInstance) {
       });
 
       if (!tokenRecord) {
-        closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'invalid_token');
+        rejectSocket('invalid_token');
         return;
       }
       if (tokenRecord.expiresAt.getTime() <= Date.now()) {
-        closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'expired_token');
+        rejectSocket('expired_token');
         return;
       }
 
@@ -636,26 +683,40 @@ export async function streamRelayRoutes(fastify: FastifyInstance) {
         },
       });
       if (!session || !STREAMABLE_STATES.has(session.status)) {
-        closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'session_not_streamable');
+        rejectSocket('session_not_streamable');
         return;
       }
       if (tokenRecord.pcId !== session.pcId || tokenRecord.userId !== session.clientUserId) {
-        closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'token_session_mismatch');
+        rejectSocket('token_session_mismatch', WS_CLOSE_POLICY_VIOLATION, {
+          tokenPcId: tokenRecord.pcId,
+          sessionPcId: session.pcId,
+          tokenUserId: tokenRecord.userId,
+          sessionClientUserId: session.clientUserId,
+        });
         return;
       }
 
       const expectedStreamId = deriveStreamId(tokenRecord.token);
       if (!streamIdsEqual(expectedStreamId, query.streamId)) {
-        closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'stream_mismatch');
+        rejectSocket('stream_mismatch', WS_CLOSE_POLICY_VIOLATION, {
+          expectedStreamId,
+          providedStreamId: query.streamId,
+        });
         return;
       }
 
       if (query.role === 'client' && query.userId !== session.clientUserId) {
-        closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'client_forbidden');
+        rejectSocket('client_forbidden', WS_CLOSE_POLICY_VIOLATION, {
+          expectedUserId: session.clientUserId,
+          providedUserId: query.userId,
+        });
         return;
       }
       if (query.role === 'host' && query.userId !== session.pc.host.userId) {
-        closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'host_forbidden');
+        rejectSocket('host_forbidden', WS_CLOSE_POLICY_VIOLATION, {
+          expectedUserId: session.pc.host.userId,
+          providedUserId: query.userId,
+        });
         return;
       }
 

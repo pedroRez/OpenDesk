@@ -112,6 +112,38 @@ async function getFetch() {
   return (mod.default as unknown as typeof fetch).bind(globalThis);
 }
 
+async function ensureRelayWebSocketRuntime(): Promise<void> {
+  if (typeof (globalThis as { WebSocket?: unknown }).WebSocket === 'function') {
+    return;
+  }
+
+  try {
+    const wsModule = await import('ws');
+    const candidate = (wsModule as { WebSocket?: unknown; default?: unknown }).WebSocket
+      ?? (wsModule as { default?: unknown }).default;
+    if (typeof candidate !== 'function') {
+      throw new Error('modulo ws sem export WebSocket');
+    }
+    (globalThis as { WebSocket?: unknown }).WebSocket = candidate;
+    console.log(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'relay_websocket_runtime_ready',
+        source: 'ws',
+      }),
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        tag: 'host-daemon',
+        event: 'relay_websocket_runtime_error',
+        message: error instanceof Error ? error.message : String(error ?? 'erro desconhecido'),
+      }),
+    );
+    throw new Error('WebSocket indisponivel para relay-host neste runtime Node.');
+  }
+}
+
 const args = parseArgs();
 const mode = (args.get('mode') ?? process.env.HOST_DAEMON_MODE ?? 'heartbeat').trim().toLowerCase();
 
@@ -181,6 +213,7 @@ if (mode === 'udp-lan-client' || mode === 'udp_client' || mode === 'udp-recv') {
 
 if (mode === 'relay-host' || mode === 'relay_host' || mode === 'relay-send') {
   try {
+    await ensureRelayWebSocketRuntime();
     await runRelayHost(args);
     process.exit(0);
   } catch (error) {

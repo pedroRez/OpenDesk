@@ -70,6 +70,8 @@ type SpawnNodeDaemonOptions = {
   onError: (error: string) => void;
 };
 
+type DaemonOutputPayload = string | Uint8Array;
+
 function safeEventPayload(event: TerminatedPayload): { code: number | null; signal: number | null } {
   return {
     code: typeof event.code === 'number' ? event.code : null,
@@ -77,9 +79,45 @@ function safeEventPayload(event: TerminatedPayload): { code: number | null; sign
   };
 }
 
+function normalizeDaemonLine(chunk: DaemonOutputPayload): string {
+  const raw = typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk);
+  return raw.replace(/\r?\n$/, '').trim();
+}
+
+function logDaemonChunk(kind: DaemonKind, stream: 'stdout' | 'stderr', chunk: DaemonOutputPayload): void {
+  const line = normalizeDaemonLine(chunk);
+  if (!line) return;
+
+  try {
+    const parsed = JSON.parse(line);
+    const base = `[HOST_DAEMON][${kind}][${stream}]`;
+    if (stream === 'stderr') {
+      console.error(base, parsed);
+    } else {
+      console.info(base, parsed);
+    }
+    return;
+  } catch {
+    // not json, keep plain text
+  }
+
+  const message = `[HOST_DAEMON][${kind}][${stream}] ${line}`;
+  if (stream === 'stderr') {
+    console.error(message);
+  } else {
+    console.info(message);
+  }
+}
+
 async function spawnNodeDaemon(options: SpawnNodeDaemonOptions): Promise<ManagedDaemonProcess> {
   const { args, kind, onClose, onError } = options;
   const command = Command.create('node', args);
+  command.stdout.on('data', (chunk) => {
+    logDaemonChunk(kind, 'stdout', chunk);
+  });
+  command.stderr.on('data', (chunk) => {
+    logDaemonChunk(kind, 'stderr', chunk);
+  });
   command.on('close', (payload) => {
     const safePayload = safeEventPayload(payload);
     console.warn(
@@ -132,15 +170,18 @@ export async function startHostDaemon(config: HostDaemonConfig): Promise<void> {
   }
 
   let spawnedPid: number | null = null;
+  let processExitedEarly = false;
   const managed = await spawnNodeDaemon({
     args,
     kind: 'heartbeat',
     onClose: () => {
+      processExitedEarly = true;
       if (spawnedPid !== null && heartbeatProcess?.child.pid === spawnedPid) {
         heartbeatProcess = null;
       }
     },
     onError: () => {
+      processExitedEarly = true;
       if (spawnedPid !== null && heartbeatProcess?.child.pid === spawnedPid) {
         heartbeatProcess = null;
       }
@@ -148,6 +189,10 @@ export async function startHostDaemon(config: HostDaemonConfig): Promise<void> {
   });
   spawnedPid = managed.child.pid;
   heartbeatProcess = managed;
+  if (processExitedEarly) {
+    heartbeatProcess = null;
+    console.warn('[HOST_DAEMON] processo heartbeat encerrou antes da registracao, marcando como STOPPED');
+  }
 }
 
 export async function stopHostDaemon(): Promise<void> {
@@ -267,15 +312,18 @@ export async function startHostRelayDaemon(
   }
 
   let spawnedPid: number | null = null;
+  let processExitedEarly = false;
   const managed = await spawnNodeDaemon({
     args,
     kind: 'relay-host',
     onClose: () => {
+      processExitedEarly = true;
       if (spawnedPid !== null && relayProcess?.managed.child.pid === spawnedPid) {
         relayProcess = null;
       }
     },
     onError: () => {
+      processExitedEarly = true;
       if (spawnedPid !== null && relayProcess?.managed.child.pid === spawnedPid) {
         relayProcess = null;
       }
@@ -283,6 +331,10 @@ export async function startHostRelayDaemon(
   });
   spawnedPid = managed.child.pid;
   relayProcess = { managed, runtimeKey };
+  if (processExitedEarly) {
+    relayProcess = null;
+    console.warn('[HOST_DAEMON] processo relay-host encerrou antes da registracao, marcando como STOPPED');
+  }
   return hadRelayProcess ? 'restarted' : 'started';
 }
 

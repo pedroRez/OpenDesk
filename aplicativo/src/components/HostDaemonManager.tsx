@@ -21,6 +21,7 @@ const APP_VERSION = '0.1.0';
 const GATE_POLL_INTERVAL_MS = 2000;
 const RELAY_SYNC_RETRY_MS = 2000;
 const HEARTBEAT_SYNC_RETRY_MS = 5000;
+const API_BASE_FALLBACK = 'http://localhost:3333';
 
 type GatePc = {
   id: string;
@@ -100,6 +101,7 @@ export default function HostDaemonManager() {
   const { mode } = useMode();
   const { user } = useAuth();
   const toast = useToast();
+  const apiResolutionLoggedRef = useRef(false);
   const gateStateRef = useRef<GateState>({
     pcId: null,
     open: false,
@@ -139,6 +141,18 @@ export default function HostDaemonManager() {
       clearRelayRuntimeState();
       stopHostDaemon();
       return;
+    }
+
+    if (!apiResolutionLoggedRef.current) {
+      const envValue = String(import.meta.env.VITE_API_URL ?? '').trim();
+      const fallbackUsed = !envValue;
+      console.info('[HOST_DAEMON] apiBaseUrl resolved', {
+        fromEnv: envValue || null,
+        fallbackUsed,
+        fallbackValue: fallbackUsed ? API_BASE_FALLBACK : null,
+        value: apiBaseUrl,
+      });
+      apiResolutionLoggedRef.current = true;
     }
 
     const pcId = getPrimaryPcId();
@@ -317,6 +331,12 @@ export default function HostDaemonManager() {
       relayLastAttemptAtRef.current = now;
 
       try {
+        const streamStartUrl = `${apiBaseUrl}/sessions/${sessionId}/stream/start`;
+        console.info('[RELAY_HOST] relay-host start requested', {
+          sessionId,
+          streamStartUrl,
+          apiBaseUrl,
+        });
         const response = await requestWithStatus<StreamStartSignalResponse>(`/sessions/${sessionId}/stream/start`, {
           method: 'POST',
           body: JSON.stringify({}),
@@ -359,6 +379,11 @@ export default function HostDaemonManager() {
           streamId: signalStreamId,
           relayUrl,
           tokenExpiresAt: tokenExpiresAtRaw ?? null,
+        });
+        console.info('[RELAY_HOST] relay-host connecting', {
+          sessionId: signalSessionId,
+          streamId: signalStreamId,
+          relayUrl,
         });
 
         const relayResult = await startHostRelayDaemon({

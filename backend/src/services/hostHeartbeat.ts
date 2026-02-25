@@ -11,6 +11,7 @@ const offlineSinceByHost = new Map<string, number>();
 // Intervalo informado pelo host para calcular jitter tolerance.
 const lastIntervalByHost = new Map<string, number>();
 const hostStateByHost = new Map<string, 'ONLINE' | 'UNSTABLE' | 'OFFLINE'>();
+const lastHeartbeatMetaByHost = new Map<string, { hbSeq: number | null; receivedAt: string }>();
 
 export async function registerHeartbeat(params: {
   prisma: PrismaClient;
@@ -26,6 +27,7 @@ export async function registerHeartbeat(params: {
 
   try {
     const now = new Date();
+    const receivedAt = now.toISOString();
     const previous = await prisma.hostProfile.findUnique({
       where: { id: hostId },
       select: { lastSeenAt: true },
@@ -41,16 +43,20 @@ export async function registerHeartbeat(params: {
       effectiveSentAtMs && Number.isFinite(effectiveSentAtMs)
         ? receivedAtMs - effectiveSentAtMs
         : null;
+    lastHeartbeatMetaByHost.set(hostId, {
+      hbSeq: effectiveSeq,
+      receivedAt,
+    });
     console.log('[HB][BACKEND] heartbeat received', {
       serverInstanceId,
       hostId,
       hbSeq: effectiveSeq,
-      receivedAt: now.toISOString(),
+      receivedAt,
       sentAt: sentAt ?? null,
       sentAtMs: effectiveSentAtMs,
       rttMs,
       previousLastSeenAt: previous?.lastSeenAt?.toISOString() ?? null,
-      newLastSeenAt: now.toISOString(),
+      newLastSeenAt: receivedAt,
       source: 'HostProfile.lastSeenAt',
       intervalMs: intervalMs ?? null,
     });
@@ -63,7 +69,7 @@ export async function registerHeartbeat(params: {
       console.warn('[HB][BACKEND] host recovered', {
         serverInstanceId,
         hostId,
-        timestamp: now.toISOString(),
+        timestamp: receivedAt,
       });
     }
 
@@ -134,6 +140,7 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
   await Promise.all(
     hosts.map(async (host) => {
       const diffMs = host.lastSeenAt ? now.getTime() - host.lastSeenAt.getTime() : null;
+      const lastHeartbeatMeta = lastHeartbeatMetaByHost.get(host.id);
       const activeSessions = await prisma.session.count({
         where: {
           status: SessionStatus.ACTIVE,
@@ -162,6 +169,32 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
         if (hostStateByHost.get(host.id) !== 'UNSTABLE') {
           hostStateByHost.set(host.id, 'UNSTABLE');
           console.warn('[HB][BACKEND] host unstable', {
+            hostId: host.id,
+            pcIds: host.pcs.map((pc) => pc.id),
+            lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
+            now: now.toISOString(),
+            diffMs,
+            thresholdMs: timeoutMs,
+            jitterToleranceMs,
+            intervalMs,
+            serverInstanceId,
+            source: 'HostProfile.lastSeenAt',
+            activeSessions,
+            lastHbSeqReceived: lastHeartbeatMeta?.hbSeq ?? null,
+            lastHbReceivedAt: lastHeartbeatMeta?.receivedAt ?? null,
+          });
+        }
+        return;
+      }
+
+      const offlineDuration = now.getTime() - offlineSince;
+      if (offlineDuration < graceMs) {
+        return;
+      }
+
+      if (hostStateByHost.get(host.id) !== 'OFFLINE') {
+        hostStateByHost.set(host.id, 'OFFLINE');
+        console.warn('[HB][BACKEND] host offline', {
           hostId: host.id,
           pcIds: host.pcs.map((pc) => pc.id),
           lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
@@ -173,32 +206,11 @@ export async function handleHostTimeouts(prisma: PrismaClient): Promise<number> 
           serverInstanceId,
           source: 'HostProfile.lastSeenAt',
           activeSessions,
+          offlineDurationMs: offlineDuration,
+          lastHbSeqReceived: lastHeartbeatMeta?.hbSeq ?? null,
+          lastHbReceivedAt: lastHeartbeatMeta?.receivedAt ?? null,
         });
       }
-      return;
-    }
-      const offlineDuration = now.getTime() - offlineSince;
-      if (offlineDuration < graceMs) {
-        return;
-      }
-
-      if (hostStateByHost.get(host.id) !== 'OFFLINE') {
-        hostStateByHost.set(host.id, 'OFFLINE');
-        console.warn('[HB][BACKEND] host offline', {
-        hostId: host.id,
-        pcIds: host.pcs.map((pc) => pc.id),
-        lastSeenAt: host.lastSeenAt?.toISOString() ?? null,
-        now: now.toISOString(),
-        diffMs,
-        thresholdMs: timeoutMs,
-        jitterToleranceMs,
-        intervalMs,
-        serverInstanceId,
-        source: 'HostProfile.lastSeenAt',
-        activeSessions,
-        offlineDurationMs: offlineDuration,
-      });
-    }
 
       await prisma.pC.updateMany({
         where: { hostId: host.id },
