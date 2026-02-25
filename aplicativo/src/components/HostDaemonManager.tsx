@@ -49,6 +49,7 @@ type StreamStartSignalResponse = {
   token: string;
   tokenExpiresAt: string;
   videoPort: number;
+  clientIp?: string | null;
   transport?: {
     relay?: {
       url?: string | null;
@@ -58,6 +59,7 @@ type StreamStartSignalResponse = {
       tokenExpiresAt?: string | null;
     } | null;
     lan?: {
+      clientIp?: string | null;
       host?: string | null;
       videoPort?: number | null;
     } | null;
@@ -415,10 +417,7 @@ export default function HostDaemonManager() {
         && Boolean(lanState.streamId && lanState.token)
         && !tokenExpiringSoon(lanState.tokenExpiresAtMs);
 
-      if (relayReady && (normalizedClientAddress ? lanReady : true)) {
-        if (!normalizedClientAddress) {
-          await stopLanForReason('client_ip_missing');
-        }
+      if (relayReady && normalizedClientAddress && lanReady) {
         return;
       }
 
@@ -513,7 +512,18 @@ export default function HostDaemonManager() {
           });
         }
 
-        if (!normalizedClientAddress) {
+        const signalClientAddress = normalizeClientAddress(
+          signal.transport?.lan?.clientIp ?? signal.clientIp ?? null,
+        );
+        const lanTargetHost = normalizedClientAddress ?? signalClientAddress;
+
+        if (!lanTargetHost) {
+          console.warn('[UDP_LAN_HOST] clientIp ausente para udp-lan-host', {
+            sessionId: signalSessionId,
+            streamId: signalStreamId,
+            sourceClientAddress: normalizedClientAddress,
+            signalClientAddress,
+          });
           await stopLanForReason('client_ip_missing');
           return;
         }
@@ -533,12 +543,12 @@ export default function HostDaemonManager() {
         console.info('[UDP_LAN_HOST] udp-lan-host start requested', {
           sessionId: signalSessionId,
           streamId: signalStreamId,
-          targetHost: normalizedClientAddress,
+          targetHost: lanTargetHost,
           targetPort: lanVideoPort,
         });
 
         const lanResult = await startHostLanDaemon({
-          targetHost: normalizedClientAddress,
+          targetHost: lanTargetHost,
           targetPort: lanVideoPort,
           bindPort: lanVideoPort,
           sessionId: signalSessionId,
@@ -551,7 +561,7 @@ export default function HostDaemonManager() {
           sessionId: signalSessionId,
           streamId: signalStreamId,
           token: signalToken,
-          targetHost: normalizedClientAddress,
+          targetHost: lanTargetHost,
           targetPort: lanVideoPort,
           tokenExpiresAtMs: authExpiresAtMs ?? null,
         };
@@ -560,7 +570,7 @@ export default function HostDaemonManager() {
           result: lanResult,
           sessionId: signalSessionId,
           streamId: signalStreamId,
-          targetHost: normalizedClientAddress,
+          targetHost: lanTargetHost,
           targetPort: lanVideoPort,
         });
       } catch (error) {

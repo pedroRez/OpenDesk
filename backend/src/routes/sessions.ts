@@ -303,6 +303,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       sessionId: effectiveSession.id,
       sessionStatus: effectiveSession.status,
       streamState,
+      clientIp: effectiveSession.clientIp ?? null,
       host: fallbackHost,
       videoPort,
       inputPort: DEFAULT_INPUT_PORT,
@@ -324,6 +325,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
         },
         lan: {
           mode: 'UDP_LAN',
+          clientIp: effectiveSession.clientIp ?? null,
           host: fallbackHost,
           videoPort,
           inputPort: DEFAULT_INPUT_PORT,
