@@ -12,7 +12,7 @@ type GatePortsSpec = {
   udp: string;
 };
 
-type CommandPayload = string | Uint8Array;
+type CommandPayload = unknown;
 
 export type StreamingGateOptions = {
   clientAddress?: string | null;
@@ -59,15 +59,44 @@ const buildPortSpec = (extraPorts: number[] = []): GatePortsSpec => {
 
 const buildRuleName = (pcId: string) => `${FIREWALL_RULE_PREFIX} ${pcId}`;
 
-const decodePayload = (value: CommandPayload | null | undefined): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  // netsh on Windows may emit non-UTF8 bytes; decode as windows-1252 when available.
-  try {
-    return new TextDecoder('windows-1252').decode(value);
-  } catch {
-    return new TextDecoder().decode(value);
+const toByteView = (value: unknown): Uint8Array | null => {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
   }
+  if (Array.isArray(value) && value.every((entry) => typeof entry === 'number')) {
+    return Uint8Array.from(value.map((entry) => entry & 0xff));
+  }
+  if (value && typeof value === 'object') {
+    const maybeData = (value as { data?: unknown }).data;
+    if (Array.isArray(maybeData) && maybeData.every((entry) => typeof entry === 'number')) {
+      return Uint8Array.from(maybeData.map((entry) => entry & 0xff));
+    }
+  }
+  return null;
+};
+
+const decodePayload = (value: CommandPayload | null | undefined): string => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  const bytes = toByteView(value);
+  if (bytes) {
+    // netsh on Windows may emit non-UTF8 bytes; decode as windows-1252 when available.
+    try {
+      return new TextDecoder('windows-1252').decode(bytes);
+    } catch {
+      return new TextDecoder().decode(bytes);
+    }
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '[object]';
+    }
+  }
+  return String(value);
 };
 
 const execNetsh = async (args: string[]) => {
