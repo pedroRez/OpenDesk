@@ -8,6 +8,8 @@ export type UdpLanReceiverOptions = {
   maxFrameAgeMs?: number;
   maxPendingFrames?: number;
   statsIntervalMs?: number;
+  probeHost?: string;
+  probePort?: number;
 };
 
 export type UdpLanFrameEvent = {

@@ -24,6 +24,14 @@ const DEFAULT_INPUT_PORT = 5505;
 const DEFAULT_VIDEO_PORT = 5004;
 const STREAMABLE_SESSION_STATUSES = new Set<SessionStatus>([SessionStatus.PENDING, SessionStatus.ACTIVE]);
 
+function resolveLanVideoPort(): number {
+  const parsed = Number.parseInt(String(process.env.STREAM_LAN_VIDEO_PORT ?? DEFAULT_VIDEO_PORT), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+    return DEFAULT_VIDEO_PORT;
+  }
+  return parsed;
+}
+
 function isStreamableStatus(status: SessionStatus): boolean {
   return STREAMABLE_SESSION_STATUSES.has(status);
 }
@@ -280,7 +288,6 @@ export async function sessionRoutes(fastify: FastifyInstance) {
     }
 
     const fallbackHost = effectiveSession.pc.connectionHost ?? parseConnectAddress(effectiveSession.pc.connectAddress).host;
-    const fallbackPort = effectiveSession.pc.connectionPort ?? parseConnectAddress(effectiveSession.pc.connectAddress).port;
     if (!fallbackHost) {
       return reply.status(409).send({
         error: 'PC sem host de conexao publicado.',
@@ -288,9 +295,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const videoPort = Number.isFinite(fallbackPort ?? NaN) && (fallbackPort ?? 0) > 0
-      ? (fallbackPort as number)
-      : DEFAULT_VIDEO_PORT;
+    const videoPort = resolveLanVideoPort();
     const streamId = deriveStreamId(tokenRecord.token);
     const relayUrl = resolveRelayWebSocketUrl(request);
 

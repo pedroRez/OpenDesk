@@ -540,6 +540,7 @@ export default function HostDaemonManager() {
         const lanResult = await startHostLanDaemon({
           targetHost: normalizedClientAddress,
           targetPort: lanVideoPort,
+          bindPort: lanVideoPort,
           sessionId: signalSessionId,
           streamId: signalStreamId,
           authToken: signalToken,

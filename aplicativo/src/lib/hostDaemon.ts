@@ -54,6 +54,7 @@ export type HostRelayDaemonConfig = {
 export type HostLanDaemonConfig = {
   targetHost: string;
   targetPort: number;
+  bindPort?: number;
   sessionId: string;
   streamId: string;
   authToken: string;
@@ -451,6 +452,7 @@ export async function startHostLanDaemon(
 
   const targetHost = config.targetHost.trim();
   const targetPort = Math.trunc(config.targetPort);
+  const bindPort = typeof config.bindPort === 'number' ? Math.trunc(config.bindPort) : 0;
   const sessionId = config.sessionId.trim();
   const streamId = config.streamId.trim();
   const authToken = config.authToken.trim();
@@ -460,6 +462,9 @@ export async function startHostLanDaemon(
   }
   if (!Number.isFinite(targetPort) || targetPort <= 0 || targetPort > 65535) {
     throw new Error('targetPort invalido para iniciar udp-lan-host.');
+  }
+  if (!Number.isFinite(bindPort) || bindPort < 0 || bindPort > 65535) {
+    throw new Error('bindPort invalido para iniciar udp-lan-host.');
   }
   if (!sessionId) {
     throw new Error('sessionId obrigatorio para iniciar udp-lan-host.');
@@ -503,6 +508,8 @@ export async function startHostLanDaemon(
     targetHost,
     '--target-port',
     String(targetPort),
+    '--bind-port',
+    String(bindPort > 0 ? bindPort : targetPort),
     '--session-id',
     sessionId,
     '--stream-id',

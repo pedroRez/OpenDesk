@@ -1213,6 +1213,8 @@ export default function LanNativePlayer({
           maxFrameAgeMs: 40,
           maxPendingFrames: 96,
           statsIntervalMs: 1000,
+          probeHost: inputHost.trim() || undefined,
+          probePort: udpPort,
         });
 
         await startLanInputClient({

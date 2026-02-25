@@ -27,6 +27,8 @@ pub struct StartUdpLanReceiverOptions {
   pub maxFrameAgeMs: Option<u64>,
   pub maxPendingFrames: Option<usize>,
   pub statsIntervalMs: Option<u64>,
+  pub probeHost: Option<String>,
+  pub probePort: Option<u16>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -70,6 +72,8 @@ struct NormalizedOptions {
   max_frame_age_ms: u64,
   max_pending_frames: usize,
   stats_interval_ms: u64,
+  probe_host: Option<String>,
+  probe_port: Option<u16>,
 }
 
 struct ReceiverStats {
@@ -273,6 +277,15 @@ fn normalize_options(options: StartUdpLanReceiverOptions) -> Result<NormalizedOp
     .unwrap_or(DEFAULT_STATS_INTERVAL_MS)
     .clamp(250, 60_000);
 
+  let probe_host = options
+    .probeHost
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
+  let probe_port = options
+    .probePort
+    .filter(|value| *value > 0)
+    .or_else(|| probe_host.as_ref().map(|_| listen_port));
+
   Ok(NormalizedOptions {
     listen_host,
     listen_port,
@@ -280,6 +293,8 @@ fn normalize_options(options: StartUdpLanReceiverOptions) -> Result<NormalizedOp
     max_frame_age_ms,
     max_pending_frames,
     stats_interval_ms,
+    probe_host,
+    probe_port,
   })
 }
 
@@ -592,12 +607,19 @@ fn run_udp_receiver_loop(
 #[tauri::command]
 pub fn start_udp_lan_receiver(app: AppHandle, options: StartUdpLanReceiverOptions) -> Result<(), String> {
   let normalized = normalize_options(options)?;
+  let probe_host = normalized.probe_host.clone();
+  let probe_port = normalized.probe_port;
   let bind_addr = format!("{}:{}", normalized.listen_host, normalized.listen_port);
   let socket = UdpSocket::bind(&bind_addr)
     .map_err(|error| format!("falha ao bind UDP em {}: {}", bind_addr, error))?;
   socket
     .set_read_timeout(Some(Duration::from_millis(20)))
     .map_err(|error| format!("falha ao configurar timeout do socket UDP: {}", error))?;
+
+  if let (Some(host), Some(port)) = (probe_host, probe_port) {
+    let probe_addr = format!("{}:{}", host, port);
+    let _ = socket.send_to(&[0], &probe_addr);
+  }
 
   let feedback_socket = UdpSocket::bind("0.0.0.0:0")
     .map_err(|error| format!("falha ao criar socket de feedback UDP: {}", error))?;
