@@ -5,6 +5,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { requireUser } from '../utils/auth.js';
+import { streamConnectTokenTtlMs } from '../utils/streamTokenTtl.js';
 
 const extractForwardedIp = (value: string | string[] | undefined): string | null => {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -18,8 +19,6 @@ const getClientIp = (request: FastifyRequest): string | null => {
   return extractForwardedIp(request.headers['x-forwarded-for']) ?? request.ip ?? null;
 };
 
-
-const TOKEN_TTL_MS = 60_000;
 
 function generateToken(): string {
   return randomBytes(24).toString('base64url');
@@ -72,7 +71,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
     }
 
     const token = generateToken();
-    const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+    const expiresAt = new Date(Date.now() + streamConnectTokenTtlMs);
 
     await fastify.prisma.streamConnectToken.create({
       data: {

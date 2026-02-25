@@ -690,10 +690,8 @@ export default function LanNativePlayer({
         }
         if (isTokenExpired(inputTokenExpiresAt)) {
           inputConnectedRef.current = false;
-          setInputStatus('Input bloqueado: token expirado.');
+          setInputStatus('Input bloqueado: token expirado. Video permanece conectado.');
           setInputEventsDropped((prev) => prev + 1);
-          manualDisconnectRef.current = true;
-          disconnect().catch(() => undefined);
           return;
         }
       }
@@ -1454,9 +1452,7 @@ export default function LanNativePlayer({
     }
     if (isTokenExpired(inputTokenExpiresAt)) {
       inputConnectedRef.current = false;
-      setInputStatus('Input bloqueado: token expirado.');
-      manualDisconnectRef.current = true;
-      disconnect().catch(() => undefined);
+      setInputStatus('Input bloqueado: token expirado. Video permanece conectado.');
       return;
     }
     inputConnectedRef.current = true;
@@ -1470,18 +1466,14 @@ export default function LanNativePlayer({
     if (!Number.isFinite(expiresAtMs)) return;
     if (expiresAtMs <= Date.now()) {
       inputConnectedRef.current = false;
-      setInputStatus('Input bloqueado: token expirado.');
-      manualDisconnectRef.current = true;
-      disconnect().catch(() => undefined);
+      setInputStatus('Input bloqueado: token expirado. Video permanece conectado.');
       return;
     }
     const timeoutMs = Math.max(0, expiresAtMs - Date.now());
     const timer = setTimeout(() => {
       if (!connectedRef.current) return;
       inputConnectedRef.current = false;
-      setInputStatus('Input bloqueado: token expirado.');
-      manualDisconnectRef.current = true;
-      disconnect().catch(() => undefined);
+      setInputStatus('Input bloqueado: token expirado. Video permanece conectado.');
     }, timeoutMs + 10);
     return () => clearTimeout(timer);
   }, [connected, disconnect, inputTokenExpiresAt]);

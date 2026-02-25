@@ -5,11 +5,14 @@ import { useAuth } from '../lib/auth';
 import { getLocalMachineId as getStoredMachineId, getLocalPcId, getPrimaryPcId } from '../lib/hostState';
 import {
   getHostDaemonStatus,
+  getHostLanDaemonStatus,
   getHostRelayDaemonStatus,
   isTauriRuntime,
   startHostDaemon,
+  startHostLanDaemon,
   startHostRelayDaemon,
   stopHostDaemon,
+  stopHostLanDaemon,
   stopHostRelayDaemon,
 } from '../lib/hostDaemon';
 import { closeStreamingGate, openStreamingGate } from '../lib/streamingGate';
@@ -21,6 +24,7 @@ const APP_VERSION = '0.1.0';
 const GATE_POLL_INTERVAL_MS = 2000;
 const RELAY_SYNC_RETRY_MS = 2000;
 const HEARTBEAT_SYNC_RETRY_MS = 5000;
+const TOKEN_REFRESH_GRACE_MS = 15000;
 const API_BASE_FALLBACK = 'http://localhost:3333';
 
 type GatePc = {
@@ -44,6 +48,7 @@ type StreamStartSignalResponse = {
   streamId: string;
   token: string;
   tokenExpiresAt: string;
+  videoPort: number;
   transport?: {
     relay?: {
       url?: string | null;
@@ -51,6 +56,10 @@ type StreamStartSignalResponse = {
       streamId?: string | null;
       token?: string | null;
       tokenExpiresAt?: string | null;
+    } | null;
+    lan?: {
+      host?: string | null;
+      videoPort?: number | null;
     } | null;
   } | null;
 };
@@ -60,6 +69,15 @@ type RelayRuntimeState = {
   streamId: string | null;
   token: string | null;
   relayUrl: string | null;
+  tokenExpiresAtMs: number | null;
+};
+
+type LanRuntimeState = {
+  sessionId: string | null;
+  streamId: string | null;
+  token: string | null;
+  targetHost: string | null;
+  targetPort: number | null;
   tokenExpiresAtMs: number | null;
 };
 
@@ -118,6 +136,14 @@ export default function HostDaemonManager() {
     relayUrl: null,
     tokenExpiresAtMs: null,
   });
+  const lanStateRef = useRef<LanRuntimeState>({
+    sessionId: null,
+    streamId: null,
+    token: null,
+    targetHost: null,
+    targetPort: null,
+    tokenExpiresAtMs: null,
+  });
   const relaySyncInFlight = useRef(false);
   const relayLastAttemptAtRef = useRef(0);
   const heartbeatLastAttemptAtRef = useRef(0);
@@ -132,11 +158,27 @@ export default function HostDaemonManager() {
     };
   };
 
+  const clearLanRuntimeState = () => {
+    lanStateRef.current = {
+      sessionId: null,
+      streamId: null,
+      token: null,
+      targetHost: null,
+      targetPort: null,
+      tokenExpiresAtMs: null,
+    };
+  };
+
+  const tokenExpiringSoon = (expiresAtMs: number | null): boolean => {
+    if (!expiresAtMs || !Number.isFinite(expiresAtMs)) return false;
+    return expiresAtMs - Date.now() <= TOKEN_REFRESH_GRACE_MS;
+  };
+
   useEffect(() => {
     if (!isTauriRuntime()) {
       if (!runtimeWarningLoggedRef.current) {
         runtimeWarningLoggedRef.current = true;
-        console.warn('[HOST_DAEMON] runtime nao-tauri detectado; heartbeat/relay-host automaticos desativados.');
+        console.warn('[HOST_DAEMON] runtime nao-tauri detectado; heartbeat/senders automaticos desativados.');
       }
       return;
     }
@@ -145,7 +187,11 @@ export default function HostDaemonManager() {
       stopHostRelayDaemon().catch((error) => {
         console.warn('[RELAY_HOST] falha ao parar ao sair do modo host', error);
       });
+      stopHostLanDaemon().catch((error) => {
+        console.warn('[UDP_LAN_HOST] falha ao parar ao sair do modo host', error);
+      });
       clearRelayRuntimeState();
+      clearLanRuntimeState();
       stopHostDaemon();
       return;
     }
@@ -178,7 +224,11 @@ export default function HostDaemonManager() {
       stopHostRelayDaemon().catch((error) => {
         console.warn('[RELAY_HOST] falha ao parar durante cleanup', error);
       });
+      stopHostLanDaemon().catch((error) => {
+        console.warn('[UDP_LAN_HOST] falha ao parar durante cleanup', error);
+      });
       clearRelayRuntimeState();
+      clearLanRuntimeState();
       stopHostDaemon();
     };
   }, [mode, user?.hostProfileId, user?.id]);
@@ -197,7 +247,9 @@ export default function HostDaemonManager() {
             return;
           }
           await stopHostRelayDaemon().catch(() => undefined);
+          await stopHostLanDaemon().catch(() => undefined);
           clearRelayRuntimeState();
+          clearLanRuntimeState();
           await stopHostDaemon();
         }),
       )
@@ -261,7 +313,11 @@ export default function HostDaemonManager() {
       stopHostRelayDaemon().catch((error) => {
         console.warn('[RELAY_HOST] falha ao parar sem sessao ativa', error);
       });
+      stopHostLanDaemon().catch((error) => {
+        console.warn('[UDP_LAN_HOST] falha ao parar sem sessao ativa', error);
+      });
       clearRelayRuntimeState();
+      clearLanRuntimeState();
       const prev = gateStateRef.current;
       if (prev.pcId) {
         closeStreamingGate(prev.pcId, { extraPorts: prev.extraPorts }).catch((error) => {
@@ -317,15 +373,52 @@ export default function HostDaemonManager() {
       console.info('[RELAY_HOST] relay-host parado', { reason });
     };
 
-    const syncRelayHostForSession = async (activeSessionId: string) => {
+    const stopLanForReason = async (reason: string) => {
+      const lanState = lanStateRef.current;
+      const lanRunning = getHostLanDaemonStatus() === 'RUNNING';
+      if (!lanRunning && !lanState.sessionId) {
+        return;
+      }
+      try {
+        await stopHostLanDaemon();
+      } catch (error) {
+        console.warn('[UDP_LAN_HOST] falha ao parar udp-lan-host', { reason, error });
+      } finally {
+        clearLanRuntimeState();
+      }
+      console.info('[UDP_LAN_HOST] udp-lan-host parado', { reason });
+    };
+
+    const syncStreamHostsForSession = async (activeSessionId: string, clientAddress: string | null) => {
       if (!active || !hostId || !userId) return;
       const sessionId = activeSessionId.trim();
       if (!sessionId) return;
 
+      const normalizedClientAddress = normalizeClientAddress(clientAddress);
       const relayRunning = getHostRelayDaemonStatus() === 'RUNNING';
       const relayState = relayStateRef.current;
-      const sameSession = relayState.sessionId === sessionId;
-      if (relayRunning && sameSession && relayState.streamId && relayState.token && relayState.relayUrl) {
+      const relayReady =
+        relayRunning
+        && relayState.sessionId === sessionId
+        && Boolean(relayState.streamId && relayState.token && relayState.relayUrl)
+        && !tokenExpiringSoon(relayState.tokenExpiresAtMs);
+
+      const lanRunning = getHostLanDaemonStatus() === 'RUNNING';
+      const lanState = lanStateRef.current;
+      const lanReady =
+        Boolean(normalizedClientAddress)
+        && lanRunning
+        && lanState.sessionId === sessionId
+        && lanState.targetHost === normalizedClientAddress
+        && Number.isFinite(lanState.targetPort ?? NaN)
+        && (lanState.targetPort ?? 0) > 0
+        && Boolean(lanState.streamId && lanState.token)
+        && !tokenExpiringSoon(lanState.tokenExpiresAtMs);
+
+      if (relayReady && (normalizedClientAddress ? lanReady : true)) {
+        if (!normalizedClientAddress) {
+          await stopLanForReason('client_ip_missing');
+        }
         return;
       }
 
@@ -339,9 +432,10 @@ export default function HostDaemonManager() {
 
       try {
         const streamStartUrl = `${apiBaseUrl}/sessions/${sessionId}/stream/start`;
-        console.info('[RELAY_HOST] relay-host start requested', {
+        console.info('[STREAM_HOST] stream start requested', {
           sessionId,
           streamStartUrl,
+          clientAddress: normalizedClientAddress,
           apiBaseUrl,
         });
         const response = await requestWithStatus<StreamStartSignalResponse>(`/sessions/${sessionId}/stream/start`, {
@@ -351,7 +445,7 @@ export default function HostDaemonManager() {
         if (!active) return;
 
         if (!response.ok || !response.data) {
-          console.warn('[RELAY_HOST] stream/start falhou para iniciar relay-host', {
+          console.warn('[STREAM_HOST] stream/start falhou para iniciar sender host', {
             sessionId,
             status: response.status,
             error: response.errorMessage,
@@ -370,7 +464,7 @@ export default function HostDaemonManager() {
           Number.isFinite(tokenExpiresAtMs) && tokenExpiresAtMs > 0 ? Math.trunc(tokenExpiresAtMs) : undefined;
 
         if (!signalSessionId || !signalStreamId || !signalToken || !relayUrl) {
-          console.warn('[RELAY_HOST] sinalizacao relay incompleta', {
+          console.warn('[STREAM_HOST] sinalizacao relay incompleta', {
             sessionId,
             hasRelayUrl: Boolean(relayUrl),
             hasSignalSession: Boolean(signalSessionId),
@@ -380,44 +474,96 @@ export default function HostDaemonManager() {
           return;
         }
 
-        console.info('[RELAY_HOST] sinal de inicio recebido', {
-          requestedSessionId: sessionId,
+        if (!relayReady) {
+          console.info('[RELAY_HOST] sinal de inicio recebido', {
+            requestedSessionId: sessionId,
+            sessionId: signalSessionId,
+            streamId: signalStreamId,
+            relayUrl,
+            tokenExpiresAt: tokenExpiresAtRaw ?? null,
+          });
+          console.info('[RELAY_HOST] relay-host connecting', {
+            sessionId: signalSessionId,
+            streamId: signalStreamId,
+            relayUrl,
+          });
+
+          const relayResult = await startHostRelayDaemon({
+            relayUrl,
+            sessionId: signalSessionId,
+            streamId: signalStreamId,
+            authToken: signalToken,
+            userId,
+            authExpiresAtMs,
+          });
+
+          relayStateRef.current = {
+            sessionId: signalSessionId,
+            streamId: signalStreamId,
+            token: signalToken,
+            relayUrl,
+            tokenExpiresAtMs: authExpiresAtMs ?? null,
+          };
+
+          console.info('[RELAY_HOST] relay-host sincronizado', {
+            result: relayResult,
+            sessionId: signalSessionId,
+            streamId: signalStreamId,
+            relayUrl,
+          });
+        }
+
+        if (!normalizedClientAddress) {
+          await stopLanForReason('client_ip_missing');
+          return;
+        }
+
+        const lanVideoPortRaw = signal.transport?.lan?.videoPort ?? signal.videoPort;
+        const lanVideoPort = Math.trunc(Number(lanVideoPortRaw));
+        if (!Number.isFinite(lanVideoPort) || lanVideoPort <= 0 || lanVideoPort > 65535) {
+          console.warn('[UDP_LAN_HOST] sinalizacao LAN invalida para udp-lan-host', {
+            sessionId: signalSessionId,
+            streamId: signalStreamId,
+            clientAddress: normalizedClientAddress,
+            videoPort: lanVideoPortRaw,
+          });
+          return;
+        }
+
+        console.info('[UDP_LAN_HOST] udp-lan-host start requested', {
           sessionId: signalSessionId,
           streamId: signalStreamId,
-          relayUrl,
-          tokenExpiresAt: tokenExpiresAtRaw ?? null,
-        });
-        console.info('[RELAY_HOST] relay-host connecting', {
-          sessionId: signalSessionId,
-          streamId: signalStreamId,
-          relayUrl,
+          targetHost: normalizedClientAddress,
+          targetPort: lanVideoPort,
         });
 
-        const relayResult = await startHostRelayDaemon({
-          relayUrl,
+        const lanResult = await startHostLanDaemon({
+          targetHost: normalizedClientAddress,
+          targetPort: lanVideoPort,
           sessionId: signalSessionId,
           streamId: signalStreamId,
           authToken: signalToken,
-          userId,
           authExpiresAtMs,
         });
 
-        relayStateRef.current = {
+        lanStateRef.current = {
           sessionId: signalSessionId,
           streamId: signalStreamId,
           token: signalToken,
-          relayUrl,
+          targetHost: normalizedClientAddress,
+          targetPort: lanVideoPort,
           tokenExpiresAtMs: authExpiresAtMs ?? null,
         };
 
-        console.info('[RELAY_HOST] relay-host sincronizado', {
-          result: relayResult,
+        console.info('[UDP_LAN_HOST] udp-lan-host sincronizado', {
+          result: lanResult,
           sessionId: signalSessionId,
           streamId: signalStreamId,
-          relayUrl,
+          targetHost: normalizedClientAddress,
+          targetPort: lanVideoPort,
         });
       } catch (error) {
-        console.warn('[RELAY_HOST] erro ao sincronizar relay-host', {
+        console.warn('[STREAM_HOST] erro ao sincronizar sender host', {
           sessionId,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -438,6 +584,7 @@ export default function HostDaemonManager() {
 
         if (!target) {
           await stopRelayForReason('pc_not_found');
+          await stopLanForReason('pc_not_found');
           if (state.pcId) {
             await closeStreamingGate(state.pcId, { extraPorts: state.extraPorts });
             if (state.open) {
@@ -458,9 +605,10 @@ export default function HostDaemonManager() {
         const activeSessionId = target.activeSession?.id?.trim() ?? '';
 
         if (activeSessionId) {
-          await syncRelayHostForSession(activeSessionId);
+          await syncStreamHostsForSession(activeSessionId, clientAddress);
         } else {
           await stopRelayForReason('no_active_session');
+          await stopLanForReason('no_active_session');
         }
 
         if (state.pcId && state.pcId !== target.id) {

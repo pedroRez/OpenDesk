@@ -4,6 +4,8 @@ import { resolve as resolvePath, resolveResource, resourceDir } from '@tauri-app
 const DAEMON_RESOURCE = 'host-daemon/dist/index.js';
 const DEFAULT_RELAY_DURATION_SEC = 36000;
 const DEFAULT_RELAY_STATS_INTERVAL_SEC = 1;
+const DEFAULT_LAN_DURATION_SEC = 36000;
+const DEFAULT_LAN_STATS_INTERVAL_SEC = 1;
 
 type DaemonProcess = Child;
 
@@ -12,7 +14,12 @@ type RelayDaemonProcess = {
   runtimeKey: string;
 };
 
-type DaemonKind = 'heartbeat' | 'relay-host';
+type LanDaemonProcess = {
+  managed: ManagedDaemonProcess;
+  runtimeKey: string;
+};
+
+type DaemonKind = 'heartbeat' | 'relay-host' | 'udp-lan-host';
 
 type ManagedDaemonProcess = {
   child: DaemonProcess;
@@ -22,6 +29,7 @@ type ManagedDaemonProcess = {
 
 let heartbeatProcess: ManagedDaemonProcess | null = null;
 let relayProcess: RelayDaemonProcess | null = null;
+let lanProcess: LanDaemonProcess | null = null;
 
 export type HostDaemonConfig = {
   apiUrl: string;
@@ -38,6 +46,17 @@ export type HostRelayDaemonConfig = {
   streamId: string;
   authToken: string;
   userId: string;
+  authExpiresAtMs?: number;
+  durationSec?: number;
+  statsIntervalSec?: number;
+};
+
+export type HostLanDaemonConfig = {
+  targetHost: string;
+  targetPort: number;
+  sessionId: string;
+  streamId: string;
+  authToken: string;
   authExpiresAtMs?: number;
   durationSec?: number;
   statsIntervalSec?: number;
@@ -296,6 +315,16 @@ function buildRelayRuntimeKey(config: HostRelayDaemonConfig): string {
   ].join('|');
 }
 
+function buildLanRuntimeKey(config: HostLanDaemonConfig): string {
+  return [
+    config.targetHost.trim(),
+    String(Math.trunc(config.targetPort)),
+    config.sessionId.trim(),
+    config.streamId.trim().toLowerCase(),
+    config.authToken.trim(),
+  ].join('|');
+}
+
 export async function startHostRelayDaemon(
   config: HostRelayDaemonConfig,
 ): Promise<'started' | 'restarted' | 'already_running'> {
@@ -411,4 +440,121 @@ export async function stopHostRelayDaemon(): Promise<void> {
 
 export function getHostRelayDaemonStatus(): 'RUNNING' | 'STOPPED' {
   return relayProcess ? 'RUNNING' : 'STOPPED';
+}
+
+export async function startHostLanDaemon(
+  config: HostLanDaemonConfig,
+): Promise<'started' | 'restarted' | 'already_running'> {
+  if (!isTauriRuntime()) {
+    return 'already_running';
+  }
+
+  const targetHost = config.targetHost.trim();
+  const targetPort = Math.trunc(config.targetPort);
+  const sessionId = config.sessionId.trim();
+  const streamId = config.streamId.trim();
+  const authToken = config.authToken.trim();
+
+  if (!targetHost) {
+    throw new Error('targetHost obrigatorio para iniciar udp-lan-host.');
+  }
+  if (!Number.isFinite(targetPort) || targetPort <= 0 || targetPort > 65535) {
+    throw new Error('targetPort invalido para iniciar udp-lan-host.');
+  }
+  if (!sessionId) {
+    throw new Error('sessionId obrigatorio para iniciar udp-lan-host.');
+  }
+  if (!streamId) {
+    throw new Error('streamId obrigatorio para iniciar udp-lan-host.');
+  }
+  if (!authToken) {
+    throw new Error('authToken obrigatorio para iniciar udp-lan-host.');
+  }
+
+  const runtimeKey = buildLanRuntimeKey({
+    ...config,
+    targetHost,
+    targetPort,
+    sessionId,
+    streamId,
+    authToken,
+  });
+  if (lanProcess?.runtimeKey === runtimeKey) {
+    return 'already_running';
+  }
+
+  const hadLanProcess = Boolean(lanProcess);
+  if (lanProcess) {
+    try {
+      await lanProcess.managed.child.kill();
+    } catch {
+      // ignore process kill errors during restart
+    } finally {
+      lanProcess = null;
+    }
+  }
+
+  const entry = await resolveEntryPath();
+  const args = [
+    entry,
+    '--mode',
+    'udp-lan-host',
+    '--target-host',
+    targetHost,
+    '--target-port',
+    String(targetPort),
+    '--session-id',
+    sessionId,
+    '--stream-id',
+    streamId,
+    '--auth-token',
+    authToken,
+    '--duration-sec',
+    String(Math.max(1, Math.trunc(config.durationSec ?? DEFAULT_LAN_DURATION_SEC))),
+    '--stats-interval-sec',
+    String(Math.max(1, Math.trunc(config.statsIntervalSec ?? DEFAULT_LAN_STATS_INTERVAL_SEC))),
+  ];
+
+  if (typeof config.authExpiresAtMs === 'number' && Number.isFinite(config.authExpiresAtMs)) {
+    args.push('--auth-expires-at-ms', String(Math.trunc(config.authExpiresAtMs)));
+  }
+
+  let spawnedPid: number | null = null;
+  let processExitedEarly = false;
+  const managed = await spawnNodeDaemon({
+    args,
+    kind: 'udp-lan-host',
+    onClose: () => {
+      processExitedEarly = true;
+      if (spawnedPid !== null && lanProcess?.managed.child.pid === spawnedPid) {
+        lanProcess = null;
+      }
+    },
+    onError: () => {
+      processExitedEarly = true;
+      if (spawnedPid !== null && lanProcess?.managed.child.pid === spawnedPid) {
+        lanProcess = null;
+      }
+    },
+  });
+  spawnedPid = managed.child.pid;
+  lanProcess = { managed, runtimeKey };
+  if (processExitedEarly) {
+    lanProcess = null;
+    console.warn('[HOST_DAEMON] processo udp-lan-host encerrou antes da registracao, marcando como STOPPED');
+  }
+  return hadLanProcess ? 'restarted' : 'started';
+}
+
+export async function stopHostLanDaemon(): Promise<void> {
+  if (!lanProcess) return;
+  try {
+    await lanProcess.managed.child.kill();
+  } finally {
+    lanProcess = null;
+  }
+}
+
+export function getHostLanDaemonStatus(): 'RUNNING' | 'STOPPED' {
+  return lanProcess ? 'RUNNING' : 'STOPPED';
 }

@@ -515,10 +515,6 @@ export async function runUdpLanHost(args: ArgsMap): Promise<void> {
         stats.feedbackRejectedAuth += 1;
         return;
       }
-      if (config.authExpiresAtMs && Date.now() > config.authExpiresAtMs) {
-        stats.feedbackRejectedAuth += 1;
-        return;
-      }
     }
 
     if (config.sessionId) {

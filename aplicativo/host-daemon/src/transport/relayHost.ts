@@ -1373,10 +1373,6 @@ export async function runRelayHost(args: ArgsMap): Promise<void> {
         stats.feedbackRejectedAuth += 1;
         return;
       }
-      if (config.authExpiresAtMs && now > config.authExpiresAtMs) {
-        stats.feedbackRejectedAuth += 1;
-        return;
-      }
       if (!ping.sessionId || ping.sessionId.trim() !== config.sessionId) {
         stats.feedbackRejectedSession += 1;
         return;
@@ -1404,10 +1400,6 @@ export async function runRelayHost(args: ArgsMap): Promise<void> {
       stats.feedbackMessages += 1;
 
       if (feedback.token !== config.authToken) {
-        stats.feedbackRejectedAuth += 1;
-        return;
-      }
-      if (config.authExpiresAtMs && now > config.authExpiresAtMs) {
         stats.feedbackRejectedAuth += 1;
         return;
       }
@@ -1536,10 +1528,6 @@ export async function runRelayHost(args: ArgsMap): Promise<void> {
     stats.inputMessages += 1;
 
     if (inputMessage.token !== config.authToken) {
-      stats.inputRejectedAuth += 1;
-      return;
-    }
-    if (config.authExpiresAtMs && Date.now() > config.authExpiresAtMs) {
       stats.inputRejectedAuth += 1;
       return;
     }

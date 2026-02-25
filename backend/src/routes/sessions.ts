@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto';
 import { endSession, startSession, createSession, SessionError } from '../services/sessionService.js';
 import { requireUser } from '../utils/auth.js';
 import { deriveStreamId } from '../utils/streamIdentity.js';
+import { streamConnectTokenTtlMs } from '../utils/streamTokenTtl.js';
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 const extractForwardedIp = (value: string | string[] | undefined): string | null => {
@@ -19,7 +20,6 @@ const getClientIp = (request: FastifyRequest): string | null => {
   return extractForwardedIp(request.headers['x-forwarded-for']) ?? request.ip ?? null;
 };
 
-const STREAM_TOKEN_TTL_MS = 60_000;
 const DEFAULT_INPUT_PORT = 5505;
 const DEFAULT_VIDEO_PORT = 5004;
 const STREAMABLE_SESSION_STATUSES = new Set<SessionStatus>([SessionStatus.PENDING, SessionStatus.ACTIVE]);
@@ -150,6 +150,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
 
   fastify.post('/sessions/:id/stream/start', async (request, reply) => {
     const params = z.object({ id: z.string() }).parse(request.params);
+    const clientIp = getClientIp(request);
     const user = await requireUser(request, reply, fastify.prisma);
     if (!user) return;
 
@@ -242,6 +243,20 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       return reply.status(409).send({ error: 'Sessao fora de estado de streaming', code: 'SESSION_NOT_STREAMABLE' });
     }
 
+    if (isClientOwner && clientIp && clientIp !== effectiveSession.clientIp) {
+      await fastify.prisma.session.updateMany({
+        where: {
+          id: effectiveSession.id,
+          clientUserId: effectiveSession.clientUserId,
+        },
+        data: { clientIp },
+      });
+      effectiveSession = {
+        ...effectiveSession,
+        clientIp,
+      };
+    }
+
     const now = new Date();
     let tokenRecord = await fastify.prisma.streamConnectToken.findFirst({
       where: {
@@ -259,7 +274,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
           token: generateStreamToken(),
           pcId: effectiveSession.pcId,
           userId: effectiveSession.clientUserId,
-          expiresAt: new Date(now.getTime() + STREAM_TOKEN_TTL_MS),
+          expiresAt: new Date(now.getTime() + streamConnectTokenTtlMs),
         },
       });
     }

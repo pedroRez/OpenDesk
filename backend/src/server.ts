@@ -17,6 +17,7 @@ import { walletRoutes } from './routes/wallet.js';
 import { handleHostTimeouts } from './services/hostHeartbeat.js';
 import { serverInstanceId } from './instance.js';
 import { expirePromotedSlots, expireSessions } from './services/sessionService.js';
+import { streamConnectTokenTtlMs } from './utils/streamTokenTtl.js';
 
 function maskSecret(secret: string | undefined): string | null {
   const value = secret?.trim();
@@ -148,6 +149,7 @@ async function start() {
         HOST_HEARTBEAT_CHECK_INTERVAL_MS: config.hostHeartbeatCheckIntervalMs,
         HOST_OFFLINE_GRACE_SECONDS: config.hostOfflineGraceSeconds,
         HOST_OFFLINE_GRACE_ACTIVE_SECONDS: config.hostOfflineGraceActiveSeconds,
+        STREAM_CONNECT_TOKEN_TTL_MS: streamConnectTokenTtlMs,
         JWT_SECRET_MASKED: maskSecret(process.env.JWT_SECRET),
       },
       serverInstanceId,
