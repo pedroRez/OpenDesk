@@ -7,6 +7,31 @@
     "core:default",
     "shell:allow-open",
     {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "node",
+          "cmd": "node",
+          "args": true
+        },
+        {
+          "name": "cmd",
+          "cmd": "cmd",
+          "args": true
+        },
+        {
+          "name": "powershell",
+          "cmd": "powershell",
+          "args": true
+        },
+        {
+          "name": "netsh",
+          "cmd": "netsh",
+          "args": true
+        }
+      ]
+    },
+    {
       "identifier": "shell:allow-spawn",
       "allow": [
         {

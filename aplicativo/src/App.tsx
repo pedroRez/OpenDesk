@@ -8,6 +8,7 @@ import HostDaemonManager from './components/HostDaemonManager';
 import RequireAuth from './components/RequireAuth';
 import { ToastProvider } from './components/Toast';
 import { AuthProvider } from './lib/auth';
+import { isTauriRuntime } from './lib/hostDaemon';
 import { ModeProvider, useMode } from './lib/mode';
 import { useAuth } from './lib/auth';
 
@@ -181,16 +182,11 @@ export default function App() {
   useEffect(() => {
     if (!BOOT_CONFIG_LOG_ENABLED || bootConfigLogged) return;
     bootConfigLogged = true;
-    const w = window as unknown as {
-      __TAURI__?: unknown;
-      __TAURI_INTERNALS__?: unknown;
-      __TAURI_INVOKE__?: unknown;
-    };
     console.info('[APP_BOOT]', {
       apiUrl: import.meta.env.VITE_API_URL ?? 'http://localhost:3333',
       streamingMode: import.meta.env.VITE_STREAMING_MODE ?? 'AUTO',
       hostDaemonEntry: import.meta.env.VITE_HOST_DAEMON_ENTRY ?? null,
-      runtime: (w.__TAURI__ || w.__TAURI_INTERNALS__ || w.__TAURI_INVOKE__) ? 'tauri' : 'web',
+      runtime: isTauriRuntime() ? 'tauri' : 'web',
     });
   }, []);
 

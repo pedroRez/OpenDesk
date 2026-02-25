@@ -102,6 +102,7 @@ export default function HostDaemonManager() {
   const { user } = useAuth();
   const toast = useToast();
   const apiResolutionLoggedRef = useRef(false);
+  const runtimeWarningLoggedRef = useRef(false);
   const gateStateRef = useRef<GateState>({
     pcId: null,
     open: false,
@@ -132,7 +133,13 @@ export default function HostDaemonManager() {
   };
 
   useEffect(() => {
-    if (!isTauriRuntime()) return;
+    if (!isTauriRuntime()) {
+      if (!runtimeWarningLoggedRef.current) {
+        runtimeWarningLoggedRef.current = true;
+        console.warn('[HOST_DAEMON] runtime nao-tauri detectado; heartbeat/relay-host automaticos desativados.');
+      }
+      return;
+    }
     const active = mode === 'HOST' && Boolean(user?.hostProfileId) && Boolean(user?.id);
     if (!active) {
       stopHostRelayDaemon().catch((error) => {

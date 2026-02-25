@@ -1,5 +1,5 @@
 import { Command, type Child, type TerminatedPayload } from '@tauri-apps/plugin-shell';
-import { resolveResource } from '@tauri-apps/api/path';
+import { resolve as resolvePath, resolveResource, resourceDir } from '@tauri-apps/api/path';
 
 const DAEMON_RESOURCE = 'host-daemon/dist/index.js';
 const DEFAULT_RELAY_DURATION_SEC = 36000;
@@ -50,17 +50,79 @@ export function isTauriRuntime(): boolean {
     __TAURI_INTERNALS__?: unknown;
     __TAURI_INVOKE__?: unknown;
   };
-  return Boolean(w.__TAURI__ || w.__TAURI_INTERNALS__ || w.__TAURI_INVOKE__);
+  const hasTauriGlobals = Boolean(w.__TAURI__ || w.__TAURI_INTERNALS__ || w.__TAURI_INVOKE__);
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '';
+  const hasTauriUserAgent = userAgent.includes('tauri');
+  const hasTauriProtocol = window.location?.protocol === 'tauri:';
+  const env = import.meta.env as Record<string, unknown>;
+  const hasTauriEnv = typeof env.TAURI_PLATFORM === 'string' && env.TAURI_PLATFORM.trim().length > 0;
+  return hasTauriGlobals || hasTauriUserAgent || hasTauriProtocol || hasTauriEnv;
 }
 
 async function resolveEntryPath(): Promise<string> {
-  const override = import.meta.env.VITE_HOST_DAEMON_ENTRY;
-  if (override) return override;
-  try {
-    return await resolveResource(DAEMON_RESOURCE);
-  } catch {
-    return DAEMON_RESOURCE;
+  const override = String(import.meta.env.VITE_HOST_DAEMON_ENTRY ?? '').trim();
+  if (override) {
+    console.info('[HOST_DAEMON] usando VITE_HOST_DAEMON_ENTRY', { entry: override });
+    return override;
   }
+
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const pushCandidate = (value: string | null | undefined) => {
+    const trimmed = value?.trim();
+    if (!trimmed) return;
+    const normalized = trimmed.replace(/\//g, '\\');
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push(normalized);
+  };
+
+  const deriveDevWorkspaceEntry = (value: string): string | null => {
+    const normalized = value.replace(/\//g, '\\');
+    const lower = normalized.toLowerCase();
+    const markers = [
+      '\\src-tauri\\target\\debug\\host-daemon\\dist\\index.js',
+      '\\target\\debug\\host-daemon\\dist\\index.js',
+    ];
+    for (const marker of markers) {
+      if (lower.endsWith(marker)) {
+        return `${normalized.slice(0, normalized.length - marker.length)}\\host-daemon\\dist\\index.js`;
+      }
+    }
+    return null;
+  };
+
+  try {
+    const resolved = await resolveResource(DAEMON_RESOURCE);
+    pushCandidate(deriveDevWorkspaceEntry(resolved));
+    pushCandidate(resolved);
+  } catch {
+    // ignore and continue with other candidates
+  }
+
+  try {
+    const baseResourceDir = await resourceDir();
+    const fromResourceDir = await resolvePath(
+      baseResourceDir,
+      '..',
+      '..',
+      '..',
+      'host-daemon',
+      'dist',
+      'index.js',
+    );
+    pushCandidate(fromResourceDir);
+  } catch {
+    // ignore and continue with fallback candidates
+  }
+
+  pushCandidate('..\\host-daemon\\dist\\index.js');
+  pushCandidate(DAEMON_RESOURCE);
+
+  const selected = candidates[0] ?? DAEMON_RESOURCE;
+  console.info('[HOST_DAEMON] entry path resolved', { selected, candidates });
+  return selected;
 }
 
 type SpawnNodeDaemonOptions = {
