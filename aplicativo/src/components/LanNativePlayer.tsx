@@ -224,6 +224,10 @@ function isTokenExpired(expiresAtRaw?: string | null): boolean {
   return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now();
 }
 
+function normalizeStreamScope(value: string): string {
+  return value.trim().toLowerCase().replace(/-/g, '');
+}
+
 function toRelayInputEnvelope(
   token: string,
   sessionId: string,
@@ -1295,7 +1299,7 @@ export default function LanNativePlayer({
               if (
                 pong.streamId
                 && streamId.trim()
-                && pong.streamId.trim().toLowerCase() !== streamId.trim().toLowerCase()
+                && normalizeStreamScope(pong.streamId) !== normalizeStreamScope(streamId)
               ) {
                 return;
               }
