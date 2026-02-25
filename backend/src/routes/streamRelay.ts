@@ -128,7 +128,6 @@ type RelaySocketMeta = {
   sessionId: string;
   streamId: string;
   token: string;
-  tokenExpiresAtMs: number;
   windowStartMs: number;
   windowBytes: number;
   windowMessages: number;
@@ -731,7 +730,6 @@ export async function streamRelayRoutes(fastify: FastifyInstance) {
         sessionId: session.id,
         streamId: expectedStreamId,
         token: tokenRecord.token,
-        tokenExpiresAtMs: tokenRecord.expiresAt.getTime(),
         windowStartMs: connectedAtMs,
         windowBytes: 0,
         windowMessages: 0,
@@ -793,10 +791,8 @@ export async function streamRelayRoutes(fastify: FastifyInstance) {
         if (!meta) return;
         const activeRoom = rooms.get(meta.roomKey);
         if (!activeRoom) return;
-        if (meta.tokenExpiresAtMs <= Date.now()) {
-          closeSocket(socket, WS_CLOSE_POLICY_VIOLATION, 'token_expired');
-          return;
-        }
+        // Token expiry is enforced at handshake time. Keeping active sockets alive
+        // avoids mid-session drops when a stream runs longer than token TTL.
 
         const payload = toBuffer(raw);
         const rateCheck = checkSocketRateLimit(meta, payload.length);

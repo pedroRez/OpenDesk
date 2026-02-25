@@ -14,6 +14,13 @@ type GatePortsSpec = {
 
 type CommandPayload = unknown;
 
+class StreamingGatePermissionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StreamingGatePermissionError';
+  }
+}
+
 export type StreamingGateOptions = {
   clientAddress?: string | null;
   extraPorts?: number[];
@@ -58,6 +65,7 @@ const buildPortSpec = (extraPorts: number[] = []): GatePortsSpec => {
 };
 
 const buildRuleName = (pcId: string) => `${FIREWALL_RULE_PREFIX} ${pcId}`;
+let gatePermissionWarningShown = false;
 
 const toByteView = (value: unknown): Uint8Array | null => {
   if (value instanceof Uint8Array) return value;
@@ -99,6 +107,45 @@ const decodePayload = (value: CommandPayload | null | undefined): string => {
   return String(value);
 };
 
+const normalizeAscii = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const isElevationErrorText = (text: string): boolean => {
+  const normalized = normalizeAscii(text);
+  return (
+    normalized.includes('requires elevation') ||
+    normalized.includes('exige elevacao') ||
+    normalized.includes('run as administrator') ||
+    normalized.includes('executar como administrador')
+  );
+};
+
+const asPermissionError = (detail: string): StreamingGatePermissionError | null =>
+  isElevationErrorText(detail) ? new StreamingGatePermissionError(detail) : null;
+
+const handleGatePermissionError = (action: 'open' | 'close', pcId: string, error: unknown): boolean => {
+  const detail =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : '';
+  const permissionError = error instanceof StreamingGatePermissionError ? error : asPermissionError(detail);
+  if (!permissionError) return false;
+  if (!gatePermissionWarningShown) {
+    gatePermissionWarningShown = true;
+    console.warn('[STREAM_GATE] netsh requires administrator privileges; skipping firewall sync.', {
+      action,
+      pcId,
+      error: permissionError.message,
+    });
+  }
+  return true;
+};
+
 const execNetsh = async (args: string[]) => {
   const command = Command.create('netsh', args, { encoding: 'raw' });
   const result = await command.execute();
@@ -118,6 +165,10 @@ const deleteFirewallRules = async (name: string): Promise<void> => {
       lower.includes('nenhuma regra') ||
       lower.includes('not found') ||
       lower.includes('no rules');
+    const permissionError = asPermissionError(result.stderr);
+    if (permissionError) {
+      throw permissionError;
+    }
     if (!isMissingRule) {
       console.warn('[STREAM_GATE] delete rule fail', { name, error: result.stderr });
     }
@@ -148,6 +199,10 @@ const addFirewallRule = async (params: {
   ]);
   if (result.code !== 0) {
     const detail = result.stderr || result.stdout || 'erro desconhecido';
+    const permissionError = asPermissionError(detail);
+    if (permissionError) {
+      throw permissionError;
+    }
     throw new Error(detail);
   }
 };
@@ -164,9 +219,14 @@ export async function openStreamingGate(pcId: string, input?: StreamingGateInput
   const portSpec = buildPortSpec(options.extraPorts ?? []);
   const remoteIp = resolveRemoteIp(options.clientAddress);
 
-  await deleteFirewallRules(name);
-  await addFirewallRule({ name, action: 'allow', protocol: 'TCP', ports: portSpec.tcp, remoteIp });
-  await addFirewallRule({ name, action: 'allow', protocol: 'UDP', ports: portSpec.udp, remoteIp });
+  try {
+    await deleteFirewallRules(name);
+    await addFirewallRule({ name, action: 'allow', protocol: 'TCP', ports: portSpec.tcp, remoteIp });
+    await addFirewallRule({ name, action: 'allow', protocol: 'UDP', ports: portSpec.udp, remoteIp });
+  } catch (error) {
+    if (handleGatePermissionError('open', pcId, error)) return;
+    throw error;
+  }
 }
 
 export async function closeStreamingGate(pcId: string, options: StreamingGateOptions = {}): Promise<void> {
@@ -174,9 +234,14 @@ export async function closeStreamingGate(pcId: string, options: StreamingGateOpt
   const name = buildRuleName(pcId);
   const portSpec = buildPortSpec(options.extraPorts ?? []);
 
-  await deleteFirewallRules(name);
-  await addFirewallRule({ name, action: 'block', protocol: 'TCP', ports: portSpec.tcp, remoteIp: 'any' });
-  await addFirewallRule({ name, action: 'block', protocol: 'UDP', ports: portSpec.udp, remoteIp: 'any' });
+  try {
+    await deleteFirewallRules(name);
+    await addFirewallRule({ name, action: 'block', protocol: 'TCP', ports: portSpec.tcp, remoteIp: 'any' });
+    await addFirewallRule({ name, action: 'block', protocol: 'UDP', ports: portSpec.udp, remoteIp: 'any' });
+  } catch (error) {
+    if (handleGatePermissionError('close', pcId, error)) return;
+    throw error;
+  }
 }
 
 
