@@ -37,6 +37,14 @@ function Remove-RulesByPrefix([string]$prefix) {
   $rules | Remove-NetFirewallRule -ErrorAction SilentlyContinue | Out-Null
 }
 
+function Split-PortSpecs([string]$ports) {
+  return @(
+    ($ports -split ',') `
+      | ForEach-Object { $_.Trim() } `
+      | Where-Object { $_ -ne '' }
+  )
+}
+
 function Add-OrReplaceRule {
   param(
     [Parameter(Mandatory = $true)][string]$Suffix,
@@ -45,22 +53,29 @@ function Add-OrReplaceRule {
     [Parameter(Mandatory = $true)][string]$Ports
   )
 
-  $name = Get-RuleName $Suffix
-  $existing = Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue
-  if ($null -ne $existing) {
-    $existing | Remove-NetFirewallRule -ErrorAction SilentlyContinue | Out-Null
+  $portSpecs = Split-PortSpecs $Ports
+  if ($portSpecs.Count -eq 0) {
+    return
   }
 
-  New-NetFirewallRule `
-    -DisplayName $name `
-    -Direction $Direction `
-    -Action Allow `
-    -Enabled True `
-    -Profile Any `
-    -Protocol $Protocol `
-    -LocalPort $Ports `
-    -RemoteAddress $RemoteAddress `
-    | Out-Null
+  foreach ($portSpec in $portSpecs) {
+    $name = Get-RuleName "$Suffix [$portSpec]"
+    $existing = Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue
+    if ($null -ne $existing) {
+      $existing | Remove-NetFirewallRule -ErrorAction SilentlyContinue | Out-Null
+    }
+
+    New-NetFirewallRule `
+      -DisplayName $name `
+      -Direction $Direction `
+      -Action Allow `
+      -Enabled True `
+      -Profile Any `
+      -Protocol $Protocol `
+      -LocalPort $portSpec `
+      -RemoteAddress $RemoteAddress `
+      | Out-Null
+  }
 }
 
 function Show-Status {
